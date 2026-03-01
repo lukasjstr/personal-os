@@ -95,7 +95,7 @@ function MonthCalendar({
               key={key}
               onClick={() => onSelectDay(day)}
               className={cn(
-                "min-h-[72px] p-1.5 border-r border-b border-zinc-800/50 last:border-r-0 text-left transition-colors",
+                "min-h-[52px] md:min-h-[72px] p-1 md:p-1.5 border-r border-b border-zinc-800/50 last:border-r-0 text-left transition-colors",
                 !inMonth && "opacity-30",
                 selected && "bg-blue-950/40",
                 !selected && "hover:bg-zinc-800/40"

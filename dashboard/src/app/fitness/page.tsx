@@ -55,7 +55,8 @@ function WorkoutCalendar({ workoutDays }: { workoutDays: string[] }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
       <h3 className="text-white font-semibold mb-4">📅 Workout-Kalender (10 Wochen)</h3>
-      <div className="flex gap-1">
+      <div className="overflow-x-auto">
+      <div className="flex gap-1 min-w-max">
         <div className="flex flex-col gap-1 mr-1">
           {dayLabels.map((d) => (
             <div key={d} className="text-zinc-600 text-xs h-5 flex items-center">{d}</div>
@@ -77,12 +78,13 @@ function WorkoutCalendar({ workoutDays }: { workoutDays: string[] }) {
           </div>
         ))}
       </div>
+      </div>
     </div>
   );
 }
 
 function SessionCard({ session }: { session: { date: string; exercises: FitnessExerciseEntry[] } }) {
-  const uniqueExercises = [...new Set(session.exercises.map((e) => e.exercise))];
+  const uniqueExercises = Array.from(new Set(session.exercises.map((e) => e.exercise)));
 
   return (
     <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4">

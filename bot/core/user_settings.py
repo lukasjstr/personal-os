@@ -63,16 +63,25 @@ async def get_or_create_user(
     username: Optional[str],
     first_name: Optional[str],
 ) -> User:
-    """Get existing user or create with default settings."""
+    """Get existing user or create with default settings.
+
+    If telegram_id is in LINKED_TELEGRAM_IDS, the primary account is used so
+    both devices share the same data.
+    """
+    from bot.config import LINKED_TELEGRAM_IDS
+
+    # Resolve secondary device to the primary account
+    primary_id = LINKED_TELEGRAM_IDS.get(telegram_id, telegram_id)
+
     import secrets
-    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    result = await session.execute(select(User).where(User.telegram_id == primary_id))
     user = result.scalar_one_or_none()
 
     if not user:
         settings = dict(DEFAULT_SETTINGS)
         settings["ical_token"] = str(uuid.uuid4())
         user = User(
-            telegram_id=telegram_id,
+            telegram_id=primary_id,
             telegram_username=username,
             first_name=first_name,
             is_active=True,

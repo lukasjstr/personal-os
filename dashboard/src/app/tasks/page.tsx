@@ -137,7 +137,7 @@ export default function TasksPage() {
     cancelled: all.filter((t) => t.status === "cancelled").length,
   };
 
-  const categories = [...new Set(all.map((t) => t.category).filter(Boolean))].sort() as string[];
+  const categories = Array.from(new Set(all.map((t) => t.category).filter(Boolean))).sort() as string[];
 
   return (
     <div>

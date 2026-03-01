@@ -107,7 +107,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 h-full">
             <div className="text-2xl mb-1">🎯</div>

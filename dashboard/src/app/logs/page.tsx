@@ -60,7 +60,7 @@ function WorkoutLogCard({ log }: { log: Log }) {
               ))}
             </div>
           )}
-          {d.note && <p className="text-zinc-500 text-xs mt-1 italic">{String(d.note)}</p>}
+          {!!d.note && <p className="text-zinc-500 text-xs mt-1 italic">{String(d.note)}</p>}
           <div className="text-zinc-500 text-xs mt-1">{formatDateTime(log.logged_at)}</div>
         </div>
       </div>
@@ -112,7 +112,7 @@ function MoodLogCard({ log }: { log: Log }) {
             <span className={cn("text-2xl font-bold", scoreColor)}>{score}</span>
             <span className="text-zinc-500 text-sm">/10</span>
           </div>
-          {log.data.notes && (
+          {!!log.data.notes && (
             <p className="text-zinc-400 text-sm mt-0.5 italic">&ldquo;{String(log.data.notes)}&rdquo;</p>
           )}
           <div className="text-zinc-500 text-xs mt-1">{formatDateTime(log.logged_at)}</div>
@@ -222,7 +222,7 @@ const EXERCISE_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", 
 function WorkoutChart({ logs }: { logs: Log[] }) {
   const workoutLogs = logs.filter((l) => l.log_type === "workout");
   if (workoutLogs.length === 0) return null;
-  const exercises = [...new Set(workoutLogs.map((l) => String(l.data.exercise ?? "Unbekannt")))];
+  const exercises = Array.from(new Set(workoutLogs.map((l) => String(l.data.exercise ?? "Unbekannt"))));
   const byDay: Record<string, Record<string, number>> = {};
   workoutLogs.forEach((l) => {
     const d = format(parseISO(l.logged_at), "dd. MMM", { locale: de });
