@@ -1,0 +1,2254 @@
+Personal OS – Die definitive Spezifikation
+Was das hier ist
+Ein System das dein Leben operativ führt. Du gibst alles rein. Es sagt dir was du als nächstes tun sollst. Immer. Ohne dass du nachdenken musst.
+
+Das Kernprinzip
+
+text
+
+
+DU DENKST NICHT MEHR.
+DAS SYSTEM DENKT FÜR DICH.
+
+Du teilst ALLES:
+├── "Ich brauch Milch und Eier"
+├── "Bankdrücken 30kg x8"
+├── "Landingpage ist fertig"  
+├── "Ich fühl mich heute schlapp"
+├── "Mittwoch 14 Uhr Zahnarzt"
+├── "Ich sollte mal meine Steuern machen"
+├── "3 Flaschen Wasser getrunken"
+├── [Foto von Gewichten]
+├── [Sprachnachricht mit Idee]
+└── Alles. Wirklich alles.
+
+DAS SYSTEM:
+├── Versteht was es ist
+├── Ordnet es ein (Ziel? Task? Einkauf? Log? Idee?)
+├── Speichert es am richtigen Ort
+├── Leitet Aktionen ab
+├── Erinnert dich proaktiv
+├── Sagt dir was als NÄCHSTES kommt
+├── Pusht dich wenn du nachlässt
+└── Feiert wenn du lieferst
+
+DU MACHST NUR NOCH:
+├── Input geben (Telegram)
+├── Ausführen was es dir sagt
+└── Das wars.
+
+Proaktivität – Das Herzstück
+Das unterscheidet es von jedem Task-Manager. Das System wartet nicht. Es kommt zu dir.
+
+text
+
+
+══════════════════════════════════════════
+WIE PROAKTIVITÄT FUNKTIONIERT
+══════════════════════════════════════════
+
+Jedes Ziel, jeder Task, jede Routine erzeugt
+AUTOMATISCH Erinnerungen und Push-Nachrichten.
+
+BEISPIEL: "3 Liter Wasser am Tag"
+System erstellt automatisch:
+├── 09:00 Push: "💧 Erste Flasche Wasser!"
+├── 13:00 Push: "💧 Zweite Flasche. Stand: X/3L"
+├── 17:00 Push: "💧 Letzte Flasche. Noch X.XL übrig"
+└── Wenn User loggt → Anpassung in Echtzeit
+
+BEISPIEL: "4x Training pro Woche"
+System weiß: Es ist Donnerstag, erst 1x trainiert
+├── 08:00 Push: "⚠️ Erst 1/4 Training diese Woche.
+│   Heute und morgen noch je ein Training nötig.
+│   Wann willst du heute trainieren?"
+├── User sagt "18 Uhr"
+├── → Kalender-Eintrag 18:00 Training
+├── 17:30 Push: "💪 Training in 30 Minuten!"
+└── Nach Training-Log: "2/4 ✅ Noch 2 bis Freitag."
+
+BEISPIEL: "Einkaufen"
+User hat im Lauf der Woche gesagt:
+├── "Milch kaufen"
+├── "Eier brauch ich auch"
+├── "Proteinpulver ist leer"
+System:
+├── Sammelt alles in einer Einkaufsliste
+├── Samstag 10:00: "🛒 Einkaufsliste:
+│   ☐ Milch
+│   ☐ Eier  
+│   ☐ Proteinpulver
+│   Gehst du heute einkaufen?"
+└── User: "ja" → "Soll ich einen Kalender-Eintrag
+    machen? Wann?"
+
+BEISPIEL: "Landingpage bauen"  
+System hat 5 Tasks, 2 erledigt:
+├── Morgen-Brief: "Nächster Schritt Landingpage:
+│   Testimonials sammeln. 45min Fokus-Block?"
+├── Wenn 3 Tage keine Aktivität:
+│   "⚠️ Landingpage seit 3 Tagen keine Action.
+│   Deadline in 5 Tagen. Heute 1 Stunde dran?"
+├── Wenn Task erledigt:
+│   "✅ Testimonials done! Nächster Schritt:
+│   CTA testen. Soll ich einen Zeitblock einplanen?"
+└── Wenn alles fertig:
+    "🎉 Landingpage KOMPLETT! Key Result erreicht!
+    Nächste Priorität in Business: LinkedIn Content"
+
+DAS PRINZIP:
+Jeder Eintrag im System erzeugt einen 
+Reminder-Stream der den User durch die 
+Ausführung FÜHRT.
+
+Nicht: "Hier sind deine Tasks."
+Sondern: "Tu JETZT das. Dann das. Dann das."
+
+Toggle-System
+
+text
+
+
+USER-EINSTELLUNGEN (per Telegram steuerbar):
+
+"Prioritäten an" / "Prioritäten aus"
+├── AN: Morgen-Brief mit Top 3, automatische 
+│       Priorisierung, Tages-Führung
+└── AUS: System speichert alles, erinnert an
+         Routinen/Termine, aber keine Priorisierung
+
+"Review an" / "Review aus"  
+├── AN: Abend-Review mit Tages-Score
+└── AUS: Kein Abend-Review
+
+"Proaktiv an" / "Proaktiv aus"
+├── AN: System pusht aktiv (Wasser-Reminder,
+│       Training-Nudges, Task-Erinnerungen)
+└── AUS: System antwortet nur wenn du schreibst
+
+"Reflection" → Immer Sonntag Abend Einladung
+├── User wird gefragt "Willst du reflektieren?"
+├── JA → geführte Session startet
+├── NEIN / keine Antwort → wird übersprungen
+├── "Reflection aus" → Wird gar nicht erst gefragt
+└── "Reflection an" → Wieder aktiv
+
+BEFEHLE:
+/settings → Zeigt alle Toggles
+/toggle priorities → An/Aus
+/toggle review → An/Aus  
+/toggle proactive → An/Aus
+/toggle reflection → An/Aus
+/times → Zeigt eingestellte Zeiten
+/times morning 07:00 → Ändert Morning Brief Zeit
+/times evening 21:30 → Ändert Evening Review Zeit
+
+Alles was das System versteht
+
+text
+
+
+INPUT-KATEGORIEN (automatisch erkannt):
+
+1. ZIELE & WÜNSCHE
+   "Ich will abnehmen"
+   "Ich muss mehr Sport machen"
+   "Dieses Jahr will ich 100k Umsatz"
+   → Objective + Key Results vorschlagen
+
+2. FORTSCHRITT & LOGS
+   "Bankdrücken 30kg x8"
+   "2 Flaschen Wasser"
+   "Landingpage Hero Section fertig"
+   → Log erstellen, Progress updaten
+
+3. TASKS & AUFGABEN
+   "Ich muss die Steuererklärung machen"
+   "Testimonials sammeln"
+   "Website updaten"
+   → Task erstellen, einordnen
+
+4. ERLEDIGUNGEN
+   "Fertig" / "Done" / "Erledigt" / "✅"
+   "Landingpage ist live"
+   "Training war gut"
+   → Task/Routine abhaken, nächsten Schritt zeigen
+
+5. TERMINE & KALENDER
+   "Mittwoch 14 Uhr Zahnarzt"
+   "Nächsten Montag Meeting mit Team"
+   → CalendarEvent erstellen + Reminder planen
+
+6. EINKAUFEN & LISTEN
+   "Milch kaufen"
+   "Brauch noch Proteinpulver"  
+   → Einkaufsliste (spezieller Task-Typ)
+
+7. ROUTINEN
+   "Jeden Morgen meditieren"
+   "3x pro Woche laufen"
+   "Sonntag Meal Prep"
+   → Routine erstellen + Reminder-Schedule
+
+8. GEDANKEN & BRAIN DUMPS
+   "Ich glaub ich sollte mal über Podcast nachdenken"
+   "Interessante Idee: App für Hundbesitzer"
+   → Brain Dump speichern, später einordnen
+
+9. BEFINDLICHKEIT
+   "Bin heute müde"
+   "Mega produktiv heute"
+   "Fühle mich überfordert"
+   → Mood-Log, Pattern-Erkennung
+
+10. EINSTELLUNGEN
+    "Prioritäten aus"
+    "Erinner mich nicht mehr abends"
+    /settings, /toggle, /times
+    → Settings ändern
+
+11. FRAGEN ANS SYSTEM
+    "Was steht heute an?"
+    "Wie läuft mein Fitness-Ziel?"
+    "Was hab ich diese Woche geschafft?"
+    → Kontext-basierte Auskunft
+
+Technische Architektur
+
+text
+
+
+┌─────────────────────────────────────────────────────────────┐
+│                        SERVER                                │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              TELEGRAM BOT (Webhook)                  │    │
+│  │                                                      │    │
+│  │  Empfängt:  Text, Fotos, Voice, Commands            │    │
+│  │  Sendet:    Antworten, Briefings, Reminder, Nudges  │    │
+│  └──────────────────────┬───────────────────────────────┘    │
+│                          │                                    │
+│                          ▼                                    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │              INPUT PROCESSOR                          │    │
+│  │                                                       │    │
+│  │  1. Message empfangen                                │    │
+│  │  2. User laden/erstellen                             │    │
+│  │  3. Conversation speichern                           │    │
+│  │  4. Kontext aus DB bauen                             │    │
+│  │  5. An Claude Haiku senden                           │    │
+│  │  6. Tool Calls ausführen                             │    │
+│  │  7. Abgeleitete Reminder erstellen                   │    │
+│  │  8. Antwort an User senden                           │    │
+│  └──────────────────────┬───────────────────────────────┘    │
+│                          │                                    │
+│              ┌───────────┼───────────┐                       │
+│              ▼           ▼           ▼                       │
+│  ┌──────────────┐ ┌───────────┐ ┌──────────────┐           │
+│  │   HAIKU API  │ │  DATABASE │ │  REMINDER    │           │
+│  │              │ │           │ │  ENGINE      │           │
+│  │  Versteht    │ │  Postgres │ │              │           │
+│  │  Input       │ │           │ │  Erzeugt     │           │
+│  │  Ruft Tools  │ │  Alles    │ │  Push-Msgs   │           │
+│  │  Antwortet   │ │  wird     │ │  basierend   │           │
+│  │              │ │  gespeich.│ │  auf Tasks,  │           │
+│  │  Tools:      │ │           │ │  Routinen,   │           │
+│  │  21 Funktio. │ │  14       │ │  Zielen      │           │
+│  │              │ │  Tabellen │ │              │           │
+│  └──────────────┘ └───────────┘ └──────────────┘           │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │              SCHEDULER (Cron Engine)                   │    │
+│  │                                                       │    │
+│  │  Jede Minute: check_all_scheduled_jobs()             │    │
+│  │                                                       │    │
+│  │  ├── Morning Briefs fällig?                          │    │
+│  │  ├── Evening Reviews fällig?                         │    │
+│  │  ├── Routine Reminders fällig?                       │    │
+│  │  ├── Task Reminders fällig?                          │    │
+│  │  ├── Kalender-Event Reminders fällig?                │    │
+│  │  ├── Wasser/Health Reminders fällig?                 │    │
+│  │  ├── Proaktive Nudges fällig?                        │    │
+│  │  └── Weekly Reflection Einladung fällig?             │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │              REST API (für Dashboard Phase 2)         │    │
+│  │              + iCal Feed                              │    │
+│  └──────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+
+Reminder Engine – Das Proaktive System
+Das ist der Teil der alles besonders macht.
+
+text
+
+
+══════════════════════════════════════════
+REMINDER-TABELLE (NEU)
+══════════════════════════════════════════
+
+scheduled_reminders
+├── id: PK
+├── user_id: FK
+├── reminder_type: str
+│   ├── "water"          (Wasser-Erinnerung)
+│   ├── "routine"        (Routine fällig)
+│   ├── "task_nudge"     (Task-Erinnerung)
+│   ├── "task_deadline"  (Deadline-Warnung)
+│   ├── "calendar_prep"  (Termin in 30min)
+│   ├── "streak_warning" (Streak bricht)
+│   ├── "progress_nudge" (Kein Fortschritt)
+│   ├── "shopping"       (Einkaufsliste)
+│   ├── "custom"         (User-definiert)
+│   └── "next_action"    (Nächste Aktion vorschlagen)
+│
+├── message_template: str
+│   ("💧 Zeit für Flasche {current}/{target}!")
+├── scheduled_for: datetime (wann senden)
+├── repeat_rule: str | None
+│   ("daily:09:00,13:00,17:00")
+├── linked_key_result_id: FK, nullable
+├── linked_task_id: FK, nullable  
+├── linked_routine_id: FK, nullable
+├── status: str (pending/sent/cancelled/snoozed)
+├── sent_at: datetime | None
+├── created_at: datetime
+└── auto_generated: bool = True
+
+══════════════════════════════════════════
+WIE REMINDER ENTSTEHEN
+══════════════════════════════════════════
+
+AUTOMATISCH wenn etwas erstellt wird:
+
+User sagt: "Ich will 3 Liter Wasser am Tag trinken"
+System erstellt:
+├── Objective: Gesünder leben
+├── Key Result: 3L Wasser täglich
+└── Reminder automatisch:
+    ├── 09:00 "💧 Guten Morgen! Erste Flasche Wasser."
+    ├── 13:00 "💧 Mittags-Check: Wie viel Wasser?"
+    └── 17:00 "💧 Nachmittags-Reminder. Noch XL bis 3L."
+
+User sagt: "Jeden Dienstag LinkedIn Post"
+System erstellt:
+├── Routine: LinkedIn Post, Dienstag
+└── Reminder automatisch:
+    ├── Dienstag 08:30 "📝 Heute LinkedIn-Post.
+    │   Brauchst du Hilfe beim Hook?"
+    └── Dienstag 14:00 (falls nicht erledigt)
+        "⚠️ LinkedIn Post noch offen. Jetzt 30min?"
+
+User sagt: "Steuererklärung bis Ende Juli"
+System erstellt:
+├── Task: Steuererklärung, Deadline 31.07
+└── Reminder automatisch:
+    ├── 7 Tage vorher: "📋 Steuererklärung in 1 Woche fällig"
+    ├── 3 Tage vorher: "⚠️ Steuererklärung in 3 Tagen!"
+    └── Am Tag: "🔴 Steuererklärung HEUTE fällig!"
+
+User sagt: "Mittwoch 14 Uhr Zahnarzt"
+System erstellt:
+├── CalendarEvent: Zahnarzt, Mi 14:00
+└── Reminder automatisch:
+    ├── Mi 08:00 "📅 Heute 14:00 Zahnarzt"
+    └── Mi 13:30 "📅 Zahnarzt in 30 Minuten!"
+
+══════════════════════════════════════════
+NEXT-ACTION SYSTEM
+══════════════════════════════════════════
+
+Das Wichtigste: Nach jeder erledigten Aufgabe 
+sagt das System was ALS NÄCHSTES kommt.
+
+User: "Testimonials fertig"
+System: 
+"✅ Testimonials gesammelt!
+ 
+ Landingpage Fortschritt: 4/5 Tasks ✓
+ 
+ ➡️ NÄCHSTE AKTION: CTA testen
+ Das ist der letzte Schritt zur fertigen 
+ Landingpage. 45 Minuten Fokus?
+ 
+ Soll ich einen Zeitblock einplanen?"
+
+Das System denkt IMMER einen Schritt voraus.
+Es gibt nie ein Vakuum nach einer Erledigung.
+
+Die Einkaufsliste (Spezialfall)
+
+text
+
+
+Weil du das explizit erwähnt hast:
+
+EINKAUFSLISTE IST EIN SPEZIELLER TASK-TYP
+
+User sagt irgendwann: "Milch kaufen"
+→ Task erstellt: category="shopping", title="Milch"
+
+User sagt 2 Tage später: "Eier brauch ich auch"  
+→ Task erstellt: category="shopping", title="Eier"
+
+User sagt: "Proteinpulver leer"
+→ Task erstellt: category="shopping", title="Proteinpulver"
+
+System sammelt alle shopping-Tasks.
+
+Samstag 10:00 (oder konfigurierbarer Tag):
+Push: "🛒 Deine Einkaufsliste:
+☐ Milch
+☐ Eier
+☐ Proteinpulver
+
+Gehst du heute einkaufen?"
+
+User: "ja, nachher"
+System: "Wann ungefähr? Dann erinnere ich dich."
+User: "15 uhr"
+System: "📅 Einkaufen um 15:00 eingetragen.
+Ich erinnere dich um 14:45."
+
+14:45: "🛒 Einkaufen! Hier nochmal deine Liste:
+☐ Milch
+☐ Eier  
+☐ Proteinpulver"
+
+User danach: "Einkaufen erledigt"
+System: "✅ Alle 3 Items abgehakt!
+Nächster Einkauf wenn du mir sagst was fehlt."
+
+MVP → Vollversion: Der Build-Plan
+
+text
+
+
+═══════════════════════════════════════════════════
+PHASE 1: FUNDAMENT (Woche 1)
+═══════════════════════════════════════════════════
+
+Was gebaut wird:
+├── Telegram Bot mit Webhook
+├── PostgreSQL mit ALLEN Tabellen 
+│   (auch Phase 2+3, damit kein Schema-Umbau nötig)
+├── Claude Haiku mit Tool Calling (21 Tools)
+├── Input Processing Pipeline
+│   (Message → Context → Haiku → Tools → Response)
+├── OKR System (Objectives, Key Results, Tasks)
+├── Logging (Workout, Water, Mood, Progress, General)
+├── Routinen (CRUD + Completion Tracking)
+├── Brain Dumps
+├── Kalender Events + iCal Feed
+├── Conversation History
+├── User Settings + Toggle Commands
+├── Einkaufslisten (als Task-Kategorie)
+└── Basis Error Handling + Logging
+
+Was du danach kannst:
+├── Dem Bot alles schreiben
+├── Er versteht und speichert es
+├── Er ordnet es in OKRs ein
+├── Er erstellt Tasks und Routinen
+├── Er loggt Fortschritt
+├── /settings zum Konfigurieren
+└── iCal Feed für deinen Kalender
+
+Was NOCH NICHT geht:
+├── Proaktive Push-Nachrichten
+├── Morning Brief / Evening Review
+├── Reminder Engine
+├── Weekly Reflection
+├── Priorisierung
+└── Dashboard
+
+═══════════════════════════════════════════════════
+PHASE 2: PROAKTIVITÄT (Woche 2)  
+═══════════════════════════════════════════════════
+
+Was dazukommt:
+├── Scheduler (APScheduler, jede Minute prüfen)
+├── Morning Brief
+│   ├── Top 3 Prioritäten (automatisch berechnet)
+│   ├── Heutige Routinen
+│   ├── Kalender-Einträge
+│   ├── Warnungen
+│   └── "Willst du Prios ändern?"
+├── Evening Review  
+│   ├── Was erledigt, was nicht
+│   ├── Completion Rate
+│   ├── Mood-Abfrage
+│   └── Preview morgen
+├── Reminder Engine
+│   ├── scheduled_reminders Tabelle
+│   ├── Auto-Generierung bei Task/Routine/KR Erstellung
+│   ├── Wasser-Reminder (3x täglich)
+│   ├── Routine-Reminder (vor Fälligkeit)
+│   ├── Task-Deadline-Reminder (7d, 3d, 1d)
+│   ├── Kalender-Reminder (30min vorher)
+│   ├── Streak-Warnungen
+│   ├── Fortschritts-Nudges (kein Progress seit X Tagen)
+│   └── Einkaufs-Zusammenfassung (wöchentlich)
+├── Next-Action System
+│   └── Nach jeder Erledigung → nächsten Schritt zeigen
+├── Priorisierungs-Engine
+│   ├── Automatische Berechnung
+│   ├── User Override ("tausch 1 und 2")
+│   └── Toggle an/aus
+└── Daily Brief Tabelle (Speicherung)
+
+Was du danach kannst:
+├── Morgens sagt dir das System was du tun sollst
+├── Es erinnert dich an Wasser, Training, Tasks
+├── Nach jeder Aufgabe kommt die nächste
+├── Abends bekommst du ein Review
+├── Du kannst Prioritäten umstellen
+├── Du kannst Proaktivität an/aus schalten
+└── Dein Kopf ist AUS, das System führt
+
+═══════════════════════════════════════════════════
+PHASE 3: INTELLIGENZ (Woche 3)
+═══════════════════════════════════════════════════
+
+Was dazukommt:
+├── Weekly Reflection Session
+│   ├── Sonntag Einladung (freiwillig)
+│   ├── 5 geführte Fragen
+│   ├── Insights extrahieren
+│   ├── Priorities für nächste Woche setzen
+│   └── Änderungen umsetzen (KRs anpassen etc.)
+├── User Insights System
+│   ├── Aus Reflektionen abgeleitet
+│   ├── Auto-Detection (Produktivitätsmuster)
+│   └── Fließen in Morning Briefs ein
+├── Weekly Priorities
+│   ├── Aus Reflection gesetzt
+│   ├── Überschreiben Auto-Priorisierung
+│   └── Werden in Daily Briefs integriert
+├── Pattern Recognition (einfach)
+│   ├── Mood-Korrelationen
+│   ├── Produktive Tageszeiten
+│   └── Streak-Analyse
+├── Bild-Erkennung (Vision API)
+│   └── Gewichte auf Fotos erkennen
+└── Voice-to-Text
+    └── Sprachnachrichten transkribieren
+
+═══════════════════════════════════════════════════
+PHASE 4: DASHBOARD (Woche 4-5)
+═══════════════════════════════════════════════════
+
+Was dazukommt:
+├── Next.js Web App
+├── Telegram Login (OAuth)
+├── OKR Tree Visualisierung
+├── Fitness-Graphen (Gewicht/Reps über Zeit)
+├── Kalender-Ansicht
+├── Routine-Streaks
+├── Mood-Trends
+├── Weekly Reflection History
+├── Insights Dashboard
+└── Einkaufsliste Ansicht
+
+═══════════════════════════════════════════════════
+PHASE 5: SKALIERUNG (Woche 6+)
+═══════════════════════════════════════════════════
+
+Was dazukommt:
+├── Multi-User (ist von Anfang an vorbereitet)
+├── Onboarding Flow für neue User
+├── Subscription/Payment
+├── Landing Page
+├── Rate Limiting pro User
+└── Admin Dashboard
+
+Datenbankschema (Komplett, alle Phasen)
+
+text
+
+
+ALLE TABELLEN WERDEN IN PHASE 1 ERSTELLT.
+Nur der Code der sie nutzt kommt phasenweise.
+
+users
+objectives  
+key_results
+tasks
+logs
+routines
+routine_completions
+calendar_events
+brain_dumps
+conversations
+daily_briefs
+weekly_reflections
+weekly_priorities
+user_insights
+scheduled_reminders      ← NEU
+user_settings_log        ← NEU (Toggle-History)
+shopping_items           ← NEU (oder Task mit Kategorie)
+
+File-Struktur (Phase 1 + vorbereitet für alles)
+
+text
+
+
+personal-os/
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── requirements.txt
+│
+├── bot/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   │
+│   ├── telegram/
+│   │   ├── __init__.py
+│   │   ├── handler.py          # Message Processing
+│   │   ├── sender.py           # Send Messages
+│   │   ├── formatting.py       # Markdown/Emoji Helper
+│   │   └── commands.py         # /settings, /toggle, /times
+│   │
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── client.py           # Haiku API + Tool Loop
+│   │   ├── context.py          # Context Builder
+│   │   ├── prompts.py          # System Prompt
+│   │   ├── tools.py            # Tool Definitionen
+│   │   └── tool_executor.py    # Tool Calls ausführen
+│   │
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── objectives.py
+│   │   ├── key_results.py
+│   │   ├── tasks.py
+│   │   ├── logs.py
+│   │   ├── routines.py
+│   │   ├── calendar_events.py
+│   │   ├── brain_dumps.py
+│   │   ├── conversations.py
+│   │   ├── user_settings.py    # Toggle Logic
+│   │   ├── shopping.py         # Einkaufsliste
+│   │   │
+│   │   │  # Phase 2 (vorbereitet, Code kommt in Phase 2)
+│   │   ├── priorities.py
+│   │   ├── daily_briefs.py
+│   │   ├── reminders.py
+│   │   │
+│   │   │  # Phase 3 (vorbereitet, Code kommt in Phase 3)
+│   │   ├── weekly_reflections.py
+│   │   ├── weekly_priorities.py
+│   │   └── insights.py
+│   │
+│   ├── jobs/
+│   │   ├── __init__.py
+│   │   ├── scheduler.py        # Phase 2
+│   │   ├── morning_brief.py    # Phase 2
+│   │   ├── evening_review.py   # Phase 2
+│   │   ├── reminder_engine.py  # Phase 2
+│   │   └── weekly_reflection_trigger.py  # Phase 3
+│   │
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── connection.py
+│   │   └── models.py           # ALLE Tabellen sofort
+│   │
+│   └── api/
+│       ├── __init__.py
+│       ├── routes.py           # Phase 4
+│       └── ical.py             # Phase 1
+│
+└── scripts/
+    ├── setup.sh
+    └── seed_data.py
+
+Der Phase 1 Prompt für Claude Code
+
+text
+
+
+Ich baue ein "Personal OS" – einen KI-gesteuerten 
+persönlichen Assistenten über Telegram. 
+
+Dies ist PHASE 1: Das Fundament.
+
+Alle Datenbank-Tabellen werden JETZT erstellt (auch für 
+spätere Phasen). Der funktionale Code in Phase 1 umfasst: 
+Telegram Bot, Haiku AI mit Tool Calling, OKR System, 
+Logging, Routinen, Brain Dumps, Kalender, Einkaufsliste,
+User Settings mit Toggles, iCal Feed.
+
+Phase 2 (Proaktivität: Morning Brief, Evening Review, 
+Reminder Engine, Priorisierung) und Phase 3 (Weekly 
+Reflection, Insights) werden VORBEREITET aber noch 
+nicht implementiert – die Dateien existieren mit 
+Docstrings und Signaturen aber ohne Logik.
+
+══════════════════════════════════════════════
+PROJEKT-STRUKTUR
+══════════════════════════════════════════════
+
+personal-os/
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── requirements.txt
+├── bot/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   ├── telegram/
+│   │   ├── __init__.py
+│   │   ├── handler.py
+│   │   ├── sender.py
+│   │   ├── formatting.py
+│   │   └── commands.py
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── client.py
+│   │   ├── context.py
+│   │   ├── prompts.py
+│   │   ├── tools.py
+│   │   └── tool_executor.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── objectives.py
+│   │   ├── key_results.py
+│   │   ├── tasks.py
+│   │   ├── logs.py
+│   │   ├── routines.py
+│   │   ├── calendar_events.py
+│   │   ├── brain_dumps.py
+│   │   ├── conversations.py
+│   │   ├── user_settings.py
+│   │   ├── shopping.py
+│   │   ├── priorities.py        # Phase 2 stub
+│   │   ├── daily_briefs.py      # Phase 2 stub
+│   │   ├── reminders.py         # Phase 2 stub
+│   │   ├── weekly_reflections.py # Phase 3 stub
+│   │   ├── weekly_priorities.py  # Phase 3 stub
+│   │   └── insights.py          # Phase 3 stub
+│   ├── jobs/
+│   │   ├── __init__.py
+│   │   ├── scheduler.py          # Phase 2 stub
+│   │   ├── morning_brief.py      # Phase 2 stub
+│   │   ├── evening_review.py     # Phase 2 stub
+│   │   ├── reminder_engine.py    # Phase 2 stub
+│   │   └── weekly_reflection_trigger.py  # Phase 3 stub
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── connection.py
+│   │   └── models.py
+│   └── api/
+│       ├── __init__.py
+│       ├── routes.py
+│       └── ical.py
+└── scripts/
+    ├── setup.sh
+    └── seed_data.py
+
+══════════════════════════════════════════════
+TECH STACK
+══════════════════════════════════════════════
+
+- Python 3.11+
+- FastAPI + uvicorn (async)
+- SQLAlchemy 2.0 async + asyncpg
+- python-telegram-bot v20+ (async)
+- anthropic Python SDK
+- APScheduler v3 (AsyncIOScheduler) – setup only in Phase 1
+- PostgreSQL 15
+- Docker + Docker Compose
+- icalendar library
+- pydantic-settings
+
+══════════════════════════════════════════════
+REQUIREMENTS.TXT
+══════════════════════════════════════════════
+
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+sqlalchemy[asyncio]==2.0.31
+asyncpg==0.29.0
+python-telegram-bot==21.3
+anthropic==0.30.0
+apscheduler==3.10.4
+icalendar==5.0.13
+pydantic==2.8.0
+pydantic-settings==2.3.4
+python-dotenv==1.0.1
+httpx==0.27.0
+
+══════════════════════════════════════════════
+DOCKER
+══════════════════════════════════════════════
+
+Dockerfile:
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY bot/ ./bot/
+CMD ["uvicorn", "bot.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+docker-compose.yml:
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: personal_os
+      POSTGRES_USER: pos_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos_user -d personal_os"]
+      interval: 5s
+      retries: 5
+
+  app:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./bot:/app/bot
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+══════════════════════════════════════════════
+CONFIG (config.py)
+══════════════════════════════════════════════
+
+pydantic BaseSettings, env_file=".env":
+- TELEGRAM_BOT_TOKEN: str
+- TELEGRAM_WEBHOOK_URL: str
+- ANTHROPIC_API_KEY: str
+- DB_HOST: str = "db"
+- DB_PORT: int = 5432
+- DB_NAME: str = "personal_os"
+- DB_USER: str = "pos_user"
+- DB_PASSWORD: str
+- APP_HOST: str = "0.0.0.0"
+- APP_PORT: int = 8000
+- LOG_LEVEL: str = "INFO"
+
+@property database_url → "postgresql+asyncpg://..."
+
+Singleton pattern: settings = Settings()
+
+══════════════════════════════════════════════
+DATABASE MODELS (models.py)
+══════════════════════════════════════════════
+
+SQLAlchemy 2.0, DeclarativeBase, Mapped[] types.
+ERSTELLE ALLE TABELLEN – auch die für Phase 2 und 3.
+
+class Base(DeclarativeBase):
+    pass
+
+1. User
+   - id: Mapped[int] = mapped_column(primary_key=True)
+   - telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+   - telegram_username: Mapped[str | None]
+   - first_name: Mapped[str | None]
+   - timezone: Mapped[str] = mapped_column(default="Europe/Berlin")
+   - settings: Mapped[dict] = mapped_column(JSON, default=dict)
+     # settings enthält:
+     # {
+     #   "priorities_enabled": true,
+     #   "review_enabled": true,
+     #   "proactive_enabled": true,
+     #   "reflection_enabled": true,
+     #   "morning_brief_time": "06:30",
+     #   "evening_review_time": "21:00",
+     #   "weekly_reflection_day": "sunday",
+     #   "weekly_reflection_time": "19:00",
+     #   "shopping_reminder_day": "saturday",
+     #   "shopping_reminder_time": "10:00",
+     #   "ical_token": "uuid4-string"
+     # }
+   - is_active: Mapped[bool] = mapped_column(default=True)
+   - created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+   - updated_at: Mapped[datetime | None] = mapped_column(onupdate=func.now())
+   
+   Relationships: objectives, tasks, logs, routines, etc.
+
+2. Objective
+   - id: Mapped[int] PK
+   - user_id: Mapped[int] FK users, index
+   - title: Mapped[str]
+   - description: Mapped[str | None]
+   - category: Mapped[str]  # health, business, personal, fitness, finance, learning
+   - status: Mapped[str] = "active"  # active, completed, paused, abandoned
+   - target_date: Mapped[date | None]
+   - priority_weight: Mapped[int] = mapped_column(default=5)  # 1-10
+   - created_at, updated_at
+
+3. KeyResult
+   - id: Mapped[int] PK
+   - objective_id: Mapped[int] FK objectives, index
+   - user_id: Mapped[int] FK users, index
+   - title: Mapped[str]
+   - metric_type: Mapped[str]  # percentage, number, boolean, streak, checklist
+   - target_value: Mapped[float | None]
+   - current_value: Mapped[float] = 0.0
+   - unit: Mapped[str | None]
+   - frequency: Mapped[str]  # daily, weekly, monthly, once
+   - status: Mapped[str] = "active"
+   - target_date: Mapped[date | None]
+   - created_at, updated_at
+
+4. Task
+   - id: Mapped[int] PK
+   - key_result_id: Mapped[int | None] FK key_results, index
+   - user_id: Mapped[int] FK users, index
+   - title: Mapped[str]
+   - description: Mapped[str | None]
+   - status: Mapped[str] = "todo"  # todo, in_progress, done, cancelled
+   - priority: Mapped[int] = 3  # 1=highest, 5=lowest
+   - category: Mapped[str] = "general"  # general, shopping, errand, work, personal
+   - due_date: Mapped[date | None]
+   - completed_at: Mapped[datetime | None]
+   - created_at, updated_at
+
+5. Log
+   - id: Mapped[int] PK
+   - user_id: Mapped[int] FK users, index
+   - key_result_id: Mapped[int | None] FK
+   - task_id: Mapped[int | None] FK
+   - log_type: Mapped[str]  # workout, water, food, mood, progress, note, general
+   - data: Mapped[dict] = mapped_column(JSON)
+   - source: Mapped[str] = "text"  # text, image, voice
+   - raw_input: Mapped[str | None]
+   - created_at: Mapped[datetime] server_default
+   - logged_at: Mapped[datetime] server_default
+
+6. Routine
+   - id: Mapped[int] PK
+   - user_id: Mapped[int] FK users, index
+   - title: Mapped[str]
+   - description: Mapped[str | None]
+   - schedule_cron: Mapped[str | None]
+   - frequency_human: Mapped[str]  # "Jeden Dienstag", "Täglich", "3x pro Woche"
+   - linked_key_result_id: Mapped[int | None] FK
+   - status: Mapped[str] = "active"  # active, paused
+   - created_at, updated_at
+
+7. RoutineCompletion
+   - id: Mapped[int] PK
+   - routine_id: Mapped[int] FK routines, index
+   - user_id: Mapped[int] FK users, index
+   - completed_at: Mapped[datetime] server_default
+   - notes: Mapped[str | None]
+
+8. CalendarEvent
+   - id: Mapped[int] PK
+   - user_id: Mapped[int] FK users, index
+   - title: Mapped[str]
+   - description: Mapped[str | None]
+   - start_time: Mapped[datetime]
+   - end_time: Mapped[datetime | None]
+   - all_day: Mapped[bool] = False
+   - event_type: Mapped[str]  # training, meeting, routine, deadline, reminder, errand
+   - linked_task_id: Mapped[int | None] FK
+   - linked_routine_id: Mapped[int | None] FK
+   - ical_uid: Mapped[str] = mapped_column(unique=True)
+   - reminder_minutes_before: Mapped[int] = 30
+   - created_at: Mapped[datetime]
+
+9. BrainDump
+   - id: Mapped[int] PK
+   - user_id: Mapped[int] FK users, index
+   - raw_input: Mapped[str]
+   - processed: Mapped[bool] = False
+   - ai_interpretation: Mapped[str | None]
+   - linked_objective_id: Mapped[int | None] FK
+   - created_at: Mapped[datetime]
+
+10. Conversation
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - role: Mapped[str]  # user, assistant, system
+    - content: Mapped[str]
+    - tool_calls: Mapped[dict | None] = mapped_column(JSON)
+    - tokens_used: Mapped[int | None]
+    - created_at: Mapped[datetime] server_default
+    - session_date: Mapped[date] index
+
+11. DailyBrief (Phase 2 Tabelle, jetzt erstellen)
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - brief_date: Mapped[date]
+    - priorities: Mapped[dict] = mapped_column(JSON, default=list)
+    - routines_snapshot: Mapped[dict] = mapped_column(JSON, default=list)
+    - calendar_snapshot: Mapped[dict] = mapped_column(JSON, default=list)
+    - warnings: Mapped[dict] = mapped_column(JSON, default=list)
+    - user_adjusted: Mapped[bool] = False
+    - adjusted_priorities: Mapped[dict | None] = mapped_column(JSON)
+    - brief_sent_at: Mapped[datetime | None]
+    - review_sent_at: Mapped[datetime | None]
+    - day_score: Mapped[int | None]
+    - day_notes: Mapped[str | None]
+    - created_at: Mapped[datetime]
+    - __table_args__ = (UniqueConstraint('user_id', 'brief_date'),)
+
+12. ScheduledReminder (Phase 2 Tabelle, jetzt erstellen)
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - reminder_type: Mapped[str]  
+      # water, routine, task_nudge, task_deadline, calendar_prep,
+      # streak_warning, progress_nudge, shopping, next_action, custom
+    - message: Mapped[str]
+    - scheduled_for: Mapped[datetime] index
+    - repeat_rule: Mapped[str | None]
+      # "daily:09:00,13:00,17:00" or "weekly:mon:09:00" or null for one-time
+    - linked_key_result_id: Mapped[int | None] FK
+    - linked_task_id: Mapped[int | None] FK
+    - linked_routine_id: Mapped[int | None] FK
+    - status: Mapped[str] = "pending"  # pending, sent, cancelled, snoozed
+    - sent_at: Mapped[datetime | None]
+    - auto_generated: Mapped[bool] = True
+    - created_at: Mapped[datetime]
+
+13. WeeklyReflection (Phase 3 Tabelle, jetzt erstellen)
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - week_start: Mapped[date]
+    - week_number: Mapped[int]
+    - year: Mapped[int]
+    - status: Mapped[str] = "pending"  # pending, in_progress, completed, skipped
+    - current_question: Mapped[int] = 0
+    - stats_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    - biggest_win: Mapped[str | None]
+    - biggest_blocker: Mapped[str | None]
+    - key_learning: Mapped[str | None]
+    - raw_answers: Mapped[dict] = mapped_column(JSON, default=dict)
+    - priorities_next_week: Mapped[dict | None] = mapped_column(JSON)
+    - created_at, updated_at
+    - __table_args__ = (UniqueConstraint('user_id', 'week_start'),)
+
+14. WeeklyPriority (Phase 3 Tabelle, jetzt erstellen)
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - week_start: Mapped[date]
+    - priority_rank: Mapped[int]  # 1, 2, 3
+    - title: Mapped[str]
+    - linked_objective_id: Mapped[int | None] FK
+    - linked_key_result_id: Mapped[int | None] FK
+    - linked_task_id: Mapped[int | None] FK
+    - status: Mapped[str] = "active"  # active, completed, carried_over
+    - created_at, updated_at
+
+15. UserInsight (Phase 3 Tabelle, jetzt erstellen)
+    - id: Mapped[int] PK
+    - user_id: Mapped[int] FK users, index
+    - insight_type: Mapped[str]
+      # productivity_pattern, habit, blocker, strength, preference
+    - title: Mapped[str]
+    - description: Mapped[str]
+    - data_basis: Mapped[dict | None] = mapped_column(JSON)
+    - active: Mapped[bool] = True
+    - source: Mapped[str]  # reflection, auto_detected, user_stated
+    - created_at, updated_at
+
+ALLE Models brauchen proper __repr__ und relationships.
+
+══════════════════════════════════════════════
+CONNECTION (connection.py)
+══════════════════════════════════════════════
+
+- create_async_engine with config.database_url
+- async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+- async context manager: get_session() → yields AsyncSession
+- async def init_db(): async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
+
+══════════════════════════════════════════════
+MAIN (main.py)
+══════════════════════════════════════════════
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await init_db()
+    await set_telegram_webhook()
+    logger.info("Personal OS started")
+    yield
+    # Shutdown
+    logger.info("Personal OS stopped")
+
+app = FastAPI(title="Personal OS", lifespan=lifespan)
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    asyncio.create_task(process_update(data))
+    return {"ok": True}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": "0.1.0"}
+
+app.include_router(api_router, prefix="/api")
+app.include_router(ical_router, prefix="/cal")
+
+async def set_telegram_webhook():
+    url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json={"url": settings.TELEGRAM_WEBHOOK_URL})
+        logger.info(f"Webhook set: {resp.json()}")
+
+══════════════════════════════════════════════
+TELEGRAM HANDLER (telegram/handler.py)
+══════════════════════════════════════════════
+
+async def process_update(update_data: dict):
+    try:
+        # 1. Parse update
+        message = extract_message(update_data)
+        if not message:
+            return
+        
+        telegram_id = message["from"]["id"]
+        username = message["from"].get("username")
+        first_name = message["from"].get("first_name")
+        
+        # 2. Check for commands first
+        if message.get("text", "").startswith("/"):
+            await handle_command(telegram_id, message["text"])
+            return
+        
+        # 3. Get or create user
+        async with get_session() as session:
+            user = await get_or_create_user(
+                session, telegram_id, username, first_name
+            )
+            
+            # 4. Determine input type
+            input_text = None
+            source = "text"
+            
+            if "text" in message:
+                input_text = message["text"]
+            elif "photo" in message:
+                input_text = message.get("caption", "[Foto gesendet]")
+                source = "image"
+                # Phase 2: Vision API
+            elif "voice" in message:
+                input_text = "[Sprachnachricht – Voice-to-Text kommt in Phase 2]"
+                source = "voice"
+            
+            if not input_text:
+                return
+            
+            # 5. Save user message
+            await save_conversation(
+                session, user.id, "user", input_text,
+                session_date=date.today()
+            )
+            
+            # 6. Build context
+            context = await build_context(session, user.id)
+            
+            # 7. Get conversation history (last 10)
+            history = await get_recent_conversations(
+                session, user.id, limit=10
+            )
+            
+            # 8. Send to Haiku
+            ai_client = get_ai_client()
+            result = await ai_client.process_message(
+                user_message=input_text,
+                context=context,
+                conversation_history=history,
+                user_id=user.id,
+                session=session
+            )
+            
+            # 9. Send response to user
+            if result["text"]:
+                await send_message(
+                    telegram_id, result["text"]
+                )
+            
+            # 10. Save assistant response
+            await save_conversation(
+                session, user.id, "assistant", 
+                result["text"],
+                tool_calls=result.get("tool_calls"),
+                tokens_used=result.get("tokens_used"),
+                session_date=date.today()
+            )
+            
+            await session.commit()
+    
+    except Exception as e:
+        logger.error(f"Error processing update: {e}", exc_info=True)
+        try:
+            await send_message(
+                telegram_id,
+                "⚠️ Kurze Störung. Versuch es gleich nochmal."
+            )
+        except:
+            pass
+
+def extract_message(update_data: dict) -> dict | None:
+    """Extract message from update, handle both 
+    message and edited_message."""
+    return update_data.get("message") or update_data.get("edited_message")
+
+async def get_or_create_user(session, telegram_id, username, first_name):
+    """Get existing user or create new one with default settings."""
+    import uuid
+    result = await session.execute(
+        select(User).where(User.telegram_id == telegram_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        user = User(
+            telegram_id=telegram_id,
+            telegram_username=username,
+            first_name=first_name,
+            settings={
+                "priorities_enabled": True,
+                "review_enabled": True,
+                "proactive_enabled": True,
+                "reflection_enabled": True,
+                "morning_brief_time": "06:30",
+                "evening_review_time": "21:00",
+                "weekly_reflection_day": "sunday",
+                "weekly_reflection_time": "19:00",
+                "shopping_reminder_day": "saturday",
+                "shopping_reminder_time": "10:00",
+                "ical_token": str(uuid.uuid4())
+            }
+        )
+        session.add(user)
+        await session.flush()
+        logger.info(f"New user created: {telegram_id}")
+    return user
+
+══════════════════════════════════════════════
+TELEGRAM COMMANDS (telegram/commands.py)
+══════════════════════════════════════════════
+
+Handle slash commands:
+
+/start → Welcome message explaining the bot
+/help → List of things the bot understands
+/settings → Show all toggles and their status
+/toggle priorities → Toggle priorities on/off
+/toggle review → Toggle evening review on/off
+/toggle proactive → Toggle proactive reminders on/off
+/toggle reflection → Toggle weekly reflection on/off
+/times → Show all configured times
+/times morning HH:MM → Set morning brief time
+/times evening HH:MM → Set evening review time
+/status → Quick overview: active OKRs, open tasks, streaks
+/shopping → Show current shopping list
+/ical → Show iCal feed URL
+
+Each command updates user.settings JSON and confirms.
+
+══════════════════════════════════════════════
+TELEGRAM SENDER (telegram/sender.py)
+══════════════════════════════════════════════
+
+async def send_message(chat_id: int, text: str, 
+                       parse_mode: str = "Markdown"):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    # Split long messages (Telegram limit 4096 chars)
+    chunks = split_message(text, 4096)
+    async with httpx.AsyncClient() as client:
+        for chunk in chunks:
+            payload = {
+                "chat_id": chat_id,
+                "text": chunk,
+                "parse_mode": parse_mode
+            }
+            resp = await client.post(url, json=payload)
+            if resp.status_code != 200:
+                # Retry without parse_mode (markdown might be broken)
+                payload["parse_mode"] = None
+                await client.post(url, json=payload)
+
+def split_message(text: str, max_length: int) -> list[str]:
+    """Split message at newlines, keeping under max_length."""
+
+══════════════════════════════════════════════
+TELEGRAM FORMATTING (telegram/formatting.py)
+══════════════════════════════════════════════
+
+def format_okr_tree(objectives: list) -> str:
+    """Format OKR tree with progress bars."""
+    # 🎯 Gesünder leben
+    #  ├── 💧 3L Wasser (████░░ 67%)
+    #  └── 💪 4x Training (██░░░░ 50%)
+
+def format_task_list(tasks: list) -> str:
+    """Format prioritized task list."""
+    # 1. [🔴] Testimonials sammeln (fällig morgen)
+    # 2. [🟡] LinkedIn Post
+
+def format_routine_checklist(routines: list, completions: list) -> str:
+    """Format routines with completion status."""
+    # ✅ Supplements
+    # ☐ 3L Wasser
+    # ☐ Journaling
+
+def format_progress_bar(current: float, target: float, width: int = 6) -> str:
+    """Create text progress bar: ████░░ 67%"""
+
+def escape_md(text: str) -> str:
+    """Escape Telegram Markdown special chars."""
+
+══════════════════════════════════════════════
+AI CLIENT (ai/client.py)
+══════════════════════════════════════════════
+
+class AIClient:
+    def __init__(self):
+        self.client = anthropic.Anthropic(
+            api_key=settings.ANTHROPIC_API_KEY
+        )
+    
+    async def process_message(
+        self,
+        user_message: str,
+        context: str,
+        conversation_history: list[dict],
+        user_id: int,
+        session: AsyncSession
+    ) -> dict:
+        """
+        Send message to Haiku, handle tool call loop.
+        Returns {"text": str, "tool_calls": list, "tokens_used": int}
+        """
+        
+        system_prompt = SYSTEM_PROMPT.format(context=context)
+        
+        # Build messages from conversation history
+        messages = []
+        for conv in conversation_history:
+            messages.append({
+                "role": conv["role"],
+                "content": conv["content"]
+            })
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        all_tool_calls = []
+        total_tokens = 0
+        max_iterations = 5
+        
+        for iteration in range(max_iterations):
+            # Call Haiku
+            response = self.client.messages.create(
+                model="claude-haiku-4-20250514",
+                max_tokens=1024,
+                temperature=0.3,
+                system=system_prompt,
+                messages=messages,
+                tools=TOOLS
+            )
+            
+            total_tokens += response.usage.input_tokens + response.usage.output_tokens
+            
+            # Check if there are tool calls
+            tool_use_blocks = [
+                b for b in response.content 
+                if b.type == "tool_use"
+            ]
+            text_blocks = [
+                b.text for b in response.content 
+                if b.type == "text"
+            ]
+            
+            if not tool_use_blocks:
+                # No more tool calls, we're done
+                return {
+                    "text": "\n".join(text_blocks),
+                    "tool_calls": all_tool_calls,
+                    "tokens_used": total_tokens
+                }
+            
+            # Execute tool calls
+            tool_results = []
+            for tool_block in tool_use_blocks:
+                result = await execute_tool(
+                    tool_block.name,
+                    tool_block.input,
+                    user_id,
+                    session
+                )
+                all_tool_calls.append({
+                    "name": tool_block.name,
+                    "input": tool_block.input,
+                    "result": result
+                })
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_block.id,
+                    "content": json.dumps(result)
+                })
+            
+            # Add assistant response and tool results to messages
+            messages.append({
+                "role": "assistant",
+                "content": response.content
+            })
+            messages.append({
+                "role": "user",
+                "content": tool_results
+            })
+        
+        # Max iterations reached
+        final_text = "\n".join(text_blocks) if text_blocks else "Verarbeitung abgeschlossen."
+        return {
+            "text": final_text,
+            "tool_calls": all_tool_calls,
+            "tokens_used": total_tokens
+        }
+
+# Singleton
+_ai_client = None
+def get_ai_client() -> AIClient:
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = AIClient()
+    return _ai_client
+
+══════════════════════════════════════════════
+CONTEXT BUILDER (ai/context.py)
+══════════════════════════════════════════════
+
+async def build_context(session: AsyncSession, user_id: int) -> str:
+    """Build compact context string for Haiku.
+    Max ~1500 tokens. Only the most relevant info."""
+    
+    parts = []
+    
+    # 1. Active Objectives with Key Results
+    objectives = await get_active_objectives_with_kr(session, user_id)
+    if objectives:
+        parts.append("AKTIVE ZIELE:")
+        for obj in objectives:
+            parts.append(f"  [{obj.category.upper()}] {obj.title} (ID:{obj.id})")
+            for kr in obj.key_results:
+                progress = ""
+                if kr.target_value:
+                    pct = (kr.current_value / kr.target_value * 100) if kr.target_value else 0
+                    progress = f" → {kr.current_value}/{kr.target_value} {kr.unit or ''} ({pct:.0f}%)"
+                parts.append(f"    - KR(ID:{kr.id}): {kr.title}{progress} [{kr.frequency}]")
+    
+    # 2. Open Tasks (top 5 by priority)
+    tasks = await get_prioritized_tasks(session, user_id, limit=5)
+    if tasks:
+        parts.append("\nOFFENE TASKS:")
+        for t in tasks:
+            due = f" (fällig: {t.due_date})" if t.due_date else ""
+            cat = f" [{t.category}]" if t.category != "general" else ""
+            parts.append(f"  Task(ID:{t.id}) [P{t.priority}]{cat}: {t.title}{due}")
+    
+    # 3. Shopping items (open)
+    shopping = await get_open_shopping_items(session, user_id)
+    if shopping:
+        parts.append(f"\nEINKAUFSLISTE ({len(shopping)} Items):")
+        for s in shopping:
+            parts.append(f"  ☐ {s.title}")
+    
+    # 4. Today's routines
+    routines = await get_todays_routines_with_status(session, user_id)
+    if routines:
+        parts.append("\nROUTINEN HEUTE:")
+        for r, done in routines:
+            status = "✅" if done else "☐"
+            parts.append(f"  {status} {r.title} (ID:{r.id})")
+    
+    # 5. Today's calendar events
+    events = await get_todays_events(session, user_id)
+    if events:
+        parts.append("\nTERMINE HEUTE:")
+        for e in events:
+            time_str = e.start_time.strftime("%H:%M")
+            parts.append(f"  {time_str} {e.title}")
+    
+    # 6. Recent logs (last 5)
+    logs = await get_recent_logs(session, user_id, limit=5)
+    if logs:
+        parts.append("\nLETZTE AKTIVITÄT:")
+        for log in logs:
+            time_str = log.created_at.strftime("%d.%m %H:%M")
+            parts.append(f"  {time_str}: [{log.log_type}] {summarize_log(log)}")
+    
+    # 7. Mood trend
+    moods = await get_mood_trend(session, user_id, days=7)
+    if moods:
+        parts.append(f"\nMOOD (7 Tage): {', '.join(str(m) for m in moods)}")
+    
+    # 8. User settings/toggles
+    user = await get_user(session, user_id)
+    s = user.settings
+    parts.append(f"\nSETTINGS: Priorities={'AN' if s.get('priorities_enabled') else 'AUS'}, "
+                 f"Review={'AN' if s.get('review_enabled') else 'AUS'}, "
+                 f"Proaktiv={'AN' if s.get('proactive_enabled') else 'AUS'}")
+    
+    return "\n".join(parts)
+
+def summarize_log(log) -> str:
+    """Create one-line summary of a log entry."""
+    data = log.data or {}
+    if log.log_type == "workout":
+        return f"{data.get('exercise')} {data.get('weight')}kg×{data.get('reps')}×{data.get('sets', 1)}"
+    elif log.log_type == "water":
+        return f"{data.get('amount')}L Wasser"
+    elif log.log_type == "mood":
+        return f"Mood {data.get('score')}/10"
+    elif log.log_type == "progress":
+        return data.get("description", str(data))
+    else:
+        return str(data)[:50]
+
+══════════════════════════════════════════════
+TOOLS DEFINITION (ai/tools.py)
+══════════════════════════════════════════════
+
+TOOLS = [
+    {
+        "name": "create_objective",
+        "description": "Erstellt ein neues Ziel/Objective. Nutze dies wenn der User ein neues übergeordnetes Ziel beschreibt wie 'Ich will gesünder leben' oder 'Business aufbauen'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Titel des Ziels"},
+                "description": {"type": "string", "description": "Beschreibung"},
+                "category": {
+                    "type": "string",
+                    "enum": ["health", "business", "personal", "fitness", "finance", "learning"],
+                    "description": "Kategorie"
+                },
+                "target_date": {"type": "string", "description": "Zieldatum ISO format YYYY-MM-DD"}
+            },
+            "required": ["title", "category"]
+        }
+    },
+    {
+        "name": "create_key_result",
+        "description": "Erstellt ein messbares Key Result für ein Objective. Beispiel: '3L Wasser täglich' oder '4x Training pro Woche'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "objective_id": {"type": "integer", "description": "ID des zugehörigen Objectives"},
+                "title": {"type": "string"},
+                "metric_type": {
+                    "type": "string",
+                    "enum": ["percentage", "number", "boolean", "streak", "checklist"]
+                },
+                "target_value": {"type": "number"},
+                "unit": {"type": "string"},
+                "frequency": {
+                    "type": "string",
+                    "enum": ["daily", "weekly", "monthly", "once"]
+                }
+            },
+            "required": ["objective_id", "title", "metric_type", "frequency"]
+        }
+    },
+    {
+        "name": "create_task",
+        "description": "Erstellt eine konkrete Aufgabe. Kann zu einem Key Result gehören oder standalone sein. Für Einkäufe category='shopping' setzen.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "key_result_id": {"type": "integer"},
+                "priority": {"type": "integer", "minimum": 1, "maximum": 5, "description": "1=höchste, 5=niedrigste"},
+                "category": {
+                    "type": "string",
+                    "enum": ["general", "shopping", "errand", "work", "personal"],
+                    "description": "Kategorie. 'shopping' für Einkaufsitems."
+                },
+                "due_date": {"type": "string", "description": "YYYY-MM-DD"}
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "complete_task",
+        "description": "Markiert einen Task als erledigt. Nutze wenn User sagt etwas ist 'fertig', 'done', 'erledigt'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "integer"}
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "update_task_status",
+        "description": "Ändert den Status eines Tasks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "integer"},
+                "status": {"type": "string", "enum": ["todo", "in_progress", "done", "cancelled"]}
+            },
+            "required": ["task_id", "status"]
+        }
+    },
+    {
+        "name": "log_workout",
+        "description": "Loggt eine Trainingsübung. Nutze wenn User Übung mit Gewicht/Reps meldet.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise": {"type": "string", "description": "Name der Übung"},
+                "weight": {"type": "number", "description": "Gewicht in kg"},
+                "reps": {"type": "integer", "description": "Wiederholungen"},
+                "sets": {"type": "integer", "description": "Sätze", "default": 1},
+                "notes": {"type": "string"},
+                "key_result_id": {"type": "integer", "description": "Zugehöriges Key Result für Training"}
+            },
+            "required": ["exercise"]
+        }
+    },
+    {
+        "name": "log_water",
+        "description": "Loggt Wasseraufnahme. Nutze wenn User Wasser/Trinken meldet.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount_liters": {"type": "number", "description": "Menge in Litern"}
+            },
+            "required": ["amount_liters"]
+        }
+    },
+    {
+        "name": "log_mood",
+        "description": "Loggt die Stimmung des Users.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer", "minimum": 1, "maximum": 10},
+                "notes": {"type": "string"}
+            },
+            "required": ["score"]
+        }
+    },
+    {
+        "name": "log_progress",
+        "description": "Loggt Fortschritt für ein Key Result. Aktualisiert den current_value.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "key_result_id": {"type": "integer"},
+                "value": {"type": "number", "description": "Neuer Wert oder Inkrement"},
+                "increment": {"type": "boolean", "description": "True = value wird addiert, False = value ersetzt", "default": true},
+                "notes": {"type": "string"}
+            },
+            "required": ["key_result_id", "value"]
+        }
+    },
+    {
+        "name": "create_routine",
+        "description": "Erstellt eine wiederkehrende Routine.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "frequency_human": {"type": "string", "description": "z.B. 'Täglich', 'Jeden Dienstag', '3x pro Woche'"},
+                "schedule_cron": {"type": "string", "description": "Cron expression, z.B. '0 9 * * 2' für Dienstag 9 Uhr"},
+                "linked_key_result_id": {"type": "integer"}
+            },
+            "required": ["title", "frequency_human"]
+        }
+    },
+    {
+        "name": "complete_routine",
+        "description": "Markiert eine Routine als heute erledigt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "routine_id": {"type": "integer"},
+                "notes": {"type": "string"}
+            },
+            "required": ["routine_id"]
+        }
+    },
+    {
+        "name": "create_calendar_event",
+        "description": "Erstellt einen Kalendereintrag.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "start_time": {"type": "string", "description": "ISO datetime YYYY-MM-DDTHH:MM"},
+                "end_time": {"type": "string", "description": "ISO datetime"},
+                "all_day": {"type": "boolean", "default": false},
+                "event_type": {
+                    "type": "string",
+                    "enum": ["training", "meeting", "routine", "deadline", "reminder", "errand"]
+                },
+                "linked_task_id": {"type": "integer"}
+            },
+            "required": ["title", "start_time"]
+        }
+    },
+    {
+        "name": "store_brain_dump",
+        "description": "Speichert einen unstrukturierten Gedanken/Idee. Nutze wenn Input nicht klar in eine Kategorie passt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string"}
+            },
+            "required": ["content"]
+        }
+    },
+    {
+        "name": "get_todays_priorities",
+        "description": "Holt die Top 3 Prioritäten für heute.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "get_active_objectives",
+        "description": "Zeigt alle aktiven Ziele mit Key Results und Fortschritt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "get_progress_report",
+        "description": "Detaillierter Fortschrittsbericht für ein Objective.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "objective_id": {"type": "integer"}
+            },
+            "required": ["objective_id"]
+        }
+    },
+    {
+        "name": "search_logs",
+        "description": "Sucht in vergangenen Logs. Nutze wenn User nach Historie fragt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Suchbegriff"},
+                "log_type": {"type": "string", "enum": ["workout", "water", "food", "mood", "progress", "note", "general"]},
+                "days_back": {"type": "integer", "default": 30}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_shopping_list",
+        "description": "Zeigt die aktuelle Einkaufsliste.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "complete_shopping",
+        "description": "Markiert alle oder bestimmte Einkaufsitems als erledigt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Liste der Task IDs. Leer = alle shopping items."
+                }
+            }
+        }
+    },
+    {
+        "name": "update_user_settings",
+        "description": "Ändert User-Einstellungen/Toggles.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "setting_key": {
+                    "type": "string",
+                    "enum": ["priorities_enabled", "review_enabled", "proactive_enabled", "reflection_enabled",
+                             "morning_brief_time", "evening_review_time"]
+                },
+                "setting_value": {
+                    "type": "string",
+                    "description": "Neuer Wert. Für Toggles: 'true' oder 'false'. Für Zeiten: 'HH:MM'."
+                }
+            },
+            "required": ["setting_key", "setting_value"]
+        }
+    }
+]
+
+══════════════════════════════════════════════
+TOOL EXECUTOR (ai/tool_executor.py)
+══════════════════════════════════════════════
+
+async def execute_tool(
+    tool_name: str, 
+    tool_input: dict, 
+    user_id: int, 
+    session: AsyncSession
+) -> dict:
+    """Execute a tool call and return the result."""
+    
+    try:
+        match tool_name:
+            case "create_objective":
+                obj = await create_objective(
+                    session, user_id, **tool_input
+                )
+                return {"success": True, "objective_id": obj.id, 
+                        "message": f"Objective '{obj.title}' erstellt"}
+            
+            case "create_key_result":
+                kr = await create_key_result(
+                    session, user_id=user_id, **tool_input
+                )
+                return {"success": True, "key_result_id": kr.id,
+                        "message": f"Key Result '{kr.title}' erstellt"}
+            
+            case "create_task":
+                task = await create_task(
+                    session, user_id, **tool_input
+                )
+                return {"success": True, "task_id": task.id,
+                        "message": f"Task '{task.title}' erstellt"}
+            
+            case "complete_task":
+                task = await complete_task(
+                    session, tool_input["task_id"]
+                )
+                # Find next task in same key result
+                next_task = None
+                if task.key_result_id:
+                    next_task = await get_next_task_in_kr(
+                        session, task.key_result_id
+                    )
+                return {
+                    "success": True,
+                    "completed": task.title,
+                    "next_task": {
+                        "id": next_task.id, 
+                        "title": next_task.title
+                    } if next_task else None
+                }
+            
+            # ... implement ALL tools similarly
+            
+            case _:
+                return {"success": False, 
+                        "error": f"Unknown tool: {tool_name}"}
+    
+    except Exception as e:
+        logger.error(f"Tool execution error: {tool_name}: {e}")
+        return {"success": False, "error": str(e)}
+
+Implement EVERY tool. No stubs. Each tool calls the 
+corresponding function in core/.
+
+══════════════════════════════════════════════
+CORE MODULES (alle in bot/core/)
+══════════════════════════════════════════════
+
+objectives.py:
+- async def create_objective(session, user_id, title, category, description=None, target_date=None) → Objective
+- async def get_active_objectives(session, user_id) → list[Objective]
+- async def get_active_objectives_with_kr(session, user_id) → list[Objective]  (eager load key_results)
+- async def get_objective(session, obj_id) → Objective
+- async def update_objective(session, obj_id, **kwargs) → Objective
+- async def complete_objective(session, obj_id) → Objective
+
+key_results.py:
+- async def create_key_result(session, user_id, objective_id, title, metric_type, frequency, target_value=None, unit=None) → KeyResult
+- async def get_key_results(session, objective_id) → list[KeyResult]
+- async def update_progress(session, kr_id, value, increment=True) → KeyResult
+  # If increment=True: current_value += value
+  # If increment=False: current_value = value
+  # Check if target reached → auto-complete
+- async def get_key_result(session, kr_id) → KeyResult
+
+tasks.py:
+- async def create_task(session, user_id, title, description=None, key_result_id=None, priority=3, category="general", due_date=None) → Task
+- async def complete_task(session, task_id) → Task
+  # Sets status="done", completed_at=now()
+  # If all tasks in a KR are done → notify
+- async def get_open_tasks(session, user_id) → list[Task]
+- async def get_prioritized_tasks(session, user_id, limit=5) → list[Task]
+  # ORDER BY priority ASC, due_date ASC NULLS LAST, created_at ASC
+- async def get_open_shopping_items(session, user_id) → list[Task]
+  # WHERE category='shopping' AND status='todo'
+- async def get_next_task_in_kr(session, kr_id) → Task | None
+  # Next todo task in same key result
+- async def update_task(session, task_id, **kwargs) → Task
+
+logs.py:
+- async def create_log(session, user_id, log_type, data, key_result_id=None, task_id=None, source="text", raw_input=None) → Log
+- async def get_recent_logs(session, user_id, limit=10) → list[Log]
+- async def get_logs_by_type(session, user_id, log_type, days=30) → list[Log]
+- async def get_workout_history(session, user_id, exercise, limit=10) → list[Log]
+  # For progression detection
+- async def get_mood_trend(session, user_id, days=7) → list[int]
+- async def search_logs(session, user_id, query, log_type=None, days_back=30) → list[Log]
+  # ILIKE search on data::text and raw_input
+
+routines.py:
+- async def create_routine(session, user_id, title, frequency_human, schedule_cron=None, linked_key_result_id=None) → Routine
+- async def get_active_routines(session, user_id) → list[Routine]
+- async def get_todays_routines_with_status(session, user_id) → list[tuple[Routine, bool]]
+  # Returns list of (routine, is_done_today)
+  # Determine if routine is due today based on frequency_human:
+  # "Täglich" → always
+  # "Jeden Montag" → check weekday
+  # "3x pro Woche" → always show (tracking)
+  # Use schedule_cron if available, else parse frequency_human
+- async def complete_routine(session, routine_id, user_id, notes=None) → RoutineCompletion
+- async def is_done_today(session, routine_id) → bool
+
+calendar_events.py:
+- async def create_event(session, user_id, title, start_time, end_time=None, all_day=False, event_type="meeting", linked_task_id=None, linked_routine_id=None) → CalendarEvent
+  # Auto-generate ical_uid using uuid4
+- async def get_todays_events(session, user_id) → list[CalendarEvent]
+- async def get_upcoming_events(session, user_id, days=7) → list[CalendarEvent]
+- async def generate_ical(session, user_id) → str
+  # Generate complete iCal feed with all events
+  # Include routine events as recurring
+  # Include task deadlines as all-day events
+
+brain_dumps.py:
+- async def create_brain_dump(session, user_id, raw_input) → BrainDump
+- async def get_unprocessed(session, user_id) → list[BrainDump]
+- async def mark_processed(session, dump_id, interpretation=None, objective_id=None)
+
+conversations.py:
+- async def save_conversation(session, user_id, role, content, tool_calls=None, tokens_used=None, session_date=None) → Conversation
+- async def get_recent_conversations(session, user_id, limit=10) → list[dict]
+  # Returns [{"role": "user", "content": "..."}, ...]
+  # Only from today's session_date for relevance
+  # If less than 3 today, include yesterday too
+
+user_settings.py:
+- async def get_user(session, user_id) → User
+- async def get_user_by_telegram(session, telegram_id) → User
+- async def update_setting(session, user_id, key, value) → User
+  # Updates user.settings JSON
+- async def toggle_setting(session, user_id, key) → tuple[str, bool]
+  # Toggle boolean setting, returns (key, new_value)
+
+shopping.py:
+- async def add_shopping_item(session, user_id, title) → Task
+  # Creates task with category="shopping"
+- async def get_shopping_list(session, user_id) → list[Task]
+  # Open shopping tasks
+- async def complete_shopping(session, user_id, item_ids=None)
+  # If item_ids: complete those
+  # If None: complete all shopping items
+- async def get_shopping_summary(session, user_id) → str
+  # Formatted shopping list string
+
+PHASE 2 STUBS (files exist, functions defined with 
+docstrings and "raise NotImplementedError('Phase 2')"):
+
+priorities.py:
+- async def calculate_daily_priorities(session, user_id) → list[dict]
+  """Berechnet Top 3 Prioritäten basierend auf Deadlines, OKR-Gewicht, Streaks, Rückstand und Weekly Priorities."""
+
+daily_briefs.py:
+- async def create_daily_brief(session, user_id) → DailyBrief
+  """Erstellt den Tagesplan mit Prioritäten, Routinen, Events, Warnungen."""
+- async def get_todays_brief(session, user_id) → DailyBrief | None
+- async def update_brief_priorities(session, brief_id, priorities)
+- async def save_day_score(session, brief_id, score, notes)
+
+reminders.py:
+- async def create_auto_reminders(session, user_id, source_type, source_id)
+  """Erstellt automatische Reminder wenn ein Task/Routine/KR erstellt wird."""
+- async def get_pending_reminders(session, user_id, before: datetime) → list[ScheduledReminder]
+- async def mark_sent(session, reminder_id)
+- async def cancel_reminders(session, source_type, source_id)
+
+PHASE 3 STUBS:
+
+weekly_reflections.py:
+- async def start_reflection(session, user_id) → WeeklyReflection
+- async def save_answer(session, reflection_id, question_num, answer)
+- async def get_active_reflection(session, user_id) → WeeklyReflection | None
+- async def complete_reflection(session, reflection_id)
+- async def get_week_stats(session, user_id) → dict
+
+weekly_priorities.py:
+- async def set_priorities(session, user_id, priorities) → list[WeeklyPriority]
+- async def get_current_priorities(session, user_id) → list[WeeklyPriority]
+- async def complete_priority(session, priority_id)
+
+insights.py:
+- async def create_insight(session, user_id, insight_type, title, description, source) → UserInsight
+- async def get_active_insights(session, user_id) → list[UserInsight]
+- async def detect_patterns(session, user_id) → list[dict]
+
+══════════════════════════════════════════════
+SCHEDULER STUBS (jobs/)
+══════════════════════════════════════════════
+
+scheduler.py:
+"""Phase 2: APScheduler setup with minute-by-minute check."""
+# async def start_scheduler():
+# async def stop_scheduler():
+# async def check_all_jobs():
+#   """Runs every minute. Checks each user for due briefs/reviews/reminders."""
+
+morning_brief.py:
+"""Phase 2: Morning brief generation and sending."""
+# async def send_morning_brief(user_id: int):
+
+evening_review.py:
+"""Phase 2: Evening review generation and sending."""
+# async def send_evening_review(user_id: int):
+
+reminder_engine.py:
+"""Phase 2: Process and send due reminders."""
+# async def process_reminders():
+# async def generate_water_reminders(user_id, kr_id):
+# async def generate_task_reminders(user_id, task_id):
+# async def generate_routine_reminders(user_id, routine_id):
+
+weekly_reflection_trigger.py:
+"""Phase 3: Trigger weekly reflection invitation."""
+# async def check_and_trigger_reflections():
+
+══════════════════════════════════════════════
+API ROUTES (api/routes.py)
+══════════════════════════════════════════════
+
+Vorbereitet für Phase 4 Dashboard:
+
+api_router = APIRouter()
+
+@api_router.get("/health")
+async def api_health():
+    return {"status": "ok"}
+
+# All endpoints defined but return 
+# {"message": "Coming in Phase 4"}:
+# GET /objectives
+# GET /objectives/{id}
+# GET /tasks  
+# GET /logs
+# GET /routines
+# GET /calendar
+# GET /brief/today
+# GET /reflections
+# GET /insights
+# GET /stats/week
+# GET /shopping
+
+══════════════════════════════════════════════
+iCAL FEED (api/ical.py)
+══════════════════════════════════════════════
+
+ical_router = APIRouter()
+
+@ical_router.get("/{user_token}.ics")
+async def ical_feed(user_token: str):
+    """Serve iCal feed for a user.
+    URL can be subscribed in Google/Apple Calendar."""
+    
+    async with get_session() as session:
+        # Find user by ical_token in settings
+        user = await get_user_by_ical_token(session, user_token)
+        if not user:
+            raise HTTPException(404)
+        
+        ical_string = await generate_ical(session, user.id)
+        
+        return Response(
+            content=ical_string,
+            media_type="text/calendar",
+            headers={
+                "Content-Disposition": f"attachment; filename=personal-os.ics"
+            }
+        )
+
+══════════════════════════════════════════════
+SYSTEM PROMPT (ai/prompts.py)
+══════════════════════════════════════════════
+
+SYSTEM_PROMPT = """Du bist der persönliche COO (Chief Operating Officer) des Users. Dein Name ist "OS".
+
+DEINE ROLLE:
+- Du bist ein OPERATOR, kein Chatbot. Du HANDELST.
+- Jeder Input wird verarbeitet und eingeordnet.
+- Du denkst in OKR-Struktur: Objective → Key Result → Task → Log
+- Du erkennst automatisch was der Input ist:
+  * Neues Ziel/Wunsch → create_objective + schlage Key Results vor
+  * Fortschritt/Ergebnis → log_workout/log_water/log_progress
+  * Aufgabe → create_task (bei Einkäufen: category="shopping")
+  * Erledigung ("fertig", "done") → complete_task oder complete_routine
+  * Termin → create_calendar_event
+  * Routine → create_routine
+  * Gedanke/Idee → store_brain_dump + Vorschlag zur Einordnung
+  * Frage → Kontext-basiert antworten
+  * Stimmung → log_mood
+  * Einstellung → update_user_settings
+
+REGELN:
+1. IMMER Tools nutzen wenn eine Aktion möglich ist. Nie nur Text.
+2. Kurz und klar. Max 3-4 Sätze (außer Briefings).
+3. Emojis für Struktur: ✅ ☐ 🎯 💪 💧 📝 ⚠️ 📅 🛒 💡 🔴 🟡 🟢
+4. Bei Unklarheit: konkreten Vorschlag machen UND nachfragen.
+5. Progressionen erkennen und feiern (Gewichts-Steigerung etc.)
+6. Immer auf Deutsch antworten.
+7. Nach jeder Erledigung: NÄCHSTE AKTION vorschlagen.
+8. Wenn User Einkaufsartikel nennt → create_task mit category="shopping"
+9. IDs aus dem Kontext verwenden, nicht raten.
+10. Wenn kein passendes Objective existiert → erst eins erstellen.
+
+NEXT-ACTION PRINZIP:
+Nach jedem complete_task oder complete_routine:
+- Zeige was als nächstes kommt
+- Schlage einen Zeitblock vor
+- Halte den User in Bewegung
+Es darf nie ein Vakuum geben. Immer: "Und jetzt..."
+
+KONTEXT:
+{context}"""
+
+══════════════════════════════════════════════
+SEED DATA (scripts/seed_data.py)
+══════════════════════════════════════════════
+
+Erstelle ein asyncio Script das Testdaten anlegt:
+- 1 User (telegram_id aus .env oder 123456789)
+- Objective: "Gesünder leben" (health)
+  - KR: 3L Wasser täglich (number, 3.0, daily)
+  - KR: 4x Training/Woche (number, 4, weekly)
+- Objective: "Business aufbauen" (business)
+  - KR: Landingpage live (checklist, once)
+    - Task: Hero Section schreiben (P2)
+    - Task: Testimonials sammeln (P2)
+    - Task: CTA testen (P3)
+  - KR: 10 LinkedIn Posts/Monat (number, 10, monthly)
+- Routine: "Supplements" (Täglich)
+- Routine: "LinkedIn Post" (Jeden Dienstag)
+- Routine: "Meal Prep" (Jeden Sonntag)
+- CalendarEvent: Training morgen 18:00
+- CalendarEvent: Meeting übermorgen 14:00
+- Shopping: Milch, Eier, Proteinpulver
+- 1 BrainDump: "Podcast starten?"
+- 2 Logs: Workout + Water
+
+══════════════════════════════════════════════
+SETUP SCRIPT (scripts/setup.sh)
+══════════════════════════════════════════════
+
+#!/bin/bash
+set -e
+echo "🚀 Personal OS Setup"
+echo "===================="
+
+if [ ! -f .env ]; then
+    cp .env.example .env
+    echo "📝 .env erstellt. Bitte ausfüllen:"
+    echo "   TELEGRAM_BOT_TOKEN=..."
+    echo "   ANTHROPIC_API_KEY=..."
+    echo "   DB_PASSWORD=..."
+    echo "   TELEGRAM_WEBHOOK_URL=..."
+    echo ""
+    echo "Dann: docker-compose up -d"
+else
+    echo "✅ .env existiert bereits"
+    echo "Starte mit: docker-compose up -d"
+fi
+
+══════════════════════════════════════════════
+.ENV.EXAMPLE  
+══════════════════════════════════════════════
+
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_WEBHOOK_URL=https://your-domain.com/webhook/telegram
+ANTHROPIC_API_KEY=your-api-key
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=personal_os
+DB_USER=pos_user
+DB_PASSWORD=change-this-password
+APP_HOST=0.0.0.0
+APP_PORT=8000
+LOG_LEVEL=INFO
+
+══════════════════════════════════════════════
+FINAL CHECKLIST
+══════════════════════════════════════════════
+
+Stelle sicher dass:
+□ Alle Dateien vollständig implementiert sind (Phase 1)
+□ Phase 2+3 Dateien als Stubs mit Docstrings existieren
+□ ALLE 15 DB Tabellen in models.py erstellt werden
+□ ALLE 21 Tools in tools.py definiert sind
+□ ALLE Tools in tool_executor.py ausführbar sind
+□ Der Tool Call Loop in client.py funktioniert
+□ Der Context Builder alle relevanten Daten lädt
+□ Commands (/settings, /toggle, /status etc.) funktionieren
+□ iCal Feed funktioniert
+□ Seed Data Script funktioniert
+□ Docker Compose funktioniert
+□ Error Handling überall implementiert ist
+□ Logging konfiguriert ist
+□ Keine TODOs oder Placeholder im Phase 1 Code
+
+Erstelle ALLE Dateien. Vollständig. Funktionsfähig.
+
+Nach dem Build: So geht es weiter
+
+text
+
+
+PHASE 1 FERTIG → Du benutzt es 1 Woche
+
+Dann sagst du mir:
+├── Was funktioniert gut?
+├── Was nervt?
+├── Was fehlt am meisten?
+├── Welche Tool Calls macht Haiku falsch?
+
+Dann bauen wir PHASE 2 PROMPT:
+├── Reminder Engine aktivieren
+├── Morning Brief + Evening Review
+├── Proaktive Push-Nachrichten
+├── Priorisierungs-Engine
+└── Alles was dir in Woche 1 gefehlt hat
+
+Dann PHASE 3 PROMPT:
+├── Weekly Reflection aktivieren
+├── Insights System
+├── Pattern Detection
+└── Weekly Priorities
+
+Dann PHASE 4 PROMPT:
+├── Web Dashboard
+├── Telegram Login
+├── Visualisierungen
+└── Das ganze Package
