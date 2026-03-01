@@ -12,12 +12,12 @@ async def create_routine(
     session: AsyncSession,
     user_id: int,
     title: str,
-    schedule_cron: str,
     frequency_human: str,
+    schedule_cron: Optional[str] = None,
     linked_key_result_id: Optional[int] = None,
     description: Optional[str] = None,
 ) -> Routine:
-    """Create a new Routine."""
+    """Create a new Routine. schedule_cron is optional."""
     routine = Routine(
         user_id=user_id,
         title=title,
@@ -39,7 +39,6 @@ async def complete_routine(
     notes: Optional[str] = None,
 ) -> Optional[RoutineCompletion]:
     """Mark a routine as completed for today."""
-    # Check routine exists and belongs to user
     result = await session.execute(
         select(Routine).where(
             and_(Routine.id == routine_id, Routine.user_id == user_id)
@@ -53,7 +52,6 @@ async def complete_routine(
         routine_id=routine_id,
         user_id=user_id,
         completed_at=datetime.utcnow(),
-        logged_via="telegram",
         notes=notes,
     )
     session.add(completion)
@@ -68,7 +66,7 @@ async def get_active_routines(session: AsyncSession, user_id: int) -> list[Routi
             and_(Routine.user_id == user_id, Routine.status == "active")
         )
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 async def get_todays_completions(session: AsyncSession, user_id: int) -> set[int]:
@@ -83,3 +81,27 @@ async def get_todays_completions(session: AsyncSession, user_id: int) -> set[int
         )
     )
     return set(result.scalars().all())
+
+
+async def is_done_today(session: AsyncSession, routine_id: int) -> bool:
+    """Check if a routine was completed today."""
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    result = await session.execute(
+        select(RoutineCompletion).where(
+            and_(
+                RoutineCompletion.routine_id == routine_id,
+                RoutineCompletion.completed_at >= today_start,
+            )
+        ).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_todays_routines_with_status(
+    session: AsyncSession,
+    user_id: int,
+) -> list[tuple[Routine, bool]]:
+    """Return list of (routine, is_done_today) for all active routines."""
+    routines = await get_active_routines(session, user_id)
+    completed_ids = await get_todays_completions(session, user_id)
+    return [(r, r.id in completed_ids) for r in routines]

@@ -1,53 +1,31 @@
-"""Morning brief cron job — sends daily plan at 06:30."""
+"""Phase 2: Morning brief generation and sending.
+
+Sends personalized daily plan to each user at their configured morning_brief_time.
+Includes top 3 priorities, routine checklist, calendar events, and warnings.
+"""
 import logging
-from datetime import date, datetime
-
-from openai import AsyncOpenAI
-from sqlalchemy import select
-
-from bot.ai.context import build_context
-from bot.ai.prompts import MORNING_BRIEF_PROMPT
-from bot.config import settings
-from bot.core.priorities import get_todays_priorities
-from bot.database.connection import get_session
-from bot.database.models import User
-from bot.telegram.sender import send_message
 
 logger = logging.getLogger(__name__)
 
-openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-
 
 async def send_morning_brief() -> None:
-    """Send morning brief to all active users."""
-    logger.info("Running morning brief job")
-    async with get_session() as session:
-        result = await session.execute(select(User))
-        users = result.scalars().all()
+    """Send morning brief to all active users whose brief time has arrived.
 
-    for user in users:
-        try:
-            await _send_brief_to_user(user)
-        except Exception as e:
-            logger.exception("Morning brief failed for user %s: %s", user.id, e)
+    Phase 2: Iterates all active users, checks if morning_brief_time matches
+    current hour:minute, generates AI brief with priorities and context,
+    sends via Telegram.
+    """
+    raise NotImplementedError("Phase 2")
 
 
-async def _send_brief_to_user(user: User) -> None:
-    """Generate and send morning brief to a specific user."""
-    async with get_session() as session:
-        context = await build_context(session, user)
-        priorities = await get_todays_priorities(session, user.id)
+async def _generate_brief_for_user(user_id: int) -> str:
+    """Generate personalized morning brief text for a user.
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": MORNING_BRIEF_PROMPT},
-            {"role": "user", "content": f"Kontext:\n{context}\n\nPrioritäten:\n{priorities}"},
-        ],
-        max_tokens=600,
-        temperature=0.5,
-    )
-    brief = response.choices[0].message.content or ""
-    greeting = f"☀️ Guten Morgen!\n\n{brief}"
-    await send_message(user.telegram_id, greeting)
-    logger.info("Morning brief sent to user %s", user.id)
+    Phase 2: Uses GPT-4o-mini with user context to generate:
+    - Top 3 priorities with brief explanation
+    - Today's routines
+    - Calendar events
+    - Proactive warnings (overdue tasks, streak risks)
+    - Motivational nudge based on yesterday's performance
+    """
+    raise NotImplementedError("Phase 2")

@@ -1,12 +1,13 @@
-"""OpenAI function/tool definitions for the Personal OS COO."""
+"""OpenAI function/tool definitions — 21 tools for Personal OS."""
 from typing import Any
 
 TOOLS: list[dict[str, Any]] = [
+    # ─── OKR Tools ────────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "create_objective",
-            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze dies wenn der User ein neues großes Ziel nennt.",
+            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze dies wenn der User ein neues großes Ziel nennt wie 'Ich will gesünder leben' oder 'Business aufbauen'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -14,10 +15,10 @@ TOOLS: list[dict[str, Any]] = [
                     "description": {"type": "string", "description": "Optionale Beschreibung"},
                     "category": {
                         "type": "string",
-                        "enum": ["health", "business", "personal", "fitness", "finance"],
+                        "enum": ["health", "business", "personal", "fitness", "finance", "learning"],
                         "description": "Kategorie des Ziels",
                     },
-                    "target_date": {"type": "string", "description": "Zieldatum im Format YYYY-MM-DD (optional)"},
+                    "target_date": {"type": "string", "description": "Zieldatum YYYY-MM-DD (optional)"},
                 },
                 "required": ["title", "category"],
             },
@@ -27,7 +28,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_key_result",
-            "description": "Erstellt ein messbares Key Result zu einem Objective.",
+            "description": "Erstellt ein messbares Key Result zu einem Objective. Beispiel: '3L Wasser täglich' oder '4x Training pro Woche'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -47,22 +48,33 @@ TOOLS: list[dict[str, Any]] = [
                     },
                     "target_date": {"type": "string", "description": "Zieldatum YYYY-MM-DD (optional)"},
                 },
-                "required": ["objective_id", "title", "metric_type"],
+                "required": ["objective_id", "title", "metric_type", "frequency"],
             },
         },
     },
+    # ─── Task Tools ───────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "create_task",
-            "description": "Erstellt eine konkrete Aufgabe (Task). Nutze dies für spezifische To-Dos.",
+            "description": "Erstellt eine konkrete Aufgabe (Task). Für Einkaufsitems category='shopping' setzen. Für allgemeine Tasks category='general'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Titel der Aufgabe"},
                     "description": {"type": "string", "description": "Optionale Beschreibung"},
                     "key_result_id": {"type": "integer", "description": "Zugehöriges Key Result (optional)"},
-                    "priority": {"type": "integer", "description": "Priorität 1-5 (5 = höchste)", "minimum": 1, "maximum": 5},
+                    "priority": {
+                        "type": "integer",
+                        "description": "Priorität: 1=höchste, 5=niedrigste",
+                        "minimum": 1,
+                        "maximum": 5,
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["general", "shopping", "errand", "work", "personal"],
+                        "description": "Kategorie. 'shopping' für Einkaufsitems!",
+                    },
                     "due_date": {"type": "string", "description": "Fälligkeitsdatum YYYY-MM-DD (optional)"},
                 },
                 "required": ["title"],
@@ -73,7 +85,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "complete_task",
-            "description": "Markiert eine Aufgabe als erledigt.",
+            "description": "Markiert eine Aufgabe als erledigt. Nutze wenn User 'fertig', 'done', 'erledigt' sagt.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -102,11 +114,43 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Shopping Tools ───────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_shopping_list",
+            "description": "Zeigt die aktuelle Einkaufsliste mit allen offenen Items.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_shopping",
+            "description": "Markiert Einkaufsitems als erledigt. Ohne item_ids werden ALLE Items abgehakt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Liste der Task-IDs. Leer = alle Shopping-Items abhaken.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    # ─── Logging Tools ────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "log_workout",
-            "description": "Loggt ein Workout / eine Trainingseinheit. Nutze dies für alle Sport- und Fitness-Inputs.",
+            "description": "Loggt ein Workout / eine Trainingseinheit. Nutze für Sport- und Fitness-Inputs.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -130,7 +174,7 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "amount_liters": {"type": "number", "description": "Menge in Litern (z.B. 0.5 für 500ml, 1.5 für 1.5L)"},
+                    "amount_liters": {"type": "number", "description": "Menge in Litern (z.B. 0.5, 1.5)"},
                 },
                 "required": ["amount_liters"],
             },
@@ -155,12 +199,16 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "log_progress",
-            "description": "Loggt Fortschritt für ein Key Result.",
+            "description": "Loggt Fortschritt für ein Key Result. Aktualisiert current_value.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "key_result_id": {"type": "integer", "description": "ID des Key Results"},
                     "value": {"type": "number", "description": "Fortschrittswert"},
+                    "increment": {
+                        "type": "boolean",
+                        "description": "True = Wert addieren, False = Wert ersetzen. Default: True.",
+                    },
                     "notes": {"type": "string", "description": "Optionale Notiz"},
                 },
                 "required": ["key_result_id", "value"],
@@ -170,17 +218,39 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "log_food",
+            "description": "Loggt eine Mahlzeit oder Nahrungsaufnahme.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "Beschreibung der Mahlzeit"},
+                    "calories": {"type": "integer", "description": "Kalorien (optional)"},
+                    "meal_type": {
+                        "type": "string",
+                        "enum": ["breakfast", "lunch", "dinner", "snack"],
+                        "description": "Mahlzeitentyp (optional)",
+                    },
+                    "notes": {"type": "string", "description": "Zusätzliche Notizen (optional)"},
+                },
+                "required": ["description"],
+            },
+        },
+    },
+    # ─── Routine Tools ────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
             "name": "create_routine",
             "description": "Erstellt eine neue wiederkehrende Routine.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Name der Routine"},
-                    "schedule_cron": {"type": "string", "description": "Cron-Ausdruck (z.B. '0 9 * * *' für täglich 9 Uhr)"},
-                    "frequency_human": {"type": "string", "description": "Lesbare Beschreibung (z.B. 'Täglich', 'Jeden Dienstag')"},
+                    "frequency_human": {"type": "string", "description": "Lesbare Beschreibung (z.B. 'Täglich', 'Jeden Dienstag', '3x pro Woche')"},
+                    "schedule_cron": {"type": "string", "description": "Cron-Ausdruck optional (z.B. '0 9 * * 2')"},
                     "linked_key_result_id": {"type": "integer", "description": "Zugehöriges Key Result (optional)"},
                 },
-                "required": ["title", "schedule_cron", "frequency_human"],
+                "required": ["title", "frequency_human"],
             },
         },
     },
@@ -199,33 +269,36 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Calendar Tool ────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Erstellt einen Kalender-Eintrag.",
+            "description": "Erstellt einen Kalender-Eintrag für einen Termin.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Titel des Events"},
                     "start_time": {"type": "string", "description": "Startzeit im Format YYYY-MM-DD HH:MM"},
                     "end_time": {"type": "string", "description": "Endzeit im Format YYYY-MM-DD HH:MM (optional)"},
+                    "all_day": {"type": "boolean", "description": "Ganztägiges Event (optional)"},
                     "event_type": {
                         "type": "string",
-                        "enum": ["training", "meeting", "routine", "deadline", "reminder"],
+                        "enum": ["training", "meeting", "routine", "deadline", "reminder", "errand"],
                     },
                     "description": {"type": "string", "description": "Optionale Beschreibung"},
                     "linked_task_id": {"type": "integer", "description": "Zugehöriger Task (optional)"},
                 },
-                "required": ["title", "start_time", "event_type"],
+                "required": ["title", "start_time"],
             },
         },
     },
+    # ─── Brain Dump Tool ──────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "store_brain_dump",
-            "description": "Speichert einen unstrukturierten Gedanken / Brain Dump für spätere Einordnung.",
+            "description": "Speichert einen unstrukturierten Gedanken / Brain Dump für spätere Einordnung. Nutze wenn Input nicht klar in eine Kategorie passt.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -236,6 +309,7 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Query Tools ──────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
@@ -256,7 +330,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_progress_report",
-            "description": "Gibt einen Fortschrittsbericht für ein spezifisches Objective zurück.",
+            "description": "Gibt einen detaillierten Fortschrittsbericht für ein spezifisches Objective zurück.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -270,7 +344,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_logs",
-            "description": "Sucht in den Log-Einträgen des Users.",
+            "description": "Sucht in den Log-Einträgen des Users. Nutze wenn User nach Verlauf fragt.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -283,6 +357,36 @@ TOOLS: list[dict[str, Any]] = [
                     "days_back": {"type": "integer", "description": "Wie viele Tage zurücksuchen (default: 30)"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    # ─── Settings Tool ────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "update_user_settings",
+            "description": "Ändert User-Einstellungen/Toggles. Nutze wenn User Einstellungen ändern will.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "setting_key": {
+                        "type": "string",
+                        "enum": [
+                            "priorities_enabled",
+                            "review_enabled",
+                            "proactive_enabled",
+                            "reflection_enabled",
+                            "morning_brief_time",
+                            "evening_review_time",
+                        ],
+                        "description": "Schlüssel der Einstellung",
+                    },
+                    "setting_value": {
+                        "type": "string",
+                        "description": "Neuer Wert. Für Toggles: 'true' oder 'false'. Für Zeiten: 'HH:MM'.",
+                    },
+                },
+                "required": ["setting_key", "setting_value"],
             },
         },
     },

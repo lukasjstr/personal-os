@@ -1,4 +1,4 @@
-"""CRUD for Tasks and log search."""
+"""CRUD for Tasks — including shopping category and next-action support."""
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -15,9 +15,10 @@ async def create_task(
     description: Optional[str] = None,
     key_result_id: Optional[int] = None,
     priority: int = 3,
+    category: str = "general",
     due_date: Optional[str] = None,
 ) -> Task:
-    """Create a new Task."""
+    """Create a new Task. Use category='shopping' for shopping items."""
     parsed_date = None
     if due_date:
         try:
@@ -31,6 +32,7 @@ async def create_task(
         description=description,
         key_result_id=key_result_id,
         priority=priority,
+        category=category,
         due_date=parsed_date,
         status="todo",
     )
@@ -76,14 +78,79 @@ async def update_task_status(
 
 
 async def get_open_tasks(session: AsyncSession, user_id: int, limit: int = 10) -> list[Task]:
-    """Get open tasks ordered by priority."""
+    """Get open tasks ordered by priority (1=highest) then due date."""
     result = await session.execute(
         select(Task)
-        .where(and_(Task.user_id == user_id, Task.status.in_(["todo", "in_progress"])))
-        .order_by(Task.priority.desc(), Task.due_date.asc().nulls_last())
+        .where(and_(
+            Task.user_id == user_id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.category != "shopping",
+        ))
+        .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
         .limit(limit)
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
+
+
+async def get_prioritized_tasks(session: AsyncSession, user_id: int, limit: int = 5) -> list[Task]:
+    """Get top tasks by priority (1=highest), due date, then creation date."""
+    result = await session.execute(
+        select(Task)
+        .where(and_(
+            Task.user_id == user_id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.category != "shopping",
+        ))
+        .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last(), Task.created_at.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_open_shopping_items(session: AsyncSession, user_id: int) -> list[Task]:
+    """Get open shopping tasks."""
+    result = await session.execute(
+        select(Task)
+        .where(and_(
+            Task.user_id == user_id,
+            Task.category == "shopping",
+            Task.status == "todo",
+        ))
+        .order_by(Task.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_next_task_in_kr(session: AsyncSession, kr_id: int) -> Optional[Task]:
+    """Get the next todo task in the same key result (for next-action principle)."""
+    result = await session.execute(
+        select(Task)
+        .where(and_(
+            Task.key_result_id == kr_id,
+            Task.status == "todo",
+        ))
+        .order_by(Task.priority.asc(), Task.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_task(
+    session: AsyncSession,
+    task_id: int,
+    user_id: int,
+    **kwargs,
+) -> Optional[Task]:
+    """Update task fields."""
+    result = await session.execute(
+        select(Task).where(and_(Task.id == task_id, Task.user_id == user_id))
+    )
+    task = result.scalar_one_or_none()
+    if task:
+        for key, value in kwargs.items():
+            setattr(task, key, value)
+        await session.flush()
+    return task
 
 
 async def search_logs(
