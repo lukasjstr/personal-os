@@ -1,0 +1,1005 @@
+Personal OS – Komplette Projekt-Spezifikation
+Vision
+Ein KI-gesteuerter persönlicher Chief Operating Officer, der über Telegram gesteuert wird. Du schickst alles rein – Gedanken, Fortschritte, Ziele, Bilder, Brain Dumps – und das System versteht, kategorisiert, priorisiert und führt dich proaktiv durch deinen Tag. Ein Web-Dashboard visualisiert alles.
+
+Wie es sich anfühlt (User Perspektive)
+
+text
+
+
+06:30 – Dein Handy vibriert. Telegram.
+
+"Guten Morgen. Hier ist dein Tag:
+
+🎯 TOP 3 PRIORITÄTEN
+1. Training (Oberkörper) – Push Day, letzte Woche 25kg Bankdrücken
+2. LinkedIn Post schreiben (3/10 diesen Monat)
+3. Testimonials für Landingpage sammeln
+
+📋 ROUTINEN HEUTE
+☐ 3L Wasser
+☐ Supplements
+☐ 10min Journaling
+
+📅 KALENDER
+14:00 Call mit Designer
+18:00 Training
+
+💡 REMINDER
+Landingpage-Projekt hat seit 4 Tagen keinen Fortschritt.
+
+Los geht's."
+
+---
+
+09:15 – Du schreibst in Telegram:
+"bankdrücken 30kg 3x8"
+
+Antwort:
+"💪 Geloggt: Bankdrücken 30kg × 8 × 3 Sätze
+📈 Progression: +5kg seit letzter Woche!
+🎯 Training diese Woche: 1/4
+Nächstes Mal: Versuch 30kg × 10 × 3"
+
+---
+
+11:30 – Du schickst ein Foto von deiner Wasserflasche
+"zweite flasche"
+
+Antwort:
+"💧 1.5L geloggt. Stand: 1.5/3L heute.
+Noch 1.5L bis zum Ziel. Du schaffst das."
+
+---
+
+14:45 – Du schreibst:
+"call mit designer war gut, er schickt mockups bis freitag"
+
+Antwort:
+"📝 Notiert im Projekt 'Landingpage'.
+Neuer Task erstellt: 'Mockups reviewen'
+Deadline: Freitag
+Soll ich einen Kalender-Eintrag für Freitag machen?"
+
+---
+
+16:00 – Du schreibst:
+"ich glaub ich sollte mal ein crm aufsetzen für leads"
+
+Antwort:
+"🧠 Brain Dump gespeichert.
+Vorschlag: Neues Key Result unter 'Business aufbauen'?
+→ 'CRM aufsetzen und erste 20 Leads eintragen'
+Soll ich das anlegen?"
+
+---
+
+21:00 – System schreibt dir:
+
+"Tages-Review:
+
+✅ Training (Oberkörper) – done, starke Progression
+✅ Designer Call – erledigt, Follow-up angelegt  
+⚠️ LinkedIn Post – nicht geschrieben
+✅ Wasser: 2.8/3L (93%)
+
+Morgen ist Mittwoch:
+→ LinkedIn Post nachholen
+→ Meal Prep (Routine)
+
+Wie war dein Tag? 1-10?"
+
+Du antwortest: "7, war okay aber nachmittag unproduktiv"
+
+"Notiert. Dein Schnitt diese Woche: 7.0
+Tipp: Deine produktivsten Tage waren die mit 
+morgens Training. Morgen früh trainieren?"
+
+Datenmodell im Detail
+
+SQL
+
+
+-- KERN: Alles ist ein Baum aus Zielen
+
+users
+├── id
+├── telegram_id
+├── telegram_username
+├── timezone
+├── created_at
+└── settings (JSON: Morgen-Brief Zeit, Review Zeit, Sprache)
+
+objectives (Die großen Ziele)
+├── id
+├── user_id
+├── title              -- "Gesünder leben"
+├── description
+├── category           -- health, business, personal, fitness
+├── status             -- active, completed, paused
+├── target_date
+├── created_at
+└── updated_at
+
+key_results (Messbare Ergebnisse)
+├── id
+├── objective_id
+├── title              -- "3L Wasser täglich"
+├── metric_type        -- percentage, number, boolean, streak
+├── target_value       -- 3.0
+├── current_value      -- 2.1
+├── unit               -- "Liter", "kg", "Posts", "Tage"
+├── frequency          -- daily, weekly, monthly, once
+├── status             -- active, completed, failed
+├── target_date
+├── created_at
+└── updated_at
+
+tasks (Konkrete Aufgaben)
+├── id
+├── key_result_id      -- nullable (kann auch standalone sein)
+├── user_id
+├── title              -- "Hero Section schreiben"
+├── description
+├── status             -- todo, in_progress, done
+├── priority           -- 1-5
+├── due_date
+├── completed_at
+├── created_at
+└── updated_at
+
+logs (Jeder einzelne Datenpunkt)
+├── id
+├── user_id
+├── key_result_id      -- nullable
+├── task_id            -- nullable
+├── log_type           -- workout, water, food, mood, progress, note
+├── data (JSON)        -- flexibel!
+│   │
+│   │  Workout:
+│   │  {"exercise": "Bankdrücken", "weight": 30, 
+│   │   "reps": 8, "sets": 3}
+│   │
+│   │  Water:
+│   │  {"amount": 1.5, "unit": "L"}
+│   │
+│   │  Mood:
+│   │  {"score": 7, "note": "nachmittag unproduktiv"}
+│   │
+│   │  Progress:
+│   │  {"description": "Landing Page fertig"}
+│   │
+├── source             -- text, image, voice
+├── raw_input          -- Original-Nachricht
+├── created_at
+└── logged_at          -- kann abweichen von created_at
+
+routines (Wiederkehrende Muster)
+├── id
+├── user_id
+├── title              -- "LinkedIn Post"
+├── schedule           -- cron-style: "0 9 * * 2" (Dienstag 9:00)
+├── frequency_human    -- "Jeden Dienstag"
+├── linked_key_result_id
+├── status             -- active, paused
+├── created_at
+└── updated_at
+
+routine_completions (Wurde die Routine erledigt?)
+├── id
+├── routine_id
+├── completed_at
+├── logged_via         -- "telegram", "auto", "dashboard"
+└── notes
+
+calendar_events
+├── id
+├── user_id
+├── title
+├── description
+├── start_time
+├── end_time
+├── event_type         -- training, meeting, routine, deadline
+├── linked_task_id     -- nullable
+├── linked_routine_id  -- nullable
+├── ical_uid           -- für iCal Feed
+├── created_at
+└── updated_at
+
+brain_dumps (Unstrukturiertes)
+├── id
+├── user_id
+├── raw_input          -- Original Text/Voice
+├── processed          -- boolean: wurde es schon eingeordnet?
+├── ai_interpretation  -- Was hat Haiku daraus gemacht?
+├── linked_objective_id -- nullable, wenn zugeordnet
+├── created_at
+└── updated_at
+
+conversations (Chat-History für Kontext)
+├── id
+├── user_id
+├── role               -- user, assistant
+├── content
+├── metadata (JSON)    -- function_calls, tokens_used
+├── created_at
+└── session_date       -- gruppiert nach Tag
+
+System-Architektur
+
+text
+
+
+┌─────────────────────────────────────────────────────────────┐
+│                        DEIN SERVER                           │
+│                                                              │
+│  ┌─────────────┐    ┌────────────────────────────────────┐  │
+│  │  TELEGRAM    │    │        CORE APPLICATION            │  │
+│  │  BOT         │    │        (Python / FastAPI)           │  │
+│  │             │    │                                    │  │
+│  │  Webhook ───┼───▶│  ┌──────────────────────────────┐  │  │
+│  │             │    │  │     INPUT ROUTER              │  │  │
+│  │  ◀──────────┼────│  │                              │  │  │
+│  │  Send Msg   │    │  │  Text? → Text Processor      │  │  │
+│  └─────────────┘    │  │  Bild? → Vision Processor    │  │  │
+│                      │  │  Voice? → STT → Text Proc.   │  │  │
+│  ┌─────────────┐    │  └──────────┬───────────────────┘  │  │
+│  │  CRON       │    │             │                      │  │
+│  │  SCHEDULER  │    │             ▼                      │  │
+│  │             │    │  ┌──────────────────────────────┐  │  │
+│  │  06:30      │    │  │     CONTEXT BUILDER          │  │  │
+│  │  Morning    │───▶│  │                              │  │  │
+│  │  Brief      │    │  │  1. User-Profil laden        │  │  │
+│  │             │    │  │  2. Aktive OKRs laden        │  │  │
+│  │  21:00      │    │  │  3. Heutige Routinen         │  │  │
+│  │  Evening    │───▶│  │  4. Letzte Logs              │  │  │
+│  │  Review     │    │  │  5. Offene Tasks             │  │  │
+│  │             │    │  │  6. Relevante History         │  │  │
+│  │  Routine    │    │  │                              │  │  │
+│  │  Reminders  │───▶│  │  → Kompakter Kontext-String  │  │  │
+│  └─────────────┘    │  └──────────┬───────────────────┘  │  │
+│                      │             │                      │  │
+│                      │             ▼                      │  │
+│                      │  ┌──────────────────────────────┐  │  │
+│                      │  │     CLAUDE HAIKU API         │  │  │
+│                      │  │                              │  │  │
+│                      │  │  System Prompt:              │  │  │
+│                      │  │  "Du bist der persönliche    │  │  │
+│                      │  │   COO dieses Users..."       │  │  │
+│                      │  │                              │  │  │
+│                      │  │  User Message:               │  │  │
+│                      │  │  Kontext + aktuelle Eingabe  │  │  │
+│                      │  │                              │  │  │
+│                      │  │  Tools/Functions:            │  │  │
+│                      │  │  ├── create_objective        │  │  │
+│                      │  │  ├── create_key_result       │  │  │
+│                      │  │  ├── create_task             │  │  │
+│                      │  │  ├── complete_task           │  │  │
+│                      │  │  ├── log_progress            │  │  │
+│                      │  │  ├── log_workout             │  │  │
+│                      │  │  ├── log_water               │  │  │
+│                      │  │  ├── log_mood                │  │  │
+│                      │  │  ├── create_routine          │  │  │
+│                      │  │  ├── complete_routine        │  │  │
+│                      │  │  ├── create_calendar_event   │  │  │
+│                      │  │  ├── store_brain_dump        │  │  │
+│                      │  │  ├── get_priorities          │  │  │
+│                      │  │  ├── get_progress_report     │  │  │
+│                      │  │  └── search_history          │  │  │
+│                      │  │                              │  │  │
+│                      │  │  → Response + Tool Calls     │  │  │
+│                      │  └──────────┬───────────────────┘  │  │
+│                      │             │                      │  │
+│                      │             ▼                      │  │
+│                      │  ┌──────────────────────────────┐  │  │
+│                      │  │     ACTION EXECUTOR          │  │  │
+│                      │  │                              │  │  │
+│                      │  │  Tool Calls ausführen        │  │  │
+│                      │  │  DB updaten                  │  │  │
+│                      │  │  Kalender-Events erstellen   │  │  │
+│                      │  │  Antwort formatieren         │  │  │
+│                      │  │  → Telegram Nachricht senden │  │  │
+│                      │  └──────────────────────────────┘  │  │
+│                      └────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                    POSTGRESQL                          │  │
+│  │  users | objectives | key_results | tasks | logs       │  │
+│  │  routines | calendar_events | brain_dumps | convos     │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              WEB DASHBOARD (Phase 2)                   │  │
+│  │              Next.js auf Port 3000                     │  │
+│  │              API calls an FastAPI                      │  │
+│  │              Login via Telegram OAuth                  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              iCAL FEED                                 │  │
+│  │              /cal/{user_token}.ics                     │  │
+│  │              → Google Cal / Apple Cal subscriben       │  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+
+File-Struktur
+
+text
+
+
+personal-os/
+├── docker-compose.yml
+├── .env
+│
+├── bot/
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI App + Telegram Webhook
+│   ├── config.py               # Environment Variables
+│   │
+│   ├── telegram/
+│   │   ├── __init__.py
+│   │   ├── handler.py          # Incoming Messages verarbeiten
+│   │   ├── sender.py           # Nachrichten senden
+│   │   └── formatting.py       # Markdown/Emoji Formatierung
+│   │
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── client.py           # Claude Haiku API Client
+│   │   ├── context.py          # Context Builder
+│   │   ├── prompts.py          # System Prompts
+│   │   └── tools.py            # Tool/Function Definitionen
+│   │
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── objectives.py       # OKR CRUD
+│   │   ├── tasks.py            # Task CRUD
+│   │   ├── logs.py             # Logging (Workout, Water, etc.)
+│   │   ├── routines.py         # Routine Engine
+│   │   ├── calendar.py         # Calendar Events + iCal
+│   │   ├── brain_dumps.py      # Unstrukturierter Input
+│   │   └── priorities.py       # Priorisierungs-Logik
+│   │
+│   ├── jobs/
+│   │   ├── __init__.py
+│   │   ├── scheduler.py        # APScheduler Setup
+│   │   ├── morning_brief.py    # Tagesplan generieren
+│   │   ├── evening_review.py   # Tages-Review
+│   │   └── reminders.py        # Routine-Reminder
+│   │
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── connection.py       # SQLAlchemy Setup
+│   │   ├── models.py           # ORM Models
+│   │   └── migrations/         # Alembic
+│   │
+│   └── api/
+│       ├── __init__.py
+│       ├── routes.py           # REST API für Dashboard
+│       ├── auth.py             # Telegram OAuth
+│       └── ical.py             # iCal Feed Endpoint
+│
+├── dashboard/                   # Phase 2
+│   ├── package.json
+│   ├── src/
+│   └── ...
+│
+└── scripts/
+    ├── setup.sh
+    └── seed_data.py            # Test-Daten
+
+Der System Prompt (Das Gehirn)
+
+text
+
+
+Du bist der persönliche COO (Chief Operating Officer) des Users.
+
+Dein Name ist "OS" oder wie der User dich nennen will.
+
+DEINE ROLLE:
+- Du bist KEIN Chatbot. Du bist ein Operator.
+- Du empfängst Input und HANDELST.
+- Du ordnest JEDEN Input in das bestehende System ein.
+- Du erkennst ob etwas ein neues Ziel, ein Fortschritt, 
+  eine Aufgabe, ein Brain Dump oder ein Log ist.
+- Du priorisierst proaktiv.
+- Du erinnerst an vergessene Dinge.
+- Du feierst Fortschritt.
+- Du bist direkt, klar und effizient.
+
+DEINE TOOLS:
+Du hast Zugriff auf folgende Funktionen. Nutze sie IMMER 
+wenn ein Input eine Aktion erfordert. Antworte NICHT nur 
+mit Text wenn eine Aktion möglich ist.
+
+[Tools werden hier eingefügt]
+
+KONTEXT DES USERS:
+[Wird dynamisch geladen - aktive OKRs, heutige Routinen, 
+letzte Logs, offene Tasks]
+
+REGELN:
+1. Jeder Input wird verarbeitet. Nichts geht verloren.
+2. Wenn unklar ist wohin etwas gehört → nachfragen, 
+   aber einen Vorschlag machen.
+3. Kurze Antworten. Keine Romane. Emojis sind okay.
+4. Wenn du eine Progression erkennst → feiere sie.
+5. Wenn etwas überfällig ist → sprich es an.
+6. Denke in OKR-Struktur: 
+   Objective → Key Result → Task → Log
+7. Antworte auf Deutsch.
+
+Prompt 1 – Projekt-Setup mit Claude Code
+Kopier das Folgende komplett in Claude Code:
+
+text
+
+
+Ich baue ein "Personal OS" – einen KI-gesteuerten persönlichen 
+Assistenten der über Telegram läuft. Hier ist der Plan für den 
+ersten Setup-Schritt.
+
+ERSTELLE FOLGENDE PROJEKTSTRUKTUR:
+
+personal-os/
+├── docker-compose.yml          # PostgreSQL + App
+├── .env.example                # Template für Env Vars
+├── requirements.txt
+├── bot/
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI App mit Telegram Webhook
+│   ├── config.py               # Settings aus .env
+│   ├── telegram/
+│   │   ├── __init__.py
+│   │   ├── handler.py          # Telegram Updates verarbeiten
+│   │   └── sender.py           # Nachrichten an User senden
+│   ├── ai/
+│   │   ├── __init__.py
+│   │   ├── client.py           # Anthropic API Client (Claude Haiku)
+│   │   ├── context.py          # Kontext aus DB laden für Haiku
+│   │   ├── prompts.py          # System Prompt
+│   │   └── tools.py            # Tool Definitionen für Function Calling
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── objectives.py       # Objectives CRUD
+│   │   ├── key_results.py      # Key Results CRUD
+│   │   ├── tasks.py            # Tasks CRUD
+│   │   ├── logs.py             # Logs erstellen (workout, water, mood...)
+│   │   ├── routines.py         # Routinen CRUD + Check
+│   │   ├── calendar_events.py  # Kalender-Events CRUD
+│   │   └── brain_dumps.py      # Brain Dumps speichern
+│   ├── jobs/
+│   │   ├── __init__.py
+│   │   └── scheduler.py        # APScheduler für Cron Jobs
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── connection.py       # async SQLAlchemy + sessionmaker
+│   │   └── models.py           # Alle DB Models
+│   └── api/
+│       ├── __init__.py
+│       ├── routes.py           # REST API Endpoints (für Dashboard später)
+│       └── ical.py             # iCal Feed Endpoint
+└── scripts/
+    └── setup.sh                # Initiales Setup Script
+
+TECHNISCHE DETAILS:
+
+1. Python 3.11+
+2. FastAPI mit uvicorn
+3. SQLAlchemy 2.0 (async) mit asyncpg
+4. python-telegram-bot library (v20+, async)
+5. anthropic python SDK
+6. APScheduler für Cron Jobs
+7. PostgreSQL 15
+
+DATABASE MODELS (SQLAlchemy):
+
+User:
+- id: Integer, Primary Key
+- telegram_id: BigInteger, Unique, Not Null
+- telegram_username: String, nullable
+- first_name: String, nullable
+- timezone: String, default "Europe/Berlin"
+- settings: JSON, default {}
+- morning_brief_time: String, default "06:30"
+- evening_review_time: String, default "21:00"
+- created_at: DateTime, server_default=now()
+- updated_at: DateTime, onupdate=now()
+
+Objective:
+- id: Integer, PK
+- user_id: FK → users
+- title: String, not null
+- description: Text, nullable
+- category: String (health/business/personal/fitness/finance)
+- status: String (active/completed/paused/abandoned)
+- target_date: Date, nullable
+- created_at, updated_at: DateTime
+
+KeyResult:
+- id: Integer, PK
+- objective_id: FK → objectives
+- user_id: FK → users
+- title: String, not null
+- metric_type: String (percentage/number/boolean/streak/checklist)
+- target_value: Float, nullable
+- current_value: Float, default 0
+- unit: String, nullable
+- frequency: String (daily/weekly/monthly/once)
+- status: String (active/completed/failed)
+- target_date: Date, nullable
+- created_at, updated_at: DateTime
+
+Task:
+- id: Integer, PK
+- key_result_id: FK → key_results, nullable
+- user_id: FK → users
+- title: String, not null
+- description: Text, nullable
+- status: String (todo/in_progress/done/cancelled)
+- priority: Integer (1-5, default 3)
+- due_date: Date, nullable
+- completed_at: DateTime, nullable
+- created_at, updated_at: DateTime
+
+Log:
+- id: Integer, PK
+- user_id: FK → users
+- key_result_id: FK → key_results, nullable
+- task_id: FK → tasks, nullable
+- log_type: String (workout/water/food/mood/progress/note/general)
+- data: JSON, not null
+- source: String (text/image/voice)
+- raw_input: Text
+- created_at: DateTime
+- logged_at: DateTime (kann vom User gesetzt werden)
+
+Routine:
+- id: Integer, PK
+- user_id: FK → users
+- title: String, not null
+- description: Text, nullable
+- schedule_cron: String (cron expression)
+- frequency_human: String ("Jeden Dienstag", "3x pro Woche")
+- linked_key_result_id: FK, nullable
+- status: String (active/paused)
+- created_at, updated_at: DateTime
+
+RoutineCompletion:
+- id: Integer, PK
+- routine_id: FK → routines
+- user_id: FK → users
+- completed_at: DateTime, not null
+- notes: Text, nullable
+
+CalendarEvent:
+- id: Integer, PK
+- user_id: FK → users
+- title: String, not null
+- description: Text, nullable
+- start_time: DateTime, not null
+- end_time: DateTime, nullable
+- event_type: String (training/meeting/routine/deadline/reminder)
+- linked_task_id: FK, nullable
+- linked_routine_id: FK, nullable
+- ical_uid: String, unique
+- created_at: DateTime
+
+BrainDump:
+- id: Integer, PK
+- user_id: FK → users
+- raw_input: Text, not null
+- processed: Boolean, default False
+- ai_interpretation: Text, nullable
+- linked_objective_id: FK, nullable
+- created_at: DateTime
+
+Conversation:
+- id: Integer, PK
+- user_id: FK → users
+- role: String (user/assistant/system)
+- content: Text, not null
+- metadata: JSON, nullable
+- created_at: DateTime
+- session_date: Date
+
+TELEGRAM BOT SETUP:
+- Webhook-Modus (nicht Polling)
+- Webhook URL wird beim Start registriert
+- Endpoint: POST /webhook/telegram
+- Verarbeitet: text, photo, voice messages
+- Jede Nachricht wird in der Conversation-Tabelle gespeichert
+
+CLAUDE HAIKU INTEGRATION:
+- Model: claude-haiku-4-20250514
+- Nutze Tool Use / Function Calling
+- System Prompt wird aus prompts.py geladen
+- Kontext (aktive OKRs, heutige Tasks, letzte Logs) 
+  wird vor jedem Call aus der DB geladen (context.py)
+
+TOOLS FÜR HAIKU (in tools.py als Liste von Tool-Definitionen):
+
+1. create_objective(title, description, category, target_date)
+2. create_key_result(objective_id, title, metric_type, 
+   target_value, unit, frequency)
+3. create_task(title, description, key_result_id, priority, due_date)
+4. complete_task(task_id)
+5. update_task_status(task_id, status)
+6. log_workout(exercise, weight, reps, sets, key_result_id, notes)
+7. log_water(amount_liters)
+8. log_mood(score_1_to_10, notes)
+9. log_progress(key_result_id, value, notes)
+10. create_routine(title, schedule_cron, frequency_human, 
+    linked_key_result_id)
+11. complete_routine(routine_id, notes)
+12. create_calendar_event(title, start_time, end_time, 
+    event_type, linked_task_id)
+13. store_brain_dump(content)
+14. get_todays_priorities()
+15. get_active_objectives()
+16. get_progress_report(objective_id)
+17. search_logs(query, log_type, days_back)
+
+FLOW FÜR JEDE EINGEHENDE NACHRICHT:
+1. Telegram Update kommt rein
+2. User wird in DB gesucht oder angelegt (get_or_create)
+3. Nachricht wird in conversations gespeichert
+4. Context Builder lädt:
+   - Aktive Objectives + Key Results mit Progress
+   - Heutige offene Tasks (Top 5)
+   - Heutige Routinen (erledigt/offen)
+   - Letzte 10 Logs
+   - Letzte 5 Conversations
+5. System Prompt + Context + User Message → an Haiku
+6. Haiku Response wird verarbeitet:
+   - Tool Calls werden ausgeführt
+   - Text-Antwort wird an User gesendet via Telegram
+7. Assistant Response wird in conversations gespeichert
+
+SYSTEM PROMPT (in prompts.py):
+
+SYSTEM_PROMPT = """
+Du bist der persönliche COO (Chief Operating Officer) des Users.
+
+DEINE ROLLE:
+- Du empfängst JEDEN Input und verarbeitest ihn.
+- Du ordnest Input in das OKR-System ein: 
+  Objective → Key Result → Task → Log
+- Du erkennst automatisch ob etwas ein neues Ziel, 
+  ein Fortschritt, eine Aufgabe oder ein Gedanke ist.
+- Du priorisierst proaktiv.
+- Du feierst Erfolge.
+- Du sprichst Probleme an.
+
+REGELN:
+1. IMMER Tools nutzen wenn eine Aktion möglich ist. 
+   Nie nur Text antworten wenn du handeln kannst.
+2. Kurz und klar antworten. Keine langen Erklärungen.
+3. Emojis nutzen für Struktur.
+4. Bei Unklarheit: Vorschlag machen UND nachfragen.
+5. Progressionen erkennen und feiern.
+6. Deutsch antworten.
+7. Denke wie ein COO: Was ist die NÄCHSTE beste Aktion?
+
+KONTEXT DES USERS:
+{context}
+"""
+
+DOCKER-COMPOSE:
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: personal_os
+      POSTGRES_USER: pos_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./bot:/app/bot
+
+volumes:
+  pgdata:
+
+.ENV.EXAMPLE:
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_URL=https://deine-domain.de/webhook/telegram
+ANTHROPIC_API_KEY=
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=personal_os
+DB_USER=pos_user
+DB_PASSWORD=
+APP_HOST=0.0.0.0
+APP_PORT=8000
+
+WICHTIG:
+- Alles async (asyncio, async SQLAlchemy, async telegram)
+- Saubere Error Handling überall
+- Logging mit structlog oder standard logging
+- Type Hints überall
+- Docstrings für jede Funktion
+- Der Bot muss nach dem Start sofort funktionieren:
+  Man schreibt ihm in Telegram und bekommt eine 
+  intelligente Antwort die Tools nutzt.
+
+Erstelle ALLE Dateien mit vollständigem, funktionsfähigem Code.
+Kein Placeholder. Kein "TODO". Alles implementiert.
+
+
+
+
+Was du wirklich willst
+
+text
+
+
+TELEGRAM = Dein einziger Eingangskanal
+├── Text: "Bankdrücken 25kg x8"
+├── Text: "Landing Page fertig"
+├── Text: "Ich muss gesünder essen"
+├── Bild: Foto von Gewichten
+├── Voice: Brain Dump um 3 Uhr nachts
+├── Random: "Vergiss nicht Milch kaufen"
+│
+DAS SYSTEM = Versteht ALLES, ordnet ALLES zu
+│
+TELEGRAM ZURÜCK = Proaktiver Push
+├── Morgens: "Heute diese 3 Dinge"
+├── Reminder: "Training in 1 Stunde"
+├── Accountability: "Landingpage seit 5 Tagen keine Action"
+├── Coaching: "Wasseraufnahme diese Woche nur 60%"
+│
+WEB DASHBOARD = Visualisierung
+├── OKR-Baum (Ziele → Projekte → Tasks)
+├── Fitness-Progression (Graphen)
+├── Kalender-Ansicht
+├── Streak-Tracking
+└── Gleicher Account wie Telegram (Login-Link)
+
+Das Datenmodell – Das Herz von allem
+
+text
+
+
+ALLES wird ein OKR-Baum:
+
+Objective: Gesünder leben
+├── Key Result: 3L Wasser täglich
+│   └── Daily Logs: [2.5L, 3L, 1.8L, ...]
+├── Key Result: 4x Training pro Woche
+│   └── Workouts: [Bankdrücken 25kg x8, ...]
+└── Key Result: Kaloriendefizit einhalten
+    └── Meal Logs: [...]
+
+Objective: Business aufbauen
+├── Key Result: Landingpage live bis 15.07
+│   ├── Task: Hero Section ✅
+│   ├── Task: Testimonials ◻️  ← NÄCHSTE PRIORITÄT
+│   └── Task: CTA testen ◻️
+└── Key Result: 10 LinkedIn Posts / Monat
+    └── Posts: [✅ ✅ ✅ ◻️ ◻️ ...]
+Alles ist entweder ein Objective, Key Result, Task oder Log. Jeder Input wird vom LLM in diese Struktur eingeordnet.
+
+Technische Architektur
+
+text
+
+
+┌─────────────────────────────────────────────────┐
+│                 DEIN SERVER                       │
+│                                                   │
+│  ┌──────────┐     ┌──────────────────────┐       │
+│  │ Telegram  │────▶│   INPUT PROCESSOR    │       │
+│  │ Bot API   │◀────│                      │       │
+│  └──────────┘     │  1. Nachricht kommt   │       │
+│                    │  2. Kontext laden      │       │
+│       ▲            │  3. An Claude Haiku    │       │
+│       │            │  4. Strukturierte      │       │
+│       │            │     Antwort zurück     │       │
+│  Push │            └──────────┬───────────┘       │
+│  Msgs │                       │                    │
+│       │                       ▼                    │
+│  ┌────┴─────┐     ┌──────────────────────┐       │
+│  │  CRON    │     │     DATENBANK         │       │
+│  │  JOBS    │────▶│                      │       │
+│  │          │     │  PostgreSQL:          │       │
+│  │ 06:00    │     │  ├── users            │       │
+│  │ Tagesplan│     │  ├── objectives       │       │
+│  │          │     │  ├── key_results      │       │
+│  │ 21:00    │     │  ├── tasks            │       │
+│  │ Review   │     │  ├── logs             │       │
+│  │          │     │  ├── routines         │       │
+│  │ Reminder │     │  ├── brain_dumps      │       │
+│  └──────────┘     │  └── calendar_events  │       │
+│                    └──────────┬───────────┘       │
+│                               │                    │
+│                    ┌──────────▼───────────┐       │
+│                    │    WEB DASHBOARD      │       │
+│                    │    (Next.js/React)    │       │
+│                    │                      │       │
+│                    │  Login via Telegram   │       │
+│                    │  OAuth oder Magic     │       │
+│                    │  Link                 │       │
+│                    │                      │       │
+│                    │  ├── OKR Tree View    │       │
+│                    │  ├── Fitness Graphs   │       │
+│                    │  ├── Calendar         │       │
+│                    │  └── Brain Dump Feed  │       │
+│                    └──────────────────────┘       │
+│                                                   │
+│  ┌──────────────────────────────────────────┐    │
+│  │         iCAL FEED (read-only URL)        │    │
+│  │  → Google Calendar / Apple Calendar      │    │
+│  │  → Trainings, Deadlines, Routinen        │    │
+│  └──────────────────────────────────────────┘    │
+│                                                   │
+│  ┌──────────────────────────────────────────┐    │
+│  │         CLAUDE HAIKU API                  │    │
+│  │                                          │    │
+│  │  System Prompt: "Du bist der persönliche │    │
+│  │  COO. Du kennst alle Ziele, Projekte,    │    │
+│  │  Routinen. Du ordnest jeden Input zu.    │    │
+│  │  Du priorisierst. Du pushst."            │    │
+│  │                                          │    │
+│  │  Function Calls:                         │    │
+│  │  ├── create_objective()                  │    │
+│  │  ├── create_key_result()                 │    │
+│  │  ├── log_progress()                      │    │
+│  │  ├── complete_task()                     │    │
+│  │  ├── create_routine()                    │    │
+│  │  ├── get_priorities()                    │    │
+│  │  ├── create_calendar_event()             │    │
+│  │  └── store_brain_dump()                  │    │
+│  └──────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────┘
+
+Der magische Moment – Input Processing
+
+Python
+
+
+# Du schickst: "Bankdrücken 25kg x8"
+
+# System denkt:
+# 1. User hat aktives OKR: "4x Training/Woche"
+# 2. Letzte Bankdrücken-Log: 20kg x8 (vor 4 Tagen)
+# 3. Das ist eine Progression!
+# 4. → log_progress(exercise="Bankdrücken", weight=25, reps=8)
+
+# Antwort:
+# "💪 Bankdrücken geloggt: 25kg × 8
+#  Progression: +5kg seit letztem Mal!
+#  Training diese Woche: 2/4 ✓
+#  Nächstes Mal: Versuch 25kg × 10"
+
+Python
+
+
+# Du schickst: "Landing Page fertig"
+
+# System denkt:
+# 1. User hat OKR: "Business aufbauen"
+# 2. Key Result: "Landingpage live bis 15.07"
+# 3. Alle Subtasks → complete
+# 4. Nächste Priorität ermitteln
+
+# Antwort:
+# "✅ Landingpage abgehakt!
+#  Key Result zu 100% erreicht 🎉
+#  
+#  Nächste Priorität im Business-OKR:
+#  → LinkedIn Content: 3/10 Posts diesen Monat
+#  Soll ich dir beim nächsten Hook helfen?"
+
+Python
+
+
+# Du schickst ein BILD von der Hantelbank
+
+# System denkt (Vision API):
+# 1. Bild zeigt Gewichte: 30kg erkannt
+# 2. User ist wahrscheinlich beim Training
+# 3. Letzte Übung war Bankdrücken
+
+# Antwort:
+# "Sehe 30kg auf der Hantel! 
+#  Bankdrücken 30kg? Wie viele Reps?"
+
+Login & Skalierung
+
+text
+
+
+VERBINDUNG TELEGRAM ↔ WEB DASHBOARD:
+
+Option 1: Magic Link (einfachste)
+├── User klickt in Telegram "Dashboard öffnen"
+├── Bot generiert einmaligen Token
+├── Link: https://deineos.de/login?token=abc123
+├── Token validiert → Session erstellt
+└── Fertig, kein Passwort nötig
+
+Option 2: Telegram Login Widget (eleganter)
+├── Web Dashboard hat "Login with Telegram" Button
+├── Telegram OAuth
+├── Gleiche user_id wie im Bot
+└── Automatisch verknüpft
+
+Für Skalierung:
+├── Jeder User hat eigene telegram_id
+├── Eigener OKR-Baum
+├── Eigene Routinen
+├── Eigener Kontext für Haiku
+└── Multi-Tenant von Anfang an gedacht
+
+Konkreter Build-Plan
+
+text
+
+
+PHASE 1 – MVP (1 Woche mit Claude Code)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tag 1: Projekt-Setup
+  ├── Python + FastAPI
+  ├── PostgreSQL Schema
+  ├── Telegram Bot Grundgerüst
+  └── Claude Haiku Anbindung
+
+Tag 2: Input Processing
+  ├── Nachricht empfangen
+  ├── An Haiku mit Kontext senden
+  ├── Function Calling implementieren
+  └── In DB speichern
+
+Tag 3: OKR-Logik
+  ├── Objectives erstellen
+  ├── Key Results tracken
+  ├── Tasks abhaken
+  └── Fortschritt berechnen
+
+Tag 4: Fitness-Modul
+  ├── Workout-Logging
+  ├── Progressions-Logik
+  └── Bild-Erkennung (optional)
+
+Tag 5: Proaktives System
+  ├── Cron Jobs (Morgen-Brief, Abend-Review)
+  ├── Routine-Engine
+  └── Reminder-System
+
+Tag 6: iCal Feed
+  ├── Kalender-Events generieren
+  └── Feed-URL für Google/Apple Cal
+
+Tag 7: Testing & Polish
+  ├── Edge Cases
+  ├── Prompt Engineering
+  └── Du benutzt es wirklich
+
+PHASE 2 – Dashboard (Woche 2-3)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ├── Next.js Web App
+  ├── Telegram Login
+  ├── OKR Tree Visualisierung
+  ├── Fitness-Graphen
+  └── Calendar View
+
+PHASE 3 – Skalierung (Woche 4+)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ├── Multi-User
+  ├── Onboarding Flow
+  ├── Subscription/Payment
+  └── Landing Page für das Produkt
