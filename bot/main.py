@@ -1,8 +1,7 @@
-"""FastAPI application — main entry point."""
+"""FastAPI application — main entry point for Personal OS."""
 import logging
 import sys
 from contextlib import asynccontextmanager
-from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -36,7 +35,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Telegram Application (global)
 telegram_app: Application | None = None
 
 
@@ -45,7 +43,12 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     global telegram_app
 
-    logger.info("Starting Personal OS...")
+    logger.info("Starting Personal OS V2...")
+
+    # Apply database schema (create new tables + add new columns safely)
+    from bot.database.migrate import apply_v2_migrations
+    await apply_v2_migrations(engine)
+    logger.info("Database schema up to date")
 
     # Initialize Telegram Application
     telegram_app = (
@@ -58,11 +61,11 @@ async def lifespan(app: FastAPI):
 
     # Register webhook
     try:
+        import os
         bot = get_bot()
         webhook_url = settings.telegram_webhook_url
         cert_path = settings.telegram_webhook_cert
 
-        import os
         if os.path.exists(cert_path):
             with open(cert_path, "rb") as cert_file:
                 await bot.set_webhook(
@@ -79,15 +82,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to register webhook: %s", e)
 
-    # Start scheduler
+    # Start scheduler (Phase 1: no jobs, Phase 2+ will add jobs)
     scheduler = setup_scheduler()
     scheduler.start()
-    logger.info("Scheduler started")
+    logger.info("Scheduler started (Phase 1: no active jobs)")
 
     yield
 
     # Shutdown
-    logger.info("Shutting down...")
+    logger.info("Shutting down Personal OS...")
     scheduler.shutdown(wait=False)
     if telegram_app:
         await telegram_app.shutdown()
@@ -96,7 +99,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Personal OS API",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -116,7 +119,7 @@ app.include_router(ical_router)
 @app.get("/health")
 async def health() -> dict:
     """Health check endpoint."""
-    return {"status": "ok", "service": "personal-os"}
+    return {"status": "ok", "service": "personal-os", "version": "2.0.0"}
 
 
 @app.post("/webhook/telegram")

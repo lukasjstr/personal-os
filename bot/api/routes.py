@@ -1,8 +1,8 @@
-"""REST API routes for the dashboard."""
+"""REST API routes — Phase 1 working endpoints + Phase 4 stubs for dashboard."""
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from bot.api.auth import generate_api_token, get_current_user
 from bot.core.brain_dumps import get_all_brain_dumps
 from bot.core.routines import get_active_routines, get_todays_completions
-from bot.core.tasks import get_open_tasks
+from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     BrainDump, CalendarEvent, KeyResult, Log, Objective, Routine,
@@ -18,6 +18,11 @@ from bot.database.models import (
 )
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/health")
+async def api_health() -> dict:
+    return {"status": "ok", "version": "2.0.0"}
 
 
 @router.get("/objectives")
@@ -41,6 +46,7 @@ async def list_objectives(
                 "description": o.description,
                 "category": o.category,
                 "status": o.status,
+                "priority_weight": o.priority_weight,
                 "target_date": o.target_date.isoformat() if o.target_date else None,
                 "created_at": o.created_at.isoformat(),
                 "key_results": [
@@ -70,20 +76,23 @@ async def list_objectives(
 @router.get("/tasks")
 async def list_tasks(
     status: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Get tasks, optionally filtered by status."""
+    """Get tasks, optionally filtered by status and category."""
     conditions = [Task.user_id == user.id]
     if status:
         conditions.append(Task.status == status)
     else:
         conditions.append(Task.status.in_(["todo", "in_progress"]))
+    if category:
+        conditions.append(Task.category == category)
 
     result = await session.execute(
         select(Task)
         .where(and_(*conditions))
-        .order_by(Task.priority.desc(), Task.due_date.asc().nulls_last())
+        .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
     )
     tasks = result.scalars().all()
     return {
@@ -94,12 +103,28 @@ async def list_tasks(
                 "description": t.description,
                 "status": t.status,
                 "priority": t.priority,
+                "category": t.category,
                 "due_date": t.due_date.isoformat() if t.due_date else None,
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 "key_result_id": t.key_result_id,
                 "created_at": t.created_at.isoformat(),
             }
             for t in tasks
+        ]
+    }
+
+
+@router.get("/shopping")
+async def list_shopping(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get open shopping items."""
+    items = await get_open_shopping_items(session, user.id)
+    return {
+        "items": [
+            {"id": t.id, "title": t.title, "created_at": t.created_at.isoformat()}
+            for t in items
         ]
     }
 
@@ -164,6 +189,30 @@ async def list_routines(
     }
 
 
+@router.get("/calendar")
+async def list_calendar(
+    days: int = Query(30, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get upcoming calendar events."""
+    from bot.core.calendar import get_upcoming_events
+    events = await get_upcoming_events(session, user.id, days=days)
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "title": e.title,
+                "start_time": e.start_time.isoformat(),
+                "end_time": e.end_time.isoformat() if e.end_time else None,
+                "all_day": e.all_day,
+                "event_type": e.event_type,
+            }
+            for e in events
+        ]
+    }
+
+
 @router.get("/brain-dumps")
 async def list_brain_dumps(
     user: User = Depends(get_current_user),
@@ -193,23 +242,18 @@ async def get_dashboard(
 ) -> dict:
     """Aggregated dashboard data."""
     from datetime import date
-
     today = date.today()
     today_start = datetime.combine(today, datetime.min.time())
     week_start = datetime.combine(today - timedelta(days=7), datetime.min.time())
 
-    # Active objectives count
     obj_result = await session.execute(
-        select(Objective).where(
-            and_(Objective.user_id == user.id, Objective.status == "active")
-        )
+        select(Objective).where(and_(Objective.user_id == user.id, Objective.status == "active"))
     )
     active_objectives = obj_result.scalars().all()
 
-    # Open tasks count
     open_tasks = await get_open_tasks(session, user.id, limit=100)
+    shopping_items = await get_open_shopping_items(session, user.id)
 
-    # Today's water
     water_result = await session.execute(
         select(Log).where(
             and_(Log.user_id == user.id, Log.log_type == "water", Log.logged_at >= today_start)
@@ -217,7 +261,6 @@ async def get_dashboard(
     )
     water_today = sum(l.data.get("amount", 0) for l in water_result.scalars().all())
 
-    # Workouts this week
     workout_result = await session.execute(
         select(Log).where(
             and_(Log.user_id == user.id, Log.log_type == "workout", Log.logged_at >= week_start)
@@ -225,7 +268,6 @@ async def get_dashboard(
     )
     workouts_this_week = len(workout_result.scalars().all())
 
-    # Latest mood
     mood_result = await session.execute(
         select(Log).where(
             and_(Log.user_id == user.id, Log.log_type == "mood")
@@ -233,7 +275,6 @@ async def get_dashboard(
     )
     latest_mood = mood_result.scalar_one_or_none()
 
-    # Routines + completions today
     routines = await get_active_routines(session, user.id)
     completed_today = await get_todays_completions(session, user.id)
 
@@ -246,6 +287,7 @@ async def get_dashboard(
         "stats": {
             "active_objectives": len(active_objectives),
             "open_tasks": len(open_tasks),
+            "shopping_items": len(shopping_items),
             "water_today_liters": round(water_today, 2),
             "workouts_this_week": workouts_this_week,
             "latest_mood": latest_mood.data.get("score") if latest_mood else None,
@@ -253,6 +295,40 @@ async def get_dashboard(
             "routines_done_today": len([r for r in routines if r.id in completed_today]),
         },
     }
+
+
+# ─── Phase 4 Stubs ────────────────────────────────────────────────────────────
+
+@router.get("/brief/today")
+async def get_todays_brief(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Phase 4: Get today's daily brief with priorities and schedule."""
+    return {"message": "Coming in Phase 4"}
+
+
+@router.get("/reflections")
+async def list_reflections(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Phase 4: Get weekly reflection history."""
+    return {"message": "Coming in Phase 4"}
+
+
+@router.get("/insights")
+async def list_insights(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Phase 4: Get user insights and detected patterns."""
+    return {"message": "Coming in Phase 4"}
+
+
+@router.get("/stats/week")
+async def get_week_stats(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Phase 4: Get detailed weekly statistics."""
+    return {"message": "Coming in Phase 4"}
 
 
 @router.post("/auth/token")
