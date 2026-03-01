@@ -45,6 +45,7 @@ settings = get_settings()
 
 # Multi-device account mapping: secondary_telegram_id -> primary_telegram_id
 # Both devices will share the same account and see the same data.
+# Primary account is now 7118468255 (main phone)
 LINKED_TELEGRAM_IDS: dict[int, int] = {
-    7118468255: 6118629820,
+    6118629820: 7118468255,
 }
