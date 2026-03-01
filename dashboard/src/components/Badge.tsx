@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: "default" | "green" | "blue" | "yellow" | "red" | "purple" | "outline";
+  variant?: "default" | "green" | "blue" | "yellow" | "red" | "purple" | "orange" | "outline";
 }
 
 const VARIANTS = {
@@ -12,6 +12,7 @@ const VARIANTS = {
   yellow: "bg-yellow-900 text-yellow-400",
   red: "bg-red-900 text-red-400",
   purple: "bg-purple-900 text-purple-400",
+  orange: "bg-orange-900 text-orange-400",
   outline: "border border-zinc-600 text-zinc-400",
 };
 

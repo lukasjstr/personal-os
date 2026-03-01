@@ -37,6 +37,24 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Abgebrochen",
 };
 
+const CATEGORY_BADGE: Record<string, "green" | "blue" | "yellow" | "purple" | "outline" | "orange"> = {
+  health: "green",
+  fitness: "blue",
+  finance: "yellow",
+  learning: "purple",
+  personal: "outline",
+  business: "orange",
+  shopping: "yellow",
+};
+
+const PRIORITY_BADGE_COLOR: Record<number, string> = {
+  1: "bg-red-900/60 text-red-400 border border-red-800",
+  2: "bg-orange-900/60 text-orange-400 border border-orange-800",
+  3: "bg-yellow-900/60 text-yellow-400 border border-yellow-800",
+  4: "bg-blue-900/60 text-blue-400 border border-blue-800",
+  5: "bg-zinc-800 text-zinc-500 border border-zinc-700",
+};
+
 function TaskRow({ task }: { task: Task }) {
   const isOverdue =
     task.due_date &&
@@ -51,7 +69,7 @@ function TaskRow({ task }: { task: Task }) {
         task.status === "done" && "opacity-60"
       )}
     >
-      {/* Priority dot */}
+      {/* Priority indicator */}
       <div className="mt-1 shrink-0">
         <div
           className={cn(
@@ -79,6 +97,11 @@ function TaskRow({ task }: { task: Task }) {
           <Badge variant={STATUS_BADGE[task.status] ?? "outline"}>
             {STATUS_LABEL[task.status] ?? task.status}
           </Badge>
+          {task.category && task.category !== "general" && (
+            <Badge variant={CATEGORY_BADGE[task.category] ?? "outline"}>
+              {task.category}
+            </Badge>
+          )}
         </div>
         {task.description && (
           <p className="text-zinc-500 text-xs mt-0.5">{truncate(task.description, 100)}</p>
@@ -90,17 +113,46 @@ function TaskRow({ task }: { task: Task }) {
               {formatDate(task.due_date)}
             </span>
           )}
-          {task.category && <span className="capitalize">{task.category}</span>}
           {task.completed_at && (
             <span className="text-green-500">✓ {formatTimeAgo(task.completed_at)}</span>
           )}
         </div>
       </div>
 
-      {/* Priority label */}
-      <div className={cn("text-xs shrink-0", PRIORITY_COLOR[task.priority])}>
+      {/* Priority badge */}
+      <span
+        className={cn(
+          "text-xs px-1.5 py-0.5 rounded font-medium shrink-0",
+          PRIORITY_BADGE_COLOR[task.priority] ?? "bg-zinc-800 text-zinc-500"
+        )}
+      >
         P{task.priority}
-      </div>
+      </span>
+    </div>
+  );
+}
+
+function GroupedTaskList({ tasks }: { tasks: Task[] }) {
+  const groups: Record<string, Task[]> = {};
+  tasks.forEach((t) => {
+    const cat = t.category ?? "general";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(t);
+  });
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(groups).map(([category, catTasks]) => (
+        <div key={category} className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-2">
+          <div className="flex items-center gap-2 py-2 border-b border-zinc-800 mb-1">
+            <Badge variant={CATEGORY_BADGE[category] ?? "outline"}>{category}</Badge>
+            <span className="text-zinc-500 text-xs">{catTasks.length} Tasks</span>
+          </div>
+          {catTasks.map((task) => (
+            <TaskRow key={task.id} task={task} />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -110,13 +162,13 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [groupByCategory, setGroupByCategory] = useState(false);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
 
   let tasks = data?.tasks ?? [];
 
-  // Filters
   if (statusFilter !== "all") tasks = tasks.filter((t) => t.status === statusFilter);
   if (priorityFilter !== null) tasks = tasks.filter((t) => t.priority === priorityFilter);
   if (search.trim()) {
@@ -164,7 +216,7 @@ export default function TasksPage() {
           ))}
         </div>
 
-        {/* Priority + Search */}
+        {/* Priority + Search + Group */}
         <div className="flex gap-2 flex-wrap items-center">
           <div className="flex gap-1">
             {[null, 1, 2, 3, 4, 5].map((p) => (
@@ -182,6 +234,17 @@ export default function TasksPage() {
               </button>
             ))}
           </div>
+          <button
+            onClick={() => setGroupByCategory(!groupByCategory)}
+            className={cn(
+              "px-3 py-1 rounded text-xs transition-colors",
+              groupByCategory
+                ? "bg-purple-700 text-white"
+                : "bg-zinc-800 text-zinc-400 hover:text-white"
+            )}
+          >
+            {groupByCategory ? "Gruppiert" : "Gruppieren"}
+          </button>
           <input
             type="text"
             value={search}
@@ -193,20 +256,20 @@ export default function TasksPage() {
       </div>
 
       {/* Task list */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-2">
-        {tasks.length === 0 ? (
-          <EmptyState emoji="✅" message="Keine Tasks gefunden" />
-        ) : (
-          <>
-            {tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
-            ))}
-            <div className="py-2 text-xs text-zinc-600 text-center">
-              {tasks.length} Tasks
-            </div>
-          </>
-        )}
-      </div>
+      {tasks.length === 0 ? (
+        <EmptyState emoji="✅" message="Keine Tasks gefunden" />
+      ) : groupByCategory ? (
+        <GroupedTaskList tasks={tasks} />
+      ) : (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-2">
+          {tasks.map((task) => (
+            <TaskRow key={task.id} task={task} />
+          ))}
+          <div className="py-2 text-xs text-zinc-600 text-center">
+            {tasks.length} Tasks
+          </div>
+        </div>
+      )}
     </div>
   );
 }

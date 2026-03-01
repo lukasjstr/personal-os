@@ -1,19 +1,38 @@
 "use client";
 
+import Link from "next/link";
 import Header from "@/components/Header";
 import StatCard from "@/components/StatCard";
 import ProgressBar from "@/components/ProgressBar";
 import LoadingSpinner, { ErrorState } from "@/components/LoadingSpinner";
 import Badge from "@/components/Badge";
-import { useDashboard, useObjectives, useTasks, useRoutines } from "@/hooks/useApi";
-import { CATEGORY_EMOJI, STATUS_COLOR, getMoodEmoji, formatDate } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { useDashboard, useObjectives, useTasks, useRoutines, useLogs } from "@/hooks/useApi";
+import { CATEGORY_EMOJI, STATUS_COLOR, getMoodEmoji, formatDate, formatDateTime, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
+import type { Log } from "@/lib/api";
+
+function formatActivityLog(log: Log): string {
+  const d = log.data;
+  switch (log.log_type) {
+    case "workout": {
+      const ex = String(d.exercise ?? "?");
+      if (d.duration_min != null) return `${ex} · ${d.duration_min} min`;
+      if (d.weight != null) return `${ex} · ${d.weight}kg × ${d.reps} × ${d.sets}`;
+      return ex;
+    }
+    case "water": return `${d.amount ?? "?"}L Wasser`;
+    case "mood": return `Mood ${d.score}/10`;
+    case "food": return String(d.description ?? d.meal ?? d.food ?? "?");
+    case "gratitude": return String(d.note ?? "?");
+    default: return String(d.text ?? d.content ?? log.raw_input ?? log.log_type);
+  }
+}
 
 export default function DashboardPage() {
   const { data: dash, error: dashError, isLoading: dashLoading } = useDashboard();
   const { data: objData } = useObjectives();
   const { data: taskData } = useTasks();
   const { data: routineData } = useRoutines();
+  const { data: logsData } = useLogs(undefined, 7);
 
   if (dashLoading) return <LoadingSpinner />;
   if (dashError) {
@@ -28,6 +47,7 @@ export default function DashboardPage() {
   const objectives = objData?.objectives?.filter((o) => o.status === "active") ?? [];
   const tasks = taskData?.tasks?.slice(0, 8) ?? [];
   const routines = routineData?.routines ?? [];
+  const recentLogs = (logsData?.logs ?? []).slice(0, 5);
 
   const today = new Date();
   const greeting =
@@ -40,33 +60,41 @@ export default function DashboardPage() {
         subtitle={`${today.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}`}
       />
 
-      {/* Stats Grid */}
+      {/* Stats Grid — clickable */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          emoji="🎯"
-          label="Aktive Ziele"
-          value={stats?.active_objectives ?? 0}
-          color="blue"
-        />
-        <StatCard
-          emoji="✅"
-          label="Offene Tasks"
-          value={stats?.open_tasks ?? 0}
-          color={stats?.open_tasks && stats.open_tasks > 10 ? "yellow" : "default"}
-        />
-        <StatCard
-          emoji="💧"
-          label="Wasser heute"
-          value={`${stats?.water_today_liters ?? 0}L`}
-          sub="Ziel: 3L"
-          color={stats?.water_today_liters && stats.water_today_liters >= 3 ? "green" : "default"}
-        />
-        <StatCard
-          emoji="💪"
-          label="Workouts/Woche"
-          value={stats?.workouts_this_week ?? 0}
-          color={stats?.workouts_this_week && stats.workouts_this_week >= 4 ? "green" : "default"}
-        />
+        <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
+          <StatCard
+            emoji="🎯"
+            label="Aktive Ziele"
+            value={stats?.active_objectives ?? 0}
+            color="blue"
+          />
+        </Link>
+        <Link href="/tasks" className="block hover:opacity-90 transition-opacity">
+          <StatCard
+            emoji="✅"
+            label="Offene Tasks"
+            value={stats?.open_tasks ?? 0}
+            color={stats?.open_tasks && stats.open_tasks > 10 ? "yellow" : "default"}
+          />
+        </Link>
+        <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
+          <StatCard
+            emoji="💧"
+            label="Wasser heute"
+            value={`${stats?.water_today_liters ?? 0}L`}
+            sub="Ziel: 3L"
+            color={stats?.water_today_liters && stats.water_today_liters >= 3 ? "green" : "default"}
+          />
+        </Link>
+        <Link href="/logs?type=workout" className="block hover:opacity-90 transition-opacity">
+          <StatCard
+            emoji="💪"
+            label="Workouts/Woche"
+            value={stats?.workouts_this_week ?? 0}
+            color={stats?.workouts_this_week && stats.workouts_this_week >= 4 ? "green" : "default"}
+          />
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -150,7 +178,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Routines Today */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
@@ -238,6 +266,39 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Activity Timeline */}
+      {recentLogs.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <span>📋</span> Letzte Aktivitäten
+            <Link href="/logs" className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors">
+              Alle →
+            </Link>
+          </h2>
+          <div className="space-y-0">
+            {recentLogs.map((log, i) => {
+              const emoji = log.log_type === "mood"
+                ? getMoodEmoji(Number(log.data.score) || 0)
+                : (LOG_TYPE_EMOJI[log.log_type] ?? LOG_TYPE_EMOJI.default);
+              return (
+                <div key={log.id} className="flex items-start gap-3 py-2.5 border-b border-zinc-800 last:border-0">
+                  <div className="flex flex-col items-center shrink-0">
+                    <span className="text-base">{emoji}</span>
+                    {i < recentLogs.length - 1 && (
+                      <div className="w-px h-full min-h-[12px] bg-zinc-700 mt-1" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 pb-1">
+                    <span className="text-white text-sm">{formatActivityLog(log)}</span>
+                    <div className="text-zinc-500 text-xs mt-0.5">{formatDateTime(log.logged_at)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

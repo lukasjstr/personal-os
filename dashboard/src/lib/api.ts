@@ -1,6 +1,17 @@
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export async function validateToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("api_token");

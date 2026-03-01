@@ -17,6 +17,16 @@ const STATUS_BADGE: Record<string, "green" | "blue" | "yellow" | "red" | "outlin
   abandoned: "red",
 };
 
+const CATEGORY_BADGE: Record<string, "green" | "blue" | "yellow" | "purple" | "outline" | "orange"> = {
+  health: "green",
+  fitness: "blue",
+  finance: "yellow",
+  learning: "purple",
+  personal: "outline",
+  business: "orange",
+  relationships: "green",
+};
+
 const STATUS_LABEL: Record<string, string> = {
   active: "Aktiv",
   completed: "Abgeschlossen",
@@ -34,6 +44,7 @@ const KR_TYPE_LABEL: Record<string, string> = {
 
 function ObjectiveCard({ obj }: { obj: Objective }) {
   const [expanded, setExpanded] = useState(obj.status === "active");
+  const isLifeArea = obj.key_results.length === 0;
 
   const avgProgress =
     obj.key_results.length > 0
@@ -46,7 +57,7 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
     avgProgress >= 75 ? "green" : avgProgress >= 40 ? "blue" : avgProgress >= 20 ? "yellow" : "red";
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+    <div className={cn("bg-zinc-900 border rounded-xl overflow-hidden", isLifeArea ? "border-zinc-700 opacity-80" : "border-zinc-800")}>
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -55,18 +66,26 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
         <span className="text-2xl">{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-white font-semibold">{obj.title}</h3>
+            <h3 className={cn("font-semibold", isLifeArea ? "text-zinc-300" : "text-white")}>{obj.title}</h3>
             <Badge variant={STATUS_BADGE[obj.status] ?? "outline"}>
               {STATUS_LABEL[obj.status] ?? obj.status}
             </Badge>
+            <Badge variant={CATEGORY_BADGE[obj.category] ?? "outline"}>
+              {obj.category}
+            </Badge>
+            {isLifeArea && (
+              <Badge variant="outline">Life Area</Badge>
+            )}
           </div>
           {obj.description && (
             <p className="text-zinc-500 text-sm mt-0.5 truncate">{obj.description}</p>
           )}
-          <div className="flex items-center gap-4 mt-2">
-            <ProgressBar value={avgProgress} showValue={false} size="sm" color={progressColor} />
-            <span className="text-xs text-zinc-400 shrink-0 w-10 text-right">{avgProgress}%</span>
-          </div>
+          {!isLifeArea && (
+            <div className="flex items-center gap-4 mt-2">
+              <ProgressBar value={avgProgress} showValue={false} size="sm" color={progressColor} />
+              <span className="text-xs text-zinc-400 shrink-0 w-10 text-right">{avgProgress}%</span>
+            </div>
+          )}
         </div>
         <div className="text-zinc-500 shrink-0">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
