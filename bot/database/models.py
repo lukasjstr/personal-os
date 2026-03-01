@@ -199,7 +199,7 @@ class Conversation(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user, assistant, system
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    extra_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 

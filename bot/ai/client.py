@@ -209,14 +209,14 @@ async def process_message(
         user_id=user.id,
         role="user",
         content=message,
-        metadata={"source": source},
+        extra_data={"source": source},
         session_date=today,
     ))
     session.add(Conversation(
         user_id=user.id,
         role="assistant",
         content=reply,
-        metadata={"tool_calls": len(msg.tool_calls) if msg.tool_calls else 0},
+        extra_data={"tool_calls": len(msg.tool_calls) if msg.tool_calls else 0},
         session_date=today,
     ))
 
