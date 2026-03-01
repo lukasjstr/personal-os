@@ -130,27 +130,28 @@ export default function TokenGate({ children }: Props) {
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="block text-zinc-300 text-xs font-medium mb-1.5">
+              <label className="block text-zinc-300 text-xs font-medium mb-2">
                 API Token
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Token hier einfügen..."
-                  autoComplete="off"
-                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
-                />
-                <button
-                  type="button"
-                  onClick={handlePaste}
-                  className="px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors text-xs font-medium"
-                  title="Einfügen"
-                >
-                  📋
-                </button>
-              </div>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Token hier einfügen..."
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3.5 text-white text-base focus:outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 font-mono"
+              />
+              <button
+                type="button"
+                onClick={handlePaste}
+                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-300 hover:text-white hover:bg-zinc-700 active:bg-zinc-600 transition-colors text-sm font-medium"
+              >
+                <span>📋</span>
+                <span>Einfügen</span>
+              </button>
             </div>
 
             {error && (

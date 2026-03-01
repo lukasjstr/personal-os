@@ -332,6 +332,8 @@ async def handle_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Öffne http://95.111.252.176:3000 und füge den Token ein.\n\n"
         "_Dieser Token gibt Zugriff auf dein Dashboard. Teile ihn nicht mit anderen._",
     )
+    # Second message: plain text only so it's easy to copy on mobile
+    await send_message(chat_id, token)
 
 
 async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
