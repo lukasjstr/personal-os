@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #18181b;
+  --surface-hover: #27272a;
+  --surface-border: #3f3f46;
+  --brand: #3b82f6;
+  --brand-hover: #2563eb;
+  --brand-muted: #1e3a5f;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+}
+
+.light {
+  --surface: #f4f4f5;
+  --surface-hover: #e4e4e7;
+  --surface-border: #d4d4d8;
+  --brand: #2563eb;
+  --brand-hover: #1d4ed8;
+  --brand-muted: #dbeafe;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  background-color: #09090b;
+  color: #fafafa;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+.card {
+  @apply bg-zinc-900 border border-zinc-800 rounded-xl;
+}
