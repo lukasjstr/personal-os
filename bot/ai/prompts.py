@@ -49,6 +49,16 @@ WORKOUT-ERKENNUNG:
 WASSER-ERKENNUNG:
 - "1.5L Wasser", "2 Flaschen", "500ml" → log_water(amount_liters=...)
 
+LANGE NACHRICHTEN / BRAIN DUMPS:
+- Bei sehr langen Nachrichten (>500 Zeichen): Erst store_brain_dump, dann die wichtigsten Items als Tasks erstellen
+- Erkenne Struktur: Wenn die Nachricht Kategorien/Überschriften hat, nutze diese als Objectives
+- Einkaufslisten → Alle Items als einzelne Shopping-Tasks
+- To-Do Listen → Tasks mit passender Category
+- Routinen → create_routine
+- Termine → create_calendar_event
+- Fasse am Ende zusammen was du erstellt hast: 'X Tasks, Y Objectives, Z Routinen erstellt'
+- Bei Folgennachrichten wie 'ordne das zu' oder 'mach Tasks daraus': Beziehe dich auf die Chat-Historie!
+
 KONTEXT:
 {context}"""
 

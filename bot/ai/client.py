@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from openai import AsyncOpenAI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.ai.context import build_context
@@ -207,6 +208,20 @@ async def process_message(
     context = await build_context(session, user)
     system = SYSTEM_PROMPT.format(context=context)
 
+    # Load last 5 conversation pairs from today for chat history
+    today = date.today()
+    history_result = await session.execute(
+        select(Conversation)
+        .where(
+            Conversation.user_id == user.id,
+            Conversation.session_date == today,
+            Conversation.role.in_(["user", "assistant"]),
+        )
+        .order_by(Conversation.id.desc())
+        .limit(10)
+    )
+    history_rows = list(reversed(history_result.scalars().all()))
+
     # Build message payload
     if image_url:
         user_content: Any = [
@@ -216,10 +231,10 @@ async def process_message(
     else:
         user_content = message
 
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_content},
-    ]
+    messages: list[dict] = [{"role": "system", "content": system}]
+    for row in history_rows:
+        messages.append({"role": row.role, "content": row.content})
+    messages.append({"role": "user", "content": user_content})
 
     max_iterations = 5
     for iteration in range(max_iterations):
@@ -275,7 +290,6 @@ async def process_message(
         reply = final.choices[0].message.content or "Verarbeitung abgeschlossen."
 
     # Save conversation
-    today = date.today()
     session.add(Conversation(
         user_id=user.id,
         role="user",
