@@ -1,0 +1,23 @@
+[Unit]
+Description=Personal OS — AI-powered COO Telegram Bot
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/personal-os
+EnvironmentFile=/opt/personal-os/.env
+ExecStart=/opt/personal-os/venv/bin/uvicorn bot.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=personal-os
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

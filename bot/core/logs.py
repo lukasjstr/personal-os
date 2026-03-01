@@ -1,0 +1,149 @@
+"""Log creation for all log types (workout, water, mood, progress, etc.)."""
+from datetime import datetime, date
+from typing import Any, Optional
+
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bot.database.models import KeyResult, Log
+
+
+async def _create_log(
+    session: AsyncSession,
+    user_id: int,
+    log_type: str,
+    data: dict[str, Any],
+    raw_input: Optional[str] = None,
+    source: str = "text",
+    key_result_id: Optional[int] = None,
+    task_id: Optional[int] = None,
+) -> Log:
+    log = Log(
+        user_id=user_id,
+        log_type=log_type,
+        data=data,
+        raw_input=raw_input,
+        source=source,
+        key_result_id=key_result_id,
+        task_id=task_id,
+        logged_at=datetime.utcnow(),
+    )
+    session.add(log)
+    await session.flush()
+    return log
+
+
+async def log_workout(
+    session: AsyncSession,
+    user_id: int,
+    exercise: str,
+    weight: Optional[float] = None,
+    reps: Optional[int] = None,
+    sets: Optional[int] = None,
+    duration_minutes: Optional[int] = None,
+    notes: Optional[str] = None,
+    key_result_id: Optional[int] = None,
+) -> Log:
+    """Log a workout entry."""
+    data: dict[str, Any] = {"exercise": exercise}
+    if weight is not None:
+        data["weight"] = weight
+    if reps is not None:
+        data["reps"] = reps
+    if sets is not None:
+        data["sets"] = sets
+    if duration_minutes is not None:
+        data["duration_minutes"] = duration_minutes
+    if notes:
+        data["notes"] = notes
+
+    raw = f"{exercise}"
+    if weight:
+        raw += f" {weight}kg"
+    if reps and sets:
+        raw += f" ×{reps}×{sets}"
+
+    return await _create_log(
+        session, user_id, "workout", data,
+        raw_input=raw, key_result_id=key_result_id,
+    )
+
+
+async def log_water(
+    session: AsyncSession,
+    user_id: int,
+    amount_liters: float,
+) -> float:
+    """Log water intake and return today's total in liters."""
+    await _create_log(
+        session, user_id, "water",
+        {"amount": amount_liters},
+        raw_input=f"{amount_liters}L Wasser",
+    )
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    result = await session.execute(
+        select(Log).where(
+            and_(
+                Log.user_id == user_id,
+                Log.log_type == "water",
+                Log.logged_at >= today_start,
+            )
+        )
+    )
+    today_logs = result.scalars().all()
+    return sum(l.data.get("amount", 0) for l in today_logs)
+
+
+async def log_mood(
+    session: AsyncSession,
+    user_id: int,
+    score: int,
+    notes: str = "",
+) -> Log:
+    """Log mood / day rating."""
+    return await _create_log(
+        session, user_id, "mood",
+        {"score": score, "notes": notes},
+        raw_input=f"Mood: {score}/10 — {notes}",
+    )
+
+
+async def log_progress(
+    session: AsyncSession,
+    user_id: int,
+    key_result_id: int,
+    value: float,
+    notes: str = "",
+) -> Log:
+    """Log progress for a key result and update its current value."""
+    # Update key result current value
+    kr_result = await session.execute(
+        select(KeyResult).where(KeyResult.id == key_result_id)
+    )
+    kr = kr_result.scalar_one_or_none()
+    if kr:
+        kr.current_value = (kr.current_value or 0) + value
+        await session.flush()
+
+    return await _create_log(
+        session, user_id, "progress",
+        {"value": value, "description": notes, "key_result_id": key_result_id},
+        raw_input=f"Fortschritt +{value} für KR#{key_result_id}",
+        key_result_id=key_result_id,
+    )
+
+
+async def log_general(
+    session: AsyncSession,
+    user_id: int,
+    content: str,
+    source: str = "text",
+) -> Log:
+    """Log a general note."""
+    return await _create_log(
+        session, user_id, "note",
+        {"content": content},
+        raw_input=content,
+        source=source,
+    )
