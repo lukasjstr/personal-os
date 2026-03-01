@@ -1,14 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import Header from "@/components/Header";
-import StatCard from "@/components/StatCard";
-import ProgressBar from "@/components/ProgressBar";
 import LoadingSpinner, { ErrorState } from "@/components/LoadingSpinner";
-import Badge from "@/components/Badge";
-import { useDashboard, useObjectives, useTasks, useRoutines, useLogs } from "@/hooks/useApi";
-import { CATEGORY_EMOJI, STATUS_COLOR, getMoodEmoji, formatDate, formatDateTime, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
+import XPBar from "@/components/XPBar";
+import MissionBoard from "@/components/MissionBoard";
+import WeekHeatmap from "@/components/WeekHeatmap";
+import CircularProgress from "@/components/CircularProgress";
+import { useDashboard, useTasks, useRoutines, useLogs } from "@/hooks/useApi";
+import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { Log } from "@/lib/api";
+
+const LOG_TYPE_COLOR: Record<string, string> = {
+  workout: "text-green-400",
+  water: "text-blue-400",
+  mood: "text-yellow-400",
+  food: "text-orange-400",
+  gratitude: "text-pink-400",
+  progress: "text-purple-400",
+  note: "text-zinc-400",
+  general: "text-zinc-400",
+};
 
 function formatActivityLog(log: Log): string {
   const d = log.data;
@@ -29,7 +40,6 @@ function formatActivityLog(log: Log): string {
 
 export default function DashboardPage() {
   const { data: dash, error: dashError, isLoading: dashLoading } = useDashboard();
-  const { data: objData } = useObjectives();
   const { data: taskData } = useTasks();
   const { data: routineData } = useRoutines();
   const { data: logsData } = useLogs(undefined, 7);
@@ -44,178 +54,149 @@ export default function DashboardPage() {
 
   const stats = dash?.stats;
   const user = dash?.user;
-  const objectives = objData?.objectives?.filter((o) => o.status === "active") ?? [];
-  const tasks = taskData?.tasks?.slice(0, 8) ?? [];
+  const tasks = taskData?.tasks ?? [];
   const routines = routineData?.routines ?? [];
-  const recentLogs = (logsData?.logs ?? []).slice(0, 5);
+  const allLogs = logsData?.logs ?? [];
+  const recentLogs = allLogs.slice(0, 8);
 
   const today = new Date();
   const greeting =
     today.getHours() < 12 ? "Guten Morgen" : today.getHours() < 18 ? "Guten Tag" : "Guten Abend";
+  const dayStr = today.toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  const openTasksCount = stats?.open_tasks ?? 0;
+  const taskCardColor =
+    openTasksCount > 15 ? "red" : openTasksCount > 10 ? "yellow" : "default";
 
   return (
     <div>
-      <Header
-        title={`${greeting}${user?.first_name ? `, ${user.first_name}` : ""} 👋`}
-        subtitle={`${today.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}`}
-      />
+      {/* Hero */}
+      <div className="mb-6">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              {greeting}{user?.first_name ? `, ${user.first_name}` : ""} 👋
+            </h1>
+            <p className="text-zinc-500 text-sm mt-0.5">{dayStr}</p>
+          </div>
+          {(stats?.streak_days ?? 0) > 0 && (
+            <div className="bg-orange-950/60 border border-orange-800/40 rounded-xl px-3 py-2 flex items-center gap-2">
+              <span className="text-xl">🔥</span>
+              <div>
+                <div className="text-orange-400 font-bold text-lg leading-none">
+                  {stats?.streak_days}
+                </div>
+                <div className="text-orange-600 text-xs">Tage</div>
+              </div>
+            </div>
+          )}
+        </div>
+        {stats && stats.total_xp !== undefined && (
+          <XPBar
+            level={stats.level}
+            levelTitle={stats.level_title}
+            totalXp={stats.total_xp}
+            xpProgress={stats.xp_progress}
+            xpToNext={stats.xp_to_next}
+          />
+        )}
+      </div>
 
-      {/* Stats Grid — clickable */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
-          <StatCard
-            emoji="🎯"
-            label="Aktive Ziele"
-            value={stats?.active_objectives ?? 0}
-            color="blue"
-          />
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 h-full">
+            <div className="text-2xl mb-1">🎯</div>
+            <div
+              className={cn(
+                "text-2xl font-bold",
+                (stats?.active_objectives ?? 0) > 0 ? "text-blue-400" : "text-zinc-500"
+              )}
+            >
+              {stats?.active_objectives ?? 0}
+            </div>
+            <div className="text-zinc-500 text-xs mt-0.5">Aktive Ziele</div>
+          </div>
         </Link>
+
         <Link href="/tasks" className="block hover:opacity-90 transition-opacity">
-          <StatCard
-            emoji="✅"
-            label="Offene Tasks"
-            value={stats?.open_tasks ?? 0}
-            color={stats?.open_tasks && stats.open_tasks > 10 ? "yellow" : "default"}
-          />
-        </Link>
-        <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
-          <StatCard
-            emoji="💧"
-            label="Wasser heute"
-            value={`${stats?.water_today_liters ?? 0}L`}
-            sub="Ziel: 3L"
-            color={stats?.water_today_liters && stats.water_today_liters >= 3 ? "green" : "default"}
-          />
-        </Link>
-        <Link href="/logs?type=workout" className="block hover:opacity-90 transition-opacity">
-          <StatCard
-            emoji="💪"
-            label="Workouts/Woche"
-            value={stats?.workouts_this_week ?? 0}
-            color={stats?.workouts_this_week && stats.workouts_this_week >= 4 ? "green" : "default"}
-          />
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Active Objectives */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <span>🎯</span> Aktive Objectives
-          </h2>
-          {objectives.length === 0 ? (
-            <p className="text-zinc-500 text-sm">Keine aktiven Objectives</p>
-          ) : (
-            <div className="space-y-4">
-              {objectives.slice(0, 5).map((obj) => {
-                const avgProgress =
-                  obj.key_results.length > 0
-                    ? Math.round(
-                        obj.key_results.reduce((s, kr) => s + kr.progress_pct, 0) /
-                          obj.key_results.length
-                      )
-                    : 0;
-                return (
-                  <div key={obj.id}>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span>{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
-                      <span className="text-white text-sm font-medium">{obj.title}</span>
-                      <Badge variant="blue">{avgProgress}%</Badge>
-                    </div>
-                    <ProgressBar value={avgProgress} showValue={false} size="sm" />
-                    <div className="text-zinc-500 text-xs mt-1">
-                      {obj.key_results.length} Key Result{obj.key_results.length !== 1 ? "s" : ""}
-                      {obj.target_date ? ` · bis ${formatDate(obj.target_date)}` : ""}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Open Tasks */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <span>✅</span> Top Tasks
-          </h2>
-          {tasks.length === 0 ? (
-            <p className="text-zinc-500 text-sm">Keine offenen Tasks — alles erledigt! 🎉</p>
-          ) : (
-            <div className="space-y-2">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="flex items-start gap-3 py-2 border-b border-zinc-800 last:border-0"
-                >
-                  <div
-                    className={cn(
-                      "mt-0.5 w-2 h-2 rounded-full shrink-0",
-                      task.priority === 1 ? "bg-red-400" :
-                      task.priority === 2 ? "bg-orange-400" :
-                      task.priority === 3 ? "bg-yellow-400" : "bg-zinc-500"
-                    )}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-white truncate">{task.title}</div>
-                    {task.due_date && (
-                      <div className="text-xs text-zinc-500 mt-0.5">
-                        📅 {formatDate(task.due_date)}
-                      </div>
-                    )}
-                  </div>
-                  <Badge
-                    variant={
-                      task.status === "in_progress" ? "blue" : "outline"
-                    }
-                  >
-                    {task.status === "in_progress" ? "In Arbeit" : "Offen"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Routines Today */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <span>🔄</span> Routinen heute
-            {stats && (
-              <span className="text-xs text-zinc-400 ml-auto">
-                {stats.routines_done_today}/{stats.routines_total} erledigt
-              </span>
+          <div
+            className={cn(
+              "bg-zinc-900 border rounded-xl p-4 h-full",
+              taskCardColor === "red"
+                ? "border-red-800/60"
+                : taskCardColor === "yellow"
+                ? "border-yellow-800/60"
+                : "border-zinc-800"
             )}
-          </h2>
-          {routines.length === 0 ? (
-            <p className="text-zinc-500 text-sm">Keine aktiven Routinen</p>
-          ) : (
-            <div className="space-y-2">
-              {routines.map((r) => (
-                <div key={r.id} className="flex items-center gap-3">
-                  <span className="text-lg">{r.completed_today ? "✅" : "☐"}</span>
-                  <div>
-                    <div
-                      className={cn(
-                        "text-sm",
-                        r.completed_today ? "text-zinc-500 line-through" : "text-white"
-                      )}
-                    >
-                      {r.title}
-                    </div>
-                    {r.frequency_human && (
-                      <div className="text-xs text-zinc-500">{r.frequency_human}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
+          >
+            <div className="text-2xl mb-1">✅</div>
+            <div
+              className={cn(
+                "text-2xl font-bold",
+                taskCardColor === "red"
+                  ? "text-red-400"
+                  : taskCardColor === "yellow"
+                  ? "text-yellow-400"
+                  : "text-white"
+              )}
+            >
+              {openTasksCount}
             </div>
-          )}
-        </div>
+            <div className="text-zinc-500 text-xs mt-0.5">Offene Tasks</div>
+          </div>
+        </Link>
 
-        {/* Quick Stats */}
+        <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 h-full">
+            <CircularProgress
+              value={Math.min(100, ((stats?.water_today_liters ?? 0) / 3) * 100)}
+              size={52}
+              strokeWidth={5}
+              color="#3b82f6"
+              label={`${stats?.water_today_liters ?? 0}L`}
+            />
+            <div>
+              <div className="text-zinc-400 text-xs">Wasser heute</div>
+              <div className="text-zinc-500 text-xs mt-0.5">Ziel: 3L</div>
+            </div>
+          </div>
+        </Link>
+
+        <Link href="/routines" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 h-full">
+            <CircularProgress
+              value={
+                stats?.routines_total
+                  ? Math.round(((stats.routines_done_today ?? 0) / stats.routines_total) * 100)
+                  : 0
+              }
+              size={52}
+              strokeWidth={5}
+              color="#22c55e"
+              label={`${stats?.routines_done_today ?? 0}/${stats?.routines_total ?? 0}`}
+            />
+            <div>
+              <div className="text-zinc-400 text-xs">Routinen heute</div>
+              <div className="text-zinc-500 text-xs mt-0.5">
+                {stats?.routines_done_today === stats?.routines_total &&
+                (stats?.routines_total ?? 0) > 0
+                  ? "✅ Alle done"
+                  : "Daily Quests"}
+              </div>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Mission Board + Quick Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <MissionBoard routines={routines} tasks={tasks} />
+
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
             <span>📊</span> Schnellübersicht
@@ -234,12 +215,14 @@ export default function DashboardPage() {
                 <span className="text-zinc-400 text-sm">Wasser heute</span>
                 <span className="text-sm text-white">{stats?.water_today_liters ?? 0}/3L</span>
               </div>
-              <ProgressBar
-                value={((stats?.water_today_liters ?? 0) / 3) * 100}
-                showValue={false}
-                color="blue"
-                size="sm"
-              />
+              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, ((stats?.water_today_liters ?? 0) / 3) * 100)}%`,
+                  }}
+                />
+              </div>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -248,20 +231,36 @@ export default function DashboardPage() {
                   {stats?.routines_done_today ?? 0}/{stats?.routines_total ?? 0}
                 </span>
               </div>
-              <ProgressBar
-                value={
-                  stats?.routines_total
-                    ? ((stats.routines_done_today ?? 0) / stats.routines_total) * 100
-                    : 0
-                }
-                showValue={false}
-                color="green"
-                size="sm"
-              />
+              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all"
+                  style={{
+                    width: `${
+                      stats?.routines_total
+                        ? ((stats.routines_done_today ?? 0) / stats.routines_total) * 100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400 text-sm">Workouts diese Woche</span>
+              <Link
+                href="/fitness"
+                className="text-sm text-white hover:text-blue-400 transition-colors"
+              >
+                💪 {stats?.workouts_this_week ?? 0}x
+              </Link>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-400 text-sm">Einkaufsliste</span>
-              <span className="text-sm text-white">{stats?.shopping_items ?? 0} Items</span>
+              <Link
+                href="/shopping"
+                className="text-sm text-white hover:text-blue-400 transition-colors"
+              >
+                🛒 {stats?.shopping_items ?? 0} Items
+              </Link>
             </div>
           </div>
         </div>
@@ -269,20 +268,28 @@ export default function DashboardPage() {
 
       {/* Activity Timeline */}
       {recentLogs.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
             <span>📋</span> Letzte Aktivitäten
-            <Link href="/logs" className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors">
+            <Link
+              href="/logs"
+              className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors"
+            >
               Alle →
             </Link>
           </h2>
           <div className="space-y-0">
             {recentLogs.map((log, i) => {
-              const emoji = log.log_type === "mood"
-                ? getMoodEmoji(Number(log.data.score) || 0)
-                : (LOG_TYPE_EMOJI[log.log_type] ?? LOG_TYPE_EMOJI.default);
+              const emoji =
+                log.log_type === "mood"
+                  ? getMoodEmoji(Number(log.data.score) || 0)
+                  : LOG_TYPE_EMOJI[log.log_type] ?? LOG_TYPE_EMOJI.default;
+              const color = LOG_TYPE_COLOR[log.log_type] ?? "text-zinc-400";
               return (
-                <div key={log.id} className="flex items-start gap-3 py-2.5 border-b border-zinc-800 last:border-0">
+                <div
+                  key={log.id}
+                  className="flex items-start gap-3 py-2.5 border-b border-zinc-800 last:border-0"
+                >
                   <div className="flex flex-col items-center shrink-0">
                     <span className="text-base">{emoji}</span>
                     {i < recentLogs.length - 1 && (
@@ -290,8 +297,10 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0 pb-1">
-                    <span className="text-white text-sm">{formatActivityLog(log)}</span>
-                    <div className="text-zinc-500 text-xs mt-0.5">{formatDateTime(log.logged_at)}</div>
+                    <span className={cn("text-sm", color)}>{formatActivityLog(log)}</span>
+                    <div className="text-zinc-500 text-xs mt-0.5">
+                      {formatTimeAgo(log.logged_at)}
+                    </div>
                   </div>
                 </div>
               );
@@ -299,6 +308,9 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Week Heatmap */}
+      <WeekHeatmap logs={allLogs} />
     </div>
   );
 }

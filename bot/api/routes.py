@@ -1,4 +1,6 @@
-"""REST API routes — Phase 1 working endpoints + Phase 4 stubs for dashboard."""
+"""REST API routes — Phase 1 working endpoints + Phase 3 fitness + gamification."""
+import math
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -19,10 +21,20 @@ from bot.database.models import (
 
 router = APIRouter(prefix="/api")
 
+LEVEL_TITLES = [
+    "Rookie", "Beginner", "Learner", "Achiever", "Warrior",
+    "Champion", "Master", "Expert", "Elite", "Legend", "Myth"
+]
+
+
+def get_level_title(level: int) -> str:
+    idx = min(level, len(LEVEL_TITLES) - 1)
+    return LEVEL_TITLES[idx]
+
 
 @router.get("/health")
 async def api_health() -> dict:
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "3.0.0"}
 
 
 @router.get("/objectives")
@@ -240,11 +252,12 @@ async def get_dashboard(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Aggregated dashboard data."""
+    """Aggregated dashboard data with XP, level, and streak."""
     from datetime import date
     today = date.today()
     today_start = datetime.combine(today, datetime.min.time())
     week_start = datetime.combine(today - timedelta(days=7), datetime.min.time())
+    since_60 = datetime.combine(today - timedelta(days=60), datetime.min.time())
 
     obj_result = await session.execute(
         select(Objective).where(and_(Objective.user_id == user.id, Objective.status == "active"))
@@ -278,6 +291,45 @@ async def get_dashboard(
     routines = await get_active_routines(session, user.id)
     completed_today = await get_todays_completions(session, user.id)
 
+    # ── Streak calculation ──────────────────────────────────────────────────
+    log_dates_result = await session.execute(
+        select(Log.logged_at).where(
+            and_(Log.user_id == user.id, Log.logged_at >= since_60)
+        )
+    )
+    all_log_dates = {dt.date() for dt in log_dates_result.scalars().all()}
+    streak = 0
+    check_date = today
+    while check_date in all_log_dates:
+        streak += 1
+        check_date -= timedelta(days=1)
+
+    # ── XP / Level calculation ──────────────────────────────────────────────
+    done_tasks_result = await session.execute(
+        select(Task).where(and_(Task.user_id == user.id, Task.status == "done"))
+    )
+    done_tasks_count = len(done_tasks_result.scalars().all())
+
+    workout_dates_result = await session.execute(
+        select(Log.logged_at).where(and_(Log.user_id == user.id, Log.log_type == "workout"))
+    )
+    workout_sessions = len({dt.date() for dt in workout_dates_result.scalars().all()})
+
+    rc_result = await session.execute(
+        select(RoutineCompletion).where(RoutineCompletion.user_id == user.id)
+    )
+    rc_count = len(rc_result.scalars().all())
+
+    mood_count_result = await session.execute(
+        select(Log).where(and_(Log.user_id == user.id, Log.log_type == "mood"))
+    )
+    mood_count = len(mood_count_result.scalars().all())
+
+    total_xp = done_tasks_count * 10 + workout_sessions * 25 + rc_count * 15 + mood_count * 5
+    level = math.floor(math.sqrt(total_xp / 100)) if total_xp > 0 else 0
+    xp_for_current = level * level * 100
+    xp_for_next = (level + 1) * (level + 1) * 100
+
     return {
         "user": {
             "id": user.id,
@@ -293,7 +345,136 @@ async def get_dashboard(
             "latest_mood": latest_mood.data.get("score") if latest_mood else None,
             "routines_total": len(routines),
             "routines_done_today": len([r for r in routines if r.id in completed_today]),
+            "streak_days": streak,
+            "total_xp": total_xp,
+            "level": level,
+            "level_title": get_level_title(level),
+            "xp_progress": total_xp - xp_for_current,
+            "xp_to_next": xp_for_next - xp_for_current,
         },
+    }
+
+
+# ─── Fitness Endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/fitness/summary")
+async def get_fitness_summary(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get fitness summary: last sessions, volume trend, workout days."""
+    since_90 = datetime.utcnow() - timedelta(days=90)
+    result = await session.execute(
+        select(Log).where(
+            and_(Log.user_id == user.id, Log.log_type == "workout", Log.logged_at >= since_90)
+        ).order_by(Log.logged_at.desc())
+    )
+    workout_logs = result.scalars().all()
+
+    workout_days = set()
+    for l in workout_logs:
+        workout_days.add(l.logged_at.date())
+
+    volume_by_week: dict = defaultdict(float)
+    for l in workout_logs:
+        week_key = l.logged_at.strftime("%Y-W%W")
+        weight = float(l.data.get("weight", 0) or 0)
+        reps = float(l.data.get("reps", 1) or 1)
+        sets = float(l.data.get("sets", 1) or 1)
+        if weight > 0:
+            volume_by_week[week_key] += weight * reps * sets
+
+    sessions_by_day: dict = {}
+    for l in workout_logs:
+        day = l.logged_at.date().isoformat()
+        if day not in sessions_by_day:
+            sessions_by_day[day] = []
+        sessions_by_day[day].append({
+            "exercise": l.data.get("exercise", "?"),
+            "weight": l.data.get("weight"),
+            "reps": l.data.get("reps"),
+            "sets": l.data.get("sets"),
+            "duration_min": l.data.get("duration_min"),
+        })
+
+    last_sessions = [
+        {"date": day, "exercises": exs}
+        for day, exs in sorted(sessions_by_day.items(), reverse=True)[:8]
+    ]
+
+    return {
+        "total_workout_days": len(workout_days),
+        "workout_days": sorted([d.isoformat() for d in workout_days]),
+        "volume_by_week": [
+            {"week": week, "volume": round(vol)}
+            for week, vol in sorted(volume_by_week.items())[-12:]
+        ],
+        "last_sessions": last_sessions,
+    }
+
+
+@router.get("/fitness/exercises")
+async def get_fitness_exercises(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get stats per exercise."""
+    result = await session.execute(
+        select(Log).where(
+            and_(Log.user_id == user.id, Log.log_type == "workout")
+        ).order_by(Log.logged_at.desc())
+    )
+    workout_logs = result.scalars().all()
+
+    exercises: dict = {}
+    for l in workout_logs:
+        ex = str(l.data.get("exercise", "Unbekannt")).strip()
+        if ex not in exercises:
+            exercises[ex] = {
+                "name": ex,
+                "count": 0,
+                "max_weight": 0.0,
+                "last_done": l.logged_at.isoformat(),
+            }
+        exercises[ex]["count"] += 1
+        weight = float(l.data.get("weight", 0) or 0)
+        if weight > exercises[ex]["max_weight"]:
+            exercises[ex]["max_weight"] = weight
+
+    return {
+        "exercises": sorted(exercises.values(), key=lambda x: -x["count"])
+    }
+
+
+@router.get("/fitness/prs")
+async def get_fitness_prs(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get personal records (max weight per exercise)."""
+    result = await session.execute(
+        select(Log).where(
+            and_(Log.user_id == user.id, Log.log_type == "workout")
+        )
+    )
+    workout_logs = result.scalars().all()
+
+    prs: dict = {}
+    for l in workout_logs:
+        ex = str(l.data.get("exercise", "Unbekannt")).strip()
+        weight = float(l.data.get("weight", 0) or 0)
+        reps = l.data.get("reps")
+        if weight > 0:
+            if ex not in prs or weight > prs[ex]["weight"]:
+                prs[ex] = {
+                    "exercise": ex,
+                    "weight": weight,
+                    "reps": reps,
+                    "date": l.logged_at.isoformat(),
+                }
+
+    return {
+        "prs": sorted(prs.values(), key=lambda x: -x["weight"])
     }
 
 

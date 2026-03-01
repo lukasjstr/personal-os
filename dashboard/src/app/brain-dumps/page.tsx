@@ -2,70 +2,69 @@
 
 import { useState } from "react";
 import Header from "@/components/Header";
-import Badge from "@/components/Badge";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import { useBrainDumps } from "@/hooks/useApi";
-import { formatDateTime, cn } from "@/lib/utils";
+import { formatDateTime, formatTimeAgo, cn } from "@/lib/utils";
 import type { BrainDump } from "@/lib/api";
 import { Search } from "lucide-react";
 
 function BrainDumpCard({ dump }: { dump: BrainDump }) {
   const [expanded, setExpanded] = useState(false);
+  const isLong = dump.raw_input.length > 200;
 
   return (
     <div
       className={cn(
-        "bg-zinc-900 border rounded-xl p-5 cursor-pointer transition-all hover:border-zinc-700",
-        dump.processed ? "border-zinc-800" : "border-blue-900"
+        "bg-zinc-900 border rounded-xl overflow-hidden transition-all cursor-pointer",
+        dump.processed ? "border-zinc-800 hover:border-zinc-700" : "border-blue-900/60 hover:border-blue-800"
       )}
       onClick={() => setExpanded(!expanded)}
     >
-      <div className="flex items-start gap-3">
-        <span className="text-xl mt-0.5">🧠</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-zinc-500 text-xs">{formatDateTime(dump.created_at)}</span>
-            {!dump.processed && <Badge variant="blue">Neu</Badge>}
-            {dump.processed && <Badge variant="green">Verarbeitet</Badge>}
-            {dump.linked_objective_id && (
-              <Badge variant="purple">🎯 Objective</Badge>
-            )}
-          </div>
-
-          <p
-            className={cn(
-              "text-white text-sm leading-relaxed",
-              !expanded && "line-clamp-3"
-            )}
-          >
-            {dump.raw_input}
-          </p>
-
-          {dump.ai_interpretation && (
-            <div
-              className={cn(
-                "mt-3 pl-3 border-l-2 border-blue-700",
-                !expanded && "hidden"
-              )}
-            >
-              <div className="text-xs text-zinc-500 mb-1">🤖 KI Interpretation:</div>
-              <p className="text-blue-300 text-sm">{dump.ai_interpretation}</p>
-            </div>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 pt-4 pb-2">
+        <span className="text-xl">🧠</span>
+        <span className="text-zinc-500 text-xs flex-1">{formatTimeAgo(dump.created_at)}</span>
+        <div className="flex items-center gap-2">
+          {!dump.processed && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-400 border border-blue-800/50">
+              Neu
+            </span>
           )}
-
-          {dump.ai_interpretation && !expanded && (
-            <div className="mt-2 pl-3 border-l-2 border-blue-700">
-              <p className="text-blue-300 text-xs truncate">{dump.ai_interpretation}</p>
-            </div>
+          {dump.processed && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-400 border border-green-800/50">
+              Verarbeitet
+            </span>
+          )}
+          {dump.linked_objective_id && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-900/50 text-violet-400 border border-violet-800/50">
+              🎯 Linked
+            </span>
           )}
         </div>
       </div>
 
-      {dump.raw_input.length > 200 && (
-        <button className="text-xs text-zinc-500 mt-2 hover:text-zinc-300 ml-8">
-          {expanded ? "Weniger anzeigen ↑" : "Mehr anzeigen ↓"}
-        </button>
-      )}
+      {/* Content */}
+      <div className="px-5 pb-4">
+        <p className={cn("text-white text-sm leading-relaxed", !expanded && isLong && "line-clamp-3")}>
+          {dump.raw_input}
+        </p>
+
+        {/* AI interpretation - always show a preview, expand on click */}
+        {dump.ai_interpretation && (
+          <div className={cn("mt-3 pl-3 border-l-2 border-blue-600/70", !expanded && "line-clamp-2")}>
+            <div className="text-xs text-zinc-500 mb-1">🤖 KI-Interpretation</div>
+            <p className="text-blue-300 text-sm leading-relaxed">{dump.ai_interpretation}</p>
+          </div>
+        )}
+
+        {isLong && (
+          <button className="text-xs text-zinc-500 mt-2 hover:text-zinc-300 transition-colors">
+            {expanded ? "Weniger anzeigen ↑" : "Mehr anzeigen ↓"}
+          </button>
+        )}
+
+        <div className="text-zinc-600 text-xs mt-2">{formatDateTime(dump.created_at)}</div>
+      </div>
     </div>
   );
 }
@@ -95,12 +94,13 @@ export default function BrainDumpsPage() {
 
   const all = data?.brain_dumps ?? [];
   const unprocessed = all.filter((d) => !d.processed).length;
+  const withLinked = all.filter((d) => d.linked_objective_id).length;
 
   return (
     <div>
       <Header
         title="🧠 Brain Dumps"
-        subtitle={`${all.length} gesamt · ${unprocessed} unverarbeitet`}
+        subtitle={`${all.length} gesamt · ${unprocessed} unverarbeitet · ${withLinked} verknüpft`}
       />
 
       {/* Search & Filter */}
@@ -117,18 +117,18 @@ export default function BrainDumpsPage() {
         </div>
         <div className="flex gap-2">
           {([
-            [null, "Alle"],
-            [false, "Unverarbeitet"],
-            [true, "Verarbeitet"],
-          ] as const).map(([val, label]) => (
+            [null, "Alle", "bg-zinc-800 text-zinc-400"],
+            [false, "Unverarbeitet", "bg-blue-900/60 text-blue-400 border-blue-800"],
+            [true, "Verarbeitet", "bg-green-900/50 text-green-400 border-green-800"],
+          ] as const).map(([val, label, activeStyle]) => (
             <button
               key={String(val)}
               onClick={() => setFilterProcessed(val)}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-sm transition-colors",
+                "px-3 py-1.5 rounded-full text-sm border transition-colors",
                 filterProcessed === val
-                  ? "bg-blue-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:text-white"
+                  ? `${activeStyle} border-current`
+                  : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-white hover:border-zinc-600"
               )}
             >
               {label}
@@ -137,7 +137,6 @@ export default function BrainDumpsPage() {
         </div>
       </div>
 
-      {/* Dumps List */}
       {dumps.length === 0 ? (
         <EmptyState emoji="🧠" message="Keine Brain Dumps gefunden" />
       ) : (

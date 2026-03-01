@@ -20,6 +20,7 @@ from bot.telegram.commands import (
     handle_status,
     handle_times,
     handle_toggle,
+    handle_token,
 )
 from bot.telegram.sender import send_message, send_typing
 
@@ -142,6 +143,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("status", handle_status))
     application.add_handler(CommandHandler("shopping", handle_shopping))
     application.add_handler(CommandHandler("ical", handle_ical))
+    application.add_handler(CommandHandler("token", handle_token))
 
     # Message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

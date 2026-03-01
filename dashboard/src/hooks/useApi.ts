@@ -40,3 +40,15 @@ export function useBrainDumps() {
 export function useShopping() {
   return useSWR("shopping", () => api.shopping(), { refreshInterval: 60_000 });
 }
+
+export function useFitnessSummary() {
+  return useSWR("fitness-summary", () => api.fitnessSummary(), { refreshInterval: 300_000 });
+}
+
+export function useFitnessExercises() {
+  return useSWR("fitness-exercises", () => api.fitnessExercises(), { refreshInterval: 300_000 });
+}
+
+export function useFitnessPRs() {
+  return useSWR("fitness-prs", () => api.fitnessPRs(), { refreshInterval: 300_000 });
+}

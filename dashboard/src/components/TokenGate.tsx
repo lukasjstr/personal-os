@@ -36,7 +36,7 @@ export default function TokenGate({ children }: Props) {
     e.preventDefault();
     const token = input.trim();
     if (!token) {
-      setError("Bitte API Token eingeben");
+      setError("Bitte Token eingeben");
       return;
     }
     setLoading(true);
@@ -47,7 +47,16 @@ export default function TokenGate({ children }: Props) {
       setToken(token);
       setAuthed(true);
     } else {
-      setError("Ungültiger Token. Bitte nochmal versuchen.");
+      setError("Token ungültig — schreib /token an den Bot");
+    }
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setInput(text.trim());
+    } catch {
+      // clipboard not available
     }
   };
 
@@ -59,53 +68,102 @@ export default function TokenGate({ children }: Props) {
       <div className="w-full max-w-sm">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-4">
-            <span className="text-3xl">🤖</span>
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 mb-4 shadow-xl shadow-blue-900/30">
+            <span className="text-4xl">🤖</span>
           </div>
           <h1 className="text-white text-2xl font-bold">Personal OS</h1>
-          <p className="text-zinc-400 text-sm mt-1">Dein persönlicher COO</p>
+          <p className="text-zinc-400 text-sm mt-1">Verbinde dein Dashboard</p>
         </div>
 
-        {/* Instruction card */}
-        <div className="bg-[#229ED9]/10 border border-[#229ED9]/30 rounded-xl p-4 mb-6 flex items-start gap-3">
-          <TelegramIcon className="w-5 h-5 text-[#229ED9] shrink-0 mt-0.5" />
-          <div>
-            <p className="text-white text-sm font-medium">Token via Telegram holen</p>
-            <p className="text-zinc-400 text-xs mt-0.5">
-              Schreib{" "}
-              <code className="bg-zinc-800 text-[#229ED9] px-1.5 py-0.5 rounded font-mono text-xs">/token</code>
-              {" "}an{" "}
-              <span className="text-[#229ED9] font-medium">@PersonalOperatingSystem_Bot</span>
-              {" "}auf Telegram
-            </p>
+        {/* Steps */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4">
+          <div className="text-zinc-400 text-xs font-medium uppercase tracking-wider mb-3">
+            So geht&apos;s
+          </div>
+          <div className="space-y-3">
+            {[
+              {
+                step: "1",
+                icon: <TelegramIcon className="w-4 h-4 text-[#229ED9]" />,
+                text: (
+                  <>
+                    Öffne{" "}
+                    <span className="text-[#229ED9] font-medium">
+                      @PersonalOperatingSystem_Bot
+                    </span>{" "}
+                    auf Telegram
+                  </>
+                ),
+              },
+              {
+                step: "2",
+                icon: <span className="text-sm">💬</span>,
+                text: (
+                  <>
+                    Schreib{" "}
+                    <code className="bg-zinc-800 text-[#229ED9] px-1.5 py-0.5 rounded font-mono text-xs">
+                      /token
+                    </code>
+                  </>
+                ),
+              },
+              {
+                step: "3",
+                icon: <span className="text-sm">📋</span>,
+                text: "Füge den Token unten ein und klick Verbinden",
+              },
+            ].map(({ step, icon, text }) => (
+              <div key={step} className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-zinc-400 text-xs font-bold">{step}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="shrink-0">{icon}</span>
+                  <span className="text-zinc-300 text-sm">{text}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Login form */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
               <label className="block text-zinc-300 text-xs font-medium mb-1.5">
                 API Token
               </label>
-              <input
-                type="password"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Füge deinen Token hier ein..."
-                autoComplete="off"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Token hier einfügen..."
+                  autoComplete="off"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
+                />
+                <button
+                  type="button"
+                  onClick={handlePaste}
+                  className="px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors text-xs font-medium"
+                  title="Einfügen"
+                >
+                  📋
+                </button>
+              </div>
             </div>
+
             {error && (
-              <div className="flex items-center gap-2 text-red-400 text-xs bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
-                <span>⚠️</span> {error}
+              <div className="flex items-center gap-2 text-red-400 text-xs bg-red-950/50 border border-red-800/40 rounded-lg px-3 py-2">
+                <span>⚠️</span>
+                <span>{error}</span>
               </div>
             )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              disabled={loading || !input.trim()}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -116,7 +174,7 @@ export default function TokenGate({ children }: Props) {
                   Prüfe Token...
                 </>
               ) : (
-                "Verbinden"
+                "Verbinden →"
               )}
             </button>
           </form>

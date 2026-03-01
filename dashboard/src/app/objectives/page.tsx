@@ -1,37 +1,25 @@
 "use client";
 
 import Header from "@/components/Header";
-import ProgressBar from "@/components/ProgressBar";
-import Badge from "@/components/Badge";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import { useObjectives } from "@/hooks/useApi";
-import { CATEGORY_EMOJI, formatDate, cn } from "@/lib/utils";
+import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import type { Objective } from "@/lib/api";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-
-const STATUS_BADGE: Record<string, "green" | "blue" | "yellow" | "red" | "outline"> = {
-  active: "green",
-  completed: "blue",
-  paused: "yellow",
-  abandoned: "red",
-};
-
-const CATEGORY_BADGE: Record<string, "green" | "blue" | "yellow" | "purple" | "outline" | "orange"> = {
-  health: "green",
-  fitness: "blue",
-  finance: "yellow",
-  learning: "purple",
-  personal: "outline",
-  business: "orange",
-  relationships: "green",
-};
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Aktiv",
   completed: "Abgeschlossen",
   paused: "Pausiert",
   abandoned: "Aufgegeben",
+};
+
+const STATUS_STYLE: Record<string, string> = {
+  active: "bg-green-900/50 text-green-400 border border-green-800/50",
+  completed: "bg-blue-900/50 text-blue-400 border border-blue-800/50",
+  paused: "bg-yellow-900/50 text-yellow-400 border border-yellow-800/50",
+  abandoned: "bg-red-900/50 text-red-400 border border-red-800/50",
 };
 
 const KR_TYPE_LABEL: Record<string, string> = {
@@ -45,6 +33,7 @@ const KR_TYPE_LABEL: Record<string, string> = {
 function ObjectiveCard({ obj }: { obj: Objective }) {
   const [expanded, setExpanded] = useState(obj.status === "active");
   const isLifeArea = obj.key_results.length === 0;
+  const catColor = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.default;
 
   const avgProgress =
     obj.key_results.length > 0
@@ -54,89 +43,114 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
       : 0;
 
   const progressColor =
-    avgProgress >= 75 ? "green" : avgProgress >= 40 ? "blue" : avgProgress >= 20 ? "yellow" : "red";
+    avgProgress >= 75 ? "#22c55e" : avgProgress >= 40 ? "#3b82f6" : avgProgress >= 20 ? "#f59e0b" : "#ef4444";
+
+  if (isLifeArea) {
+    return (
+      <div
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm"
+        style={{ borderColor: catColor.hex + "40", backgroundColor: catColor.hex + "10" }}
+      >
+        <span>{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
+        <span style={{ color: catColor.hex }}>{obj.title}</span>
+        <span className="text-zinc-600 text-xs">Life Area</span>
+      </div>
+    );
+  }
 
   return (
-    <div className={cn("bg-zinc-900 border rounded-xl overflow-hidden", isLifeArea ? "border-zinc-700 opacity-80" : "border-zinc-800")}>
-      {/* Header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-4 p-5 hover:bg-zinc-800/50 transition-colors text-left"
-      >
-        <span className="text-2xl">{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className={cn("font-semibold", isLifeArea ? "text-zinc-300" : "text-white")}>{obj.title}</h3>
-            <Badge variant={STATUS_BADGE[obj.status] ?? "outline"}>
-              {STATUS_LABEL[obj.status] ?? obj.status}
-            </Badge>
-            <Badge variant={CATEGORY_BADGE[obj.category] ?? "outline"}>
-              {obj.category}
-            </Badge>
-            {isLifeArea && (
-              <Badge variant="outline">Life Area</Badge>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex">
+      {/* Category color bar */}
+      <div className="w-1 shrink-0" style={{ backgroundColor: catColor.hex }} />
+
+      <div className="flex-1 min-w-0">
+        {/* Header */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center gap-4 p-5 hover:bg-zinc-800/40 transition-colors text-left"
+        >
+          <span className="text-2xl shrink-0">{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <h3 className="font-semibold text-white">{obj.title}</h3>
+              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_STYLE[obj.status] ?? "bg-zinc-800 text-zinc-400")}>
+                {STATUS_LABEL[obj.status] ?? obj.status}
+              </span>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium border"
+                style={{ color: catColor.hex, borderColor: catColor.hex + "50", backgroundColor: catColor.hex + "15" }}
+              >
+                {obj.category}
+              </span>
+            </div>
+            {obj.description && (
+              <p className="text-zinc-500 text-xs truncate">{obj.description}</p>
             )}
+            {/* Overall progress bar */}
+            <div className="flex items-center gap-3 mt-2">
+              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${avgProgress}%`, backgroundColor: progressColor }}
+                />
+              </div>
+              <span className="text-xs font-medium shrink-0" style={{ color: progressColor }}>
+                {avgProgress}%
+              </span>
+            </div>
           </div>
-          {obj.description && (
-            <p className="text-zinc-500 text-sm mt-0.5 truncate">{obj.description}</p>
-          )}
-          {!isLifeArea && (
-            <div className="flex items-center gap-4 mt-2">
-              <ProgressBar value={avgProgress} showValue={false} size="sm" color={progressColor} />
-              <span className="text-xs text-zinc-400 shrink-0 w-10 text-right">{avgProgress}%</span>
-            </div>
-          )}
-        </div>
-        <div className="text-zinc-500 shrink-0">
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </div>
-      </button>
+          <div className="text-zinc-500 shrink-0">
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </div>
+        </button>
 
-      {/* Key Results */}
-      {expanded && obj.key_results.length > 0 && (
-        <div className="border-t border-zinc-800 divide-y divide-zinc-800/50">
-          {obj.key_results.map((kr) => (
-            <div key={kr.id} className="px-5 py-3 flex items-center gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
-                    {KR_TYPE_LABEL[kr.metric_type] ?? kr.metric_type}
-                  </span>
-                  <span className="text-sm text-zinc-300">{kr.title}</span>
-                  {kr.status === "completed" && <span className="text-green-400 text-xs">✓</span>}
-                </div>
-                <ProgressBar value={kr.progress_pct} size="sm" showValue={false} color="blue" />
-              </div>
-              <div className="text-right shrink-0 w-32">
-                <div className="text-sm text-white font-medium">
-                  {kr.current_value}
-                  {kr.unit ? ` ${kr.unit}` : ""}
-                  {kr.target_value ? (
-                    <span className="text-zinc-500 font-normal">
-                      {" / "}
-                      {kr.target_value}
-                      {kr.unit ? ` ${kr.unit}` : ""}
+        {/* Key Results */}
+        {expanded && obj.key_results.length > 0 && (
+          <div className="border-t border-zinc-800 divide-y divide-zinc-800/50">
+            {obj.key_results.map((kr) => (
+              <div key={kr.id} className="px-5 py-3 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
+                      {KR_TYPE_LABEL[kr.metric_type] ?? kr.metric_type}
                     </span>
-                  ) : null}
+                    <span className="text-sm text-zinc-300">{kr.title}</span>
+                    {kr.status === "completed" && <span className="text-green-400 text-xs">✓ Done</span>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${kr.progress_pct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-zinc-400 shrink-0">{kr.progress_pct}%</span>
+                  </div>
                 </div>
-                <div className="text-xs text-zinc-500">{kr.progress_pct}%</div>
+                <div className="text-right shrink-0 w-28">
+                  <div className="text-sm text-white font-medium">
+                    {kr.current_value}
+                    {kr.unit ? ` ${kr.unit}` : ""}
+                    {kr.target_value != null && (
+                      <span className="text-zinc-500 font-normal">
+                        {" / "}
+                        {kr.target_value}
+                        {kr.unit ? ` ${kr.unit}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {expanded && obj.key_results.length === 0 && (
-        <div className="border-t border-zinc-800 px-5 py-3">
-          <p className="text-zinc-500 text-sm">Keine Key Results</p>
+        {/* Footer */}
+        <div className="border-t border-zinc-800 px-5 py-2 flex items-center gap-4 text-xs text-zinc-500">
+          <span>{obj.key_results.length} KRs</span>
+          {obj.target_date && <span>📅 bis {formatDate(obj.target_date)}</span>}
+          <span className="ml-auto">erstellt {formatDate(obj.created_at)}</span>
         </div>
-      )}
-
-      {/* Footer */}
-      <div className="border-t border-zinc-800 px-5 py-2.5 flex items-center gap-4 text-xs text-zinc-500">
-        <span>{obj.key_results.length} KRs</span>
-        {obj.target_date && <span>📅 Ziel: {formatDate(obj.target_date)}</span>}
-        <span className="ml-auto">Erstellt: {formatDate(obj.created_at)}</span>
       </div>
     </div>
   );
@@ -159,14 +173,16 @@ export default function ObjectivesPage() {
   if (error) return <ErrorState message={error.message} />;
 
   const all = data?.objectives ?? [];
-  const filtered = filter === "all" ? all : all.filter((o) => o.status === filter);
+  const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.status === "active");
+  const realObjectives = all.filter((o) => o.key_results.length > 0);
+  const filtered = filter === "all" ? realObjectives : realObjectives.filter((o) => o.status === filter);
 
   const counts = {
-    all: all.length,
-    active: all.filter((o) => o.status === "active").length,
-    completed: all.filter((o) => o.status === "completed").length,
-    paused: all.filter((o) => o.status === "paused").length,
-    abandoned: all.filter((o) => o.status === "abandoned").length,
+    all: realObjectives.length,
+    active: realObjectives.filter((o) => o.status === "active").length,
+    completed: realObjectives.filter((o) => o.status === "completed").length,
+    paused: realObjectives.filter((o) => o.status === "paused").length,
+    abandoned: realObjectives.filter((o) => o.status === "abandoned").length,
   };
 
   return (
@@ -175,6 +191,20 @@ export default function ObjectivesPage() {
         title="🎯 Objectives"
         subtitle={`${counts.active} aktiv · ${counts.completed} abgeschlossen`}
       />
+
+      {/* Life Areas */}
+      {lifeAreas.length > 0 && (
+        <div className="mb-6">
+          <div className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-3">
+            Life Areas
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {lifeAreas.map((obj) => (
+              <ObjectiveCard key={obj.id} obj={obj} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -189,12 +219,12 @@ export default function ObjectivesPage() {
                 : "bg-zinc-800 text-zinc-400 hover:text-white"
             )}
           >
-            {FILTER_LABELS[f]} ({counts[f]})
+            {FILTER_LABELS[f]} ({counts[f as keyof typeof counts] ?? 0})
           </button>
         ))}
       </div>
 
-      {/* List */}
+      {/* Objectives List */}
       {filtered.length === 0 ? (
         <EmptyState emoji="🎯" message="Keine Objectives gefunden" />
       ) : (

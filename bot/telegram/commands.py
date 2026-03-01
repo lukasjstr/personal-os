@@ -312,6 +312,28 @@ async def handle_shopping(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await send_message(chat_id, summary)
 
 
+async def handle_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /token command — generate and send API token for dashboard."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        from bot.api.auth import generate_api_token
+        token = await generate_api_token(session, user)
+        await session.commit()
+
+    await send_message(
+        chat_id,
+        f"🔑 *Dein Dashboard Token:*\n\n"
+        f"`{token}`\n\n"
+        "Öffne http://95.111.252.176:3000 und füge den Token ein.\n\n"
+        "_Dieser Token gibt Zugriff auf dein Dashboard. Teile ihn nicht mit anderen._",
+    )
+
+
 async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /ical command — show iCal feed URL."""
     if not update.message or not update.effective_user:

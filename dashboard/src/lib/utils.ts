@@ -33,6 +33,18 @@ export const CATEGORY_EMOJI: Record<string, string> = {
   default: "🎯",
 };
 
+export const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; hex: string }> = {
+  health:        { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500", hex: "#10b981" },
+  fitness:       { bg: "bg-blue-500/10",    text: "text-blue-400",    border: "border-blue-500",    hex: "#3b82f6" },
+  finance:       { bg: "bg-amber-500/10",   text: "text-amber-400",   border: "border-amber-500",   hex: "#f59e0b" },
+  learning:      { bg: "bg-violet-500/10",  text: "text-violet-400",  border: "border-violet-500",  hex: "#8b5cf6" },
+  personal:      { bg: "bg-zinc-500/10",    text: "text-zinc-400",    border: "border-zinc-500",    hex: "#71717a" },
+  business:      { bg: "bg-orange-500/10",  text: "text-orange-400",  border: "border-orange-500",  hex: "#f97316" },
+  relationships: { bg: "bg-rose-500/10",    text: "text-rose-400",    border: "border-rose-500",    hex: "#f43f5e" },
+  shopping:      { bg: "bg-yellow-500/10",  text: "text-yellow-400",  border: "border-yellow-500",  hex: "#eab308" },
+  default:       { bg: "bg-zinc-800",       text: "text-zinc-400",    border: "border-zinc-700",    hex: "#71717a" },
+};
+
 export const LOG_TYPE_EMOJI: Record<string, string> = {
   workout: "💪",
   water: "💧",
@@ -40,6 +52,7 @@ export const LOG_TYPE_EMOJI: Record<string, string> = {
   mood: "😊",
   progress: "📈",
   note: "📝",
+  gratitude: "🙏",
   general: "💬",
   default: "📌",
 };

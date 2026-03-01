@@ -149,7 +149,52 @@ export interface DashboardStats {
     latest_mood: number | null;
     routines_total: number;
     routines_done_today: number;
+    streak_days: number;
+    total_xp: number;
+    level: number;
+    level_title: string;
+    xp_progress: number;
+    xp_to_next: number;
   };
+}
+
+export interface FitnessExerciseEntry {
+  exercise: string;
+  weight?: number | null;
+  reps?: number | null;
+  sets?: number | null;
+  duration_min?: number | null;
+}
+
+export interface FitnessSession {
+  date: string;
+  exercises: FitnessExerciseEntry[];
+}
+
+export interface FitnessVolumeEntry {
+  week: string;
+  volume: number;
+}
+
+export interface FitnessSummary {
+  total_workout_days: number;
+  workout_days: string[];
+  volume_by_week: FitnessVolumeEntry[];
+  last_sessions: FitnessSession[];
+}
+
+export interface FitnessExercise {
+  name: string;
+  count: number;
+  max_weight: number;
+  last_done: string;
+}
+
+export interface FitnessPR {
+  exercise: string;
+  weight: number;
+  reps?: number | null;
+  date: string;
 }
 
 // ─── API functions ─────────────────────────────────────────────────────────
@@ -180,4 +225,7 @@ export const api = {
   shopping: () => apiFetch<{ items: { id: number; title: string }[] }>("/api/shopping"),
   health: () => apiFetch<{ status: string }>("/api/health"),
   generateToken: () => apiPost<{ token: string }>("/api/auth/token"),
+  fitnessSummary: () => apiFetch<FitnessSummary>("/api/fitness/summary"),
+  fitnessExercises: () => apiFetch<{ exercises: FitnessExercise[] }>("/api/fitness/exercises"),
+  fitnessPRs: () => apiFetch<{ prs: FitnessPR[] }>("/api/fitness/prs"),
 };
