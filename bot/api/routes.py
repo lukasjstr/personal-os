@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select, delete as sql_delete
+from sqlalchemy import and_, func, or_, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,8 +18,8 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
-    RoutineCompletion, ShoppingDefault, Task, User,
+    Achievement, BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
+    RoutineCompletion, ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
 )
 
 router = APIRouter(prefix="/api")
@@ -1701,3 +1701,143 @@ async def delete_account(
     await session.delete(user)
     await session.flush()
     return {"ok": True}
+
+
+# ─── Achievements ──────────────────────────────────────────────────────────────
+
+@router.get("/achievements")
+async def list_achievements(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all achievements with unlock status and progress hints."""
+    # Load all achievements
+    all_result = await session.execute(select(Achievement).order_by(Achievement.category, Achievement.xp_reward))
+    all_achievements = all_result.scalars().all()
+
+    # Load user's unlocked achievements
+    unlocked_result = await session.execute(
+        select(UserAchievement).where(UserAchievement.user_id == user.id)
+    )
+    unlocked_map: dict[int, "UserAchievement"] = {
+        ua.achievement_id: ua for ua in unlocked_result.scalars().all()
+    }
+
+    # Gather progress data for count-based achievements
+    done_tasks_result = await session.execute(
+        select(func.count()).select_from(Task).where(and_(Task.user_id == user.id, Task.status == "done"))
+    )
+    done_tasks = done_tasks_result.scalar() or 0
+
+    objectives_result = await session.execute(
+        select(func.count()).select_from(Objective).where(Objective.user_id == user.id)
+    )
+    total_objectives = objectives_result.scalar() or 0
+
+    reflections_result = await session.execute(
+        select(func.count()).select_from(WeeklyReflection).where(
+            and_(WeeklyReflection.user_id == user.id, WeeklyReflection.status.in_(["in_progress", "completed"]))
+        )
+    )
+    total_reflections = reflections_result.scalar() or 0
+
+    brain_dumps_result = await session.execute(
+        select(func.count()).select_from(BrainDump).where(BrainDump.user_id == user.id)
+    )
+    total_brain_dumps = brain_dumps_result.scalar() or 0
+
+    workouts_result = await session.execute(
+        select(func.count()).select_from(Log).where(and_(Log.user_id == user.id, Log.log_type == "workout"))
+    )
+    total_workouts = workouts_result.scalar() or 0
+
+    water_result = await session.execute(
+        select(Log).where(and_(Log.user_id == user.id, Log.log_type == "water"))
+    )
+    total_water = sum(l.data.get("amount", 0) for l in water_result.scalars().all())
+
+    # Calculate streak
+    since_60 = datetime.combine(date.today() - timedelta(days=60), datetime.min.time())
+    log_dates_result = await session.execute(
+        select(Log.logged_at).where(and_(Log.user_id == user.id, Log.logged_at >= since_60))
+    )
+    active_dates = {dt.date() for dt in log_dates_result.scalars().all()}
+    streak = 0
+    check_date = date.today()
+    while check_date in active_dates:
+        streak += 1
+        check_date -= timedelta(days=1)
+
+    def get_progress(achievement: Achievement) -> dict:
+        key = achievement.key
+        condition_type = achievement.condition_type
+        condition_value = achievement.condition_value
+
+        if condition_type == "streak":
+            return {"current": streak, "target": condition_value}
+        if condition_type == "count":
+            if key in ("macher", "hundertschaft"):
+                return {"current": done_tasks, "target": condition_value}
+            if key == "zielstrebig":
+                return {"current": total_objectives, "target": condition_value}
+            if key == "selbstreflektiert":
+                return {"current": total_reflections, "target": condition_value}
+            if key == "hydration_hero":
+                return {"current": int(total_water), "target": condition_value}
+            if key == "brain_dumper":
+                return {"current": total_brain_dumps, "target": condition_value}
+            if key == "gym_rat":
+                return {"current": total_workouts, "target": condition_value}
+        return {"current": None, "target": None}
+
+    return {
+        "achievements": [
+            {
+                "id": a.id,
+                "key": a.key,
+                "title": a.title,
+                "description": a.description,
+                "emoji": a.emoji,
+                "category": a.category,
+                "xp_reward": a.xp_reward,
+                "condition_type": a.condition_type,
+                "condition_value": a.condition_value,
+                "unlocked": a.id in unlocked_map,
+                "unlocked_at": unlocked_map[a.id].unlocked_at.isoformat() if a.id in unlocked_map else None,
+                "progress": get_progress(a),
+            }
+            for a in all_achievements
+        ]
+    }
+
+
+@router.get("/achievements/recent")
+async def recent_achievements(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    limit: int = Query(5, ge=1, le=20),
+) -> dict:
+    """Get the most recently unlocked achievements for the user."""
+    result = await session.execute(
+        select(UserAchievement)
+        .options(selectinload(UserAchievement.achievement))
+        .where(UserAchievement.user_id == user.id)
+        .order_by(UserAchievement.unlocked_at.desc())
+        .limit(limit)
+    )
+    user_achievements = result.scalars().all()
+    return {
+        "recent": [
+            {
+                "id": ua.achievement.id,
+                "key": ua.achievement.key,
+                "title": ua.achievement.title,
+                "description": ua.achievement.description,
+                "emoji": ua.achievement.emoji,
+                "category": ua.achievement.category,
+                "xp_reward": ua.achievement.xp_reward,
+                "unlocked_at": ua.unlocked_at.isoformat(),
+            }
+            for ua in user_achievements
+        ]
+    }

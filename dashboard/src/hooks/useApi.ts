@@ -72,3 +72,11 @@ export function useFitnessProgression(exercise?: string) {
 export function useWeeklySummary() {
   return useSWR("weekly-summary", () => api.weeklySummary(), { refreshInterval: 120_000 });
 }
+
+export function useAchievements() {
+  return useSWR("achievements", () => api.achievements(), { refreshInterval: 300_000 });
+}
+
+export function useRecentAchievements(limit = 5) {
+  return useSWR(`achievements-recent-${limit}`, () => api.recentAchievements(limit), { refreshInterval: 300_000 });
+}

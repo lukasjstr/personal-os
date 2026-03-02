@@ -76,6 +76,14 @@ async def check_and_trigger_reflections() -> None:
                     session.add(reflection)
                     await session.flush()
                     logger.info("Weekly reflection sent to user %s", user.id)
+                    # Check achievements after reflection is triggered
+                    try:
+                        from bot.core.achievements import check_achievements, format_achievement_message
+                        newly_unlocked = await check_achievements(user.id, session)
+                        for achievement in newly_unlocked:
+                            await send_message(user.telegram_id, format_achievement_message(achievement))
+                    except Exception:
+                        logger.warning("Achievement check failed after reflection trigger for user %s", user.id)
             except Exception:
                 logger.exception("Failed to send weekly reflection to user %s", user.id)
 

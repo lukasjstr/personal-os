@@ -473,3 +473,39 @@ class ShoppingDefault(Base):
 
     def __repr__(self) -> str:
         return f"<ShoppingDefault id={self.id} title={self.title!r}>"
+
+
+# ─── Phase 7.1 — Achievements ─────────────────────────────────────────────────
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    emoji: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    xp_reward: Mapped[int] = mapped_column(Integer, default=0)
+    condition_type: Mapped[str] = mapped_column(Text, nullable=False)
+    condition_value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    user_achievements: Mapped[list["UserAchievement"]] = relationship(back_populates="achievement")
+
+    def __repr__(self) -> str:
+        return f"<Achievement id={self.id} key={self.key!r}>"
+
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+    __table_args__ = (UniqueConstraint("user_id", "achievement_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    achievement_id: Mapped[int] = mapped_column(Integer, ForeignKey("achievements.id"), nullable=False)
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    achievement: Mapped["Achievement"] = relationship(back_populates="user_achievements")
+
+    def __repr__(self) -> str:
+        return f"<UserAchievement user_id={self.user_id} achievement_id={self.achievement_id}>"

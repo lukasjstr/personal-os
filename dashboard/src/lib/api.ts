@@ -361,6 +361,39 @@ export interface RoutinesHistory {
   routines: RoutineHistoryEntry[];
 }
 
+// ─── Achievement Types ────────────────────────────────────────────────────────
+
+export interface AchievementProgress {
+  current: number | null;
+  target: number | null;
+}
+
+export interface Achievement {
+  id: number;
+  key: string;
+  title: string;
+  description: string;
+  emoji: string;
+  category: string;
+  xp_reward: number;
+  condition_type: string;
+  condition_value: number;
+  unlocked: boolean;
+  unlocked_at: string | null;
+  progress: AchievementProgress;
+}
+
+export interface RecentAchievement {
+  id: number;
+  key: string;
+  title: string;
+  description: string;
+  emoji: string;
+  category: string;
+  xp_reward: number;
+  unlocked_at: string;
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -410,6 +443,8 @@ export const api = {
   fitnessProgression: (exercise: string) =>
     apiFetch<FitnessProgression>(`/api/fitness/progression/${encodeURIComponent(exercise)}`),
   weeklySummary: () => apiFetch<WeeklySummary>("/api/weekly-summary"),
+  achievements: () => apiFetch<{ achievements: Achievement[] }>("/api/achievements"),
+  recentAchievements: (limit = 5) => apiFetch<{ recent: RecentAchievement[] }>(`/api/achievements/recent?limit=${limit}`),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
   completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),

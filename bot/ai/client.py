@@ -35,11 +35,23 @@ from bot.core.tasks import (
 )
 from bot.core.fitness import create_fitness_split, get_fitness_plan as _get_fitness_plan
 from bot.core.user_settings import update_setting
+from bot.core.achievements import check_achievements, format_achievement_message
 from bot.database.models import Conversation, ShoppingDefault, Task, User
 
 logger = logging.getLogger(__name__)
 
 openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+async def _notify_achievements(session: AsyncSession, user: User) -> None:
+    """Check achievements and send Telegram notifications for newly unlocked ones."""
+    try:
+        from bot.telegram.sender import send_message
+        newly_unlocked = await check_achievements(user.id, session)
+        for achievement in newly_unlocked:
+            await send_message(user.telegram_id, format_achievement_message(achievement))
+    except Exception as e:
+        logger.warning("Achievement check failed: %s", e)
 
 
 async def _execute_tool(
@@ -53,6 +65,7 @@ async def _execute_tool(
         # ─── OKR ──────────────────────────────────────────────────────────────
         if name == "create_objective":
             obj = await create_objective(session, user.id, **args)
+            await _notify_achievements(session, user)
             return (
                 f"✅ Objective #{obj.id} erstellt: *{obj.title}* [{obj.category}]\n"
                 f"→ Jetzt suggest_tasks_for_objective aufrufen um konkrete Tasks zu erstellen."
@@ -81,6 +94,7 @@ async def _execute_tool(
                 next_task = await get_next_task_in_kr(session, task.key_result_id)
                 if next_task:
                     result += f"\n\n➡️ *NÄCHSTE AKTION:* {next_task.title} (Task #{next_task.id})"
+            await _notify_achievements(session, user)
             return result
 
         elif name == "update_task_status":
@@ -111,10 +125,12 @@ async def _execute_tool(
                 result += f" ×{d['reps']}"
                 if d.get("sets") and d["sets"] > 1:
                     result += f" ×{d['sets']}Sätze"
+            await _notify_achievements(session, user)
             return result
 
         elif name == "log_water":
             total = await log_water(session, user.id, args["amount_liters"])
+            await _notify_achievements(session, user)
             return f"💧 {args['amount_liters']}L geloggt. Gesamt heute: {total:.1f}L"
 
         elif name == "log_mood":
@@ -131,6 +147,7 @@ async def _execute_tool(
                 args.get("increment", True),
                 args.get("notes", ""),
             )
+            await _notify_achievements(session, user)
             return f"📈 Fortschritt geloggt: {args['value']} für KR#{args['key_result_id']}"
 
         elif name == "log_food":
@@ -146,6 +163,7 @@ async def _execute_tool(
             comp = await complete_routine(session, user.id, args["routine_id"], args.get("notes"))
             if not comp:
                 return f"Routine #{args['routine_id']} nicht gefunden."
+            await _notify_achievements(session, user)
             return f"✅ Routine #{args['routine_id']} für heute erledigt!"
 
         # ─── Calendar ─────────────────────────────────────────────────────────
@@ -159,6 +177,7 @@ async def _execute_tool(
         # ─── Brain Dump ───────────────────────────────────────────────────────
         elif name == "store_brain_dump":
             bd = await create_brain_dump(session, user.id, args["content"], args.get("linked_objective_id"))
+            await _notify_achievements(session, user)
             return f"🧠 Brain Dump #{bd.id} gespeichert. Wird später eingeordnet."
 
         # ─── Objective-Task Linking ───────────────────────────────────────────
