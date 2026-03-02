@@ -336,6 +336,41 @@ async def handle_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await send_message(chat_id, token)
 
 
+async def handle_organize(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /organize command — assign orphaned tasks to objectives via GPT-4o."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    await send_message(chat_id, "🤖 Analysiere deine Daten… Das kann 30–60 Sekunden dauern.")
+
+    from bot.scripts.organize_data import organize_user_data
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        try:
+            report = await organize_user_data(session, user)
+            await session.commit()
+        except Exception as e:
+            logger.exception("organize_data failed for user %s", tg_user.id)
+            await send_message(chat_id, f"❌ Fehler beim Organisieren: {e}")
+            return
+
+    lines = [
+        "✅ *Daten organisiert!*\n",
+        f"📌 Tasks zugeordnet: {report['orphaned_tasks_assigned']}",
+        f"🎯 Neue Objectives: {report['new_objectives_created']}",
+        f"💡 Tasks vorgeschlagen: {report['suggested_tasks_added']}",
+    ]
+    if report["details"]:
+        lines.append("\n*Details:*")
+        for d in report["details"][:15]:
+            lines.append(f"  • {d}")
+        if len(report["details"]) > 15:
+            lines.append(f"  … und {len(report['details']) - 15} weitere")
+    await send_message(chat_id, "\n".join(lines))
+
+
 async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /ical command — show iCal feed URL."""
     if not update.message or not update.effective_user:

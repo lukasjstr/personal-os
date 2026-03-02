@@ -15,6 +15,7 @@ from bot.database.connection import get_session
 from bot.telegram.commands import (
     handle_help,
     handle_ical,
+    handle_organize,
     handle_settings,
     handle_shopping,
     handle_start,
@@ -151,6 +152,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("shopping", handle_shopping))
     application.add_handler(CommandHandler("ical", handle_ical))
     application.add_handler(CommandHandler("token", handle_token))
+    application.add_handler(CommandHandler("organize", handle_organize))
 
     # Message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

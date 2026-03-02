@@ -602,7 +602,7 @@ async def get_dashboard(
             and_(Log.user_id == user.id, Log.log_type == "water", Log.logged_at >= today_start)
         )
     )
-    water_today = sum(l.data.get("amount", 0) for l in water_result.scalars().all())
+    water_today = sum((l.data or {}).get("amount", 0) for l in water_result.scalars().all())
 
     workout_result = await session.execute(
         select(Log).where(
@@ -687,24 +687,26 @@ async def get_fitness_summary(
 
     volume_by_week: dict = defaultdict(float)
     for l in workout_logs:
+        d = l.data or {}
         week_key = l.logged_at.strftime("%Y-W%W")
-        weight = float(l.data.get("weight", 0) or 0)
-        reps = float(l.data.get("reps", 1) or 1)
-        sets = float(l.data.get("sets", 1) or 1)
+        weight = float(d.get("weight", 0) or 0)
+        reps = float(d.get("reps", 1) or 1)
+        sets = float(d.get("sets", 1) or 1)
         if weight > 0:
             volume_by_week[week_key] += weight * reps * sets
 
     sessions_by_day: dict = {}
     for l in workout_logs:
+        d = l.data or {}
         day = l.logged_at.date().isoformat()
         if day not in sessions_by_day:
             sessions_by_day[day] = []
         sessions_by_day[day].append({
-            "exercise": l.data.get("exercise", "?"),
-            "weight": l.data.get("weight"),
-            "reps": l.data.get("reps"),
-            "sets": l.data.get("sets"),
-            "duration_min": l.data.get("duration_min"),
+            "exercise": d.get("exercise", "?"),
+            "weight": d.get("weight"),
+            "reps": d.get("reps"),
+            "sets": d.get("sets"),
+            "duration_min": d.get("duration_min"),
         })
 
     last_sessions = [
@@ -738,7 +740,8 @@ async def get_fitness_exercises(
 
     exercises: dict = {}
     for l in workout_logs:
-        ex = str(l.data.get("exercise", "Unbekannt")).strip()
+        d = l.data or {}
+        ex = str(d.get("exercise", "Unbekannt")).strip()
         if ex not in exercises:
             exercises[ex] = {
                 "name": ex,
@@ -747,7 +750,7 @@ async def get_fitness_exercises(
                 "last_done": l.logged_at.isoformat(),
             }
         exercises[ex]["count"] += 1
-        weight = float(l.data.get("weight", 0) or 0)
+        weight = float(d.get("weight", 0) or 0)
         if weight > exercises[ex]["max_weight"]:
             exercises[ex]["max_weight"] = weight
 
@@ -771,9 +774,10 @@ async def get_fitness_prs(
 
     prs: dict = {}
     for l in workout_logs:
-        ex = str(l.data.get("exercise", "Unbekannt")).strip()
-        weight = float(l.data.get("weight", 0) or 0)
-        reps = l.data.get("reps")
+        d = l.data or {}
+        ex = str(d.get("exercise", "Unbekannt")).strip()
+        weight = float(d.get("weight", 0) or 0)
+        reps = d.get("reps")
         if weight > 0:
             if ex not in prs or weight > prs[ex]["weight"]:
                 prs[ex] = {
@@ -830,7 +834,7 @@ async def get_fitness_splits(
     last_used: dict = {}
     last_split_id = None
     for log in recent_logs:
-        sid = log.data.get("split_id")
+        sid = (log.data or {}).get("split_id")
         if sid:
             split_usage[sid] += 1
             if sid not in last_used:
@@ -1839,7 +1843,7 @@ async def list_achievements(
     water_result = await session.execute(
         select(Log).where(and_(Log.user_id == user.id, Log.log_type == "water"))
     )
-    total_water = sum(l.data.get("amount", 0) for l in water_result.scalars().all())
+    total_water = sum((l.data or {}).get("amount", 0) for l in water_result.scalars().all())
 
     # Calculate streak
     since_60 = datetime.combine(date.today() - timedelta(days=60), datetime.min.time())
@@ -1991,9 +1995,14 @@ async def get_todays_suggestions(
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return today's AI suggestions, generating them on-demand if not yet available."""
+    import logging as _logging
     from zoneinfo import ZoneInfo
     today = datetime.now(tz=ZoneInfo("Europe/Berlin")).date()
-    suggestions = await get_or_generate_suggestions(session, user, today)
+    try:
+        suggestions = await get_or_generate_suggestions(session, user, today)
+    except Exception:
+        _logging.getLogger(__name__).exception("Failed to get/generate suggestions for user %s", user.id)
+        suggestions = None
     if suggestions is None:
         return {"date": today.isoformat(), "suggestions": None}
     return {"date": today.isoformat(), "suggestions": suggestions}
