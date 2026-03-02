@@ -61,6 +61,34 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PUT",
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
+async function apiDelete<T>(path: string): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface KeyResult {
@@ -287,4 +315,18 @@ export const api = {
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
   completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),
+  // CRUD
+  updateObjective: (id: number, body: Partial<{ title: string; category: string; description: string | null; target_date: string | null; status: string }>) =>
+    apiPut<{ ok: boolean }>(`/api/objectives/${id}`, body),
+  deleteObjective: (id: number) => apiDelete<{ ok: boolean }>(`/api/objectives/${id}`),
+  updateTask: (id: number, body: Partial<{ title: string; category: string | null; priority: number; due_date: string | null; status: string; objective_id: number | null }>) =>
+    apiPut<{ ok: boolean }>(`/api/tasks/${id}`, body),
+  deleteTask: (id: number) => apiDelete<{ ok: boolean }>(`/api/tasks/${id}`),
+  updateRoutine: (id: number, body: Partial<{ title: string; description: string | null; frequency_human: string | null; status: string }>) =>
+    apiPut<{ ok: boolean }>(`/api/routines/${id}`, body),
+  deleteRoutine: (id: number) => apiDelete<{ ok: boolean }>(`/api/routines/${id}`),
+  updateBrainDump: (id: number, body: { raw_input: string }) =>
+    apiPut<{ ok: boolean }>(`/api/brain-dumps/${id}`, body),
+  deleteBrainDump: (id: number) => apiDelete<{ ok: boolean }>(`/api/brain-dumps/${id}`),
+  deleteLog: (id: number) => apiDelete<{ ok: boolean }>(`/api/logs/${id}`),
 };

@@ -1,12 +1,15 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastContainer, useToast } from "@/components/Toast";
 import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Objective, ObjectiveTask } from "@/lib/api";
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Aktiv",
@@ -29,6 +32,143 @@ const KR_TYPE_LABEL: Record<string, string> = {
   streak: "🔥",
   checklist: "☑",
 };
+
+const CATEGORIES = [
+  "health", "fitness", "business", "personal",
+  "finance", "learning", "relationships",
+];
+const OBJECTIVE_STATUSES = ["active", "completed", "paused", "abandoned"];
+
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+
+function EditObjectiveModal({
+  obj,
+  onSave,
+  onClose,
+  saving,
+}: {
+  obj: Objective;
+  onSave: (data: {
+    title: string;
+    category: string;
+    description: string | null;
+    target_date: string | null;
+    status: string;
+  }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({
+    title: obj.title,
+    category: obj.category,
+    description: obj.description ?? "",
+    target_date: obj.target_date ?? "",
+    status: obj.status,
+  });
+
+  function handleSave() {
+    onSave({
+      title: form.title.trim(),
+      category: form.category,
+      description: form.description.trim() || null,
+      target_date: form.target_date || null,
+      status: form.status,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+        <h3 className="text-white font-semibold text-lg mb-5">Objective bearbeiten</h3>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Titel</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Kategorie</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_EMOJI[c] ?? "🎯"} {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                {OBJECTIVE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s] ?? s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Beschreibung</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              rows={3}
+              placeholder="Optionale Beschreibung…"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Zieldatum</label>
+            <input
+              type="date"
+              value={form.target_date}
+              onChange={(e) => setForm((f) => ({ ...f, target_date: e.target.value }))}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-end mt-6">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors"
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !form.title.trim()}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium"
+          >
+            {saving ? "Speichern…" : "Speichern"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Checklist ───────────────────────────────────────────────────────────
 
 function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
   if (tasks.length === 0) return null;
@@ -76,12 +216,21 @@ function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
   );
 }
 
-function ObjectiveCard({ obj }: { obj: Objective }) {
+// ─── Objective Card ───────────────────────────────────────────────────────────
+
+function ObjectiveCard({
+  obj,
+  onEdit,
+  onDelete,
+}: {
+  obj: Objective;
+  onEdit: (obj: Objective) => void;
+  onDelete: (obj: Objective) => void;
+}) {
   const [expanded, setExpanded] = useState(obj.status === "active");
   const isLifeArea = obj.key_results.length === 0 && obj.tasks.length === 0;
   const catColor = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.default;
 
-  // Progress: prefer KR-based, fall back to task completion rate
   const krProgress =
     obj.key_results.length > 0
       ? Math.round(
@@ -102,19 +251,30 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
   if (isLifeArea) {
     return (
       <div
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm"
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm group"
         style={{ borderColor: catColor.hex + "40", backgroundColor: catColor.hex + "10" }}
       >
         <span>{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
         <span style={{ color: catColor.hex }}>{obj.title}</span>
         <span className="text-zinc-600 text-xs">Life Area</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(obj); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-blue-400 transition-all ml-1"
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(obj); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all"
+        >
+          <Trash2 size={12} />
+        </button>
       </div>
     );
   }
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex">
-      {/* Category color bar */}
       <div className="w-1 shrink-0" style={{ backgroundColor: catColor.hex }} />
 
       <div className="flex-1 min-w-0">
@@ -140,7 +300,6 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
             {obj.description && (
               <p className="text-zinc-500 text-xs truncate">{obj.description}</p>
             )}
-            {/* Overall progress bar */}
             <div className="flex items-center gap-3 mt-2">
               <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
                 <div
@@ -200,9 +359,7 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
         )}
 
         {/* Task Checklist */}
-        {expanded && obj.tasks.length > 0 && (
-          <TaskChecklist tasks={obj.tasks} />
-        )}
+        {expanded && obj.tasks.length > 0 && <TaskChecklist tasks={obj.tasks} />}
 
         {/* Footer */}
         <div className="border-t border-zinc-800 px-5 py-2 flex items-center gap-4 text-xs text-zinc-500">
@@ -214,11 +371,27 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
           )}
           {obj.target_date && <span>📅 bis {formatDate(obj.target_date)}</span>}
           <span className="ml-auto">erstellt {formatDate(obj.created_at)}</span>
+          <button
+            onClick={() => onEdit(obj)}
+            className="text-zinc-600 hover:text-blue-400 transition-colors p-1 rounded"
+            title="Bearbeiten"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={() => onDelete(obj)}
+            className="text-zinc-600 hover:text-red-400 transition-colors p-1 rounded"
+            title="Löschen"
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 const FILTERS = ["all", "active", "completed", "paused", "abandoned"] as const;
 const FILTER_LABELS: Record<string, string> = {
@@ -230,8 +403,60 @@ const FILTER_LABELS: Record<string, string> = {
 };
 
 export default function ObjectivesPage() {
-  const { data, error, isLoading } = useObjectives();
+  const { data, error, isLoading, mutate } = useObjectives();
   const [filter, setFilter] = useState<string>("all");
+  const [editingObj, setEditingObj] = useState<Objective | null>(null);
+  const [deletingObj, setDeletingObj] = useState<Objective | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toasts, addToast, dismissToast } = useToast();
+
+  const handleEdit = useCallback(
+    async (data: {
+      title: string;
+      category: string;
+      description: string | null;
+      target_date: string | null;
+      status: string;
+    }) => {
+      if (!editingObj) return;
+      setSaving(true);
+      try {
+        await api.updateObjective(editingObj.id, data);
+        await mutate();
+        addToast("Objective aktualisiert", "success");
+        setEditingObj(null);
+      } catch {
+        addToast("Fehler beim Speichern", "error");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [editingObj, mutate, addToast]
+  );
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingObj) return;
+    setDeleting(true);
+    // Optimistic update
+    mutate(
+      (prev) =>
+        prev
+          ? { objectives: prev.objectives.filter((o) => o.id !== deletingObj.id) }
+          : prev,
+      false
+    );
+    try {
+      await api.deleteObjective(deletingObj.id);
+      addToast("Objective gelöscht", "success");
+      setDeletingObj(null);
+    } catch {
+      await mutate();
+      addToast("Fehler beim Löschen", "error");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deletingObj, mutate, addToast]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
@@ -264,7 +489,12 @@ export default function ObjectivesPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {lifeAreas.map((obj) => (
-              <ObjectiveCard key={obj.id} obj={obj} />
+              <ObjectiveCard
+                key={obj.id}
+                obj={obj}
+                onEdit={setEditingObj}
+                onDelete={setDeletingObj}
+              />
             ))}
           </div>
         </div>
@@ -294,10 +524,37 @@ export default function ObjectivesPage() {
       ) : (
         <div className="space-y-4">
           {filtered.map((obj) => (
-            <ObjectiveCard key={obj.id} obj={obj} />
+            <ObjectiveCard
+              key={obj.id}
+              obj={obj}
+              onEdit={setEditingObj}
+              onDelete={setDeletingObj}
+            />
           ))}
         </div>
       )}
+
+      {/* Edit Modal */}
+      {editingObj && (
+        <EditObjectiveModal
+          obj={editingObj}
+          onSave={handleEdit}
+          onClose={() => setEditingObj(null)}
+          saving={saving}
+        />
+      )}
+
+      {/* Delete Confirm */}
+      <ConfirmDialog
+        open={!!deletingObj}
+        title="Objective löschen?"
+        message={`"${deletingObj?.title}" wird dauerhaft gelöscht — inklusive aller Key Results und verknüpften Tasks.`}
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingObj(null)}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

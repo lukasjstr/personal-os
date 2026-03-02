@@ -1,29 +1,98 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastContainer, useToast } from "@/components/Toast";
 import { useBrainDumps } from "@/hooks/useApi";
-import { formatDateTime, formatTimeAgo, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { BrainDump } from "@/lib/api";
-import { Search } from "lucide-react";
+import { formatDateTime, formatTimeAgo, cn } from "@/lib/utils";
+import { Pencil, Trash2, Search } from "lucide-react";
 
-function BrainDumpCard({ dump }: { dump: BrainDump }) {
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+
+function EditBrainDumpModal({
+  dump,
+  onSave,
+  onClose,
+  saving,
+}: {
+  dump: BrainDump;
+  onSave: (raw_input: string) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [text, setText] = useState(dump.raw_input);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+        <h3 className="text-white font-semibold text-lg mb-5">Brain Dump bearbeiten</h3>
+
+        <div>
+          <label className="text-zinc-400 text-xs mb-1.5 block">Inhalt</label>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
+          />
+        </div>
+
+        <div className="flex gap-3 justify-end mt-6">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors"
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={() => onSave(text.trim())}
+            disabled={saving || !text.trim()}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium"
+          >
+            {saving ? "Wird gespeichert…" : "Speichern"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+
+function BrainDumpCard({
+  dump,
+  onEdit,
+  onDelete,
+}: {
+  dump: BrainDump;
+  onEdit: (dump: BrainDump) => void;
+  onDelete: (dump: BrainDump) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const isLong = dump.raw_input.length > 200;
 
   return (
     <div
       className={cn(
-        "bg-zinc-900 border rounded-xl overflow-hidden transition-all cursor-pointer",
+        "bg-zinc-900 border rounded-xl overflow-hidden transition-all",
         dump.processed ? "border-zinc-800 hover:border-zinc-700" : "border-blue-900/60 hover:border-blue-800"
       )}
-      onClick={() => setExpanded(!expanded)}
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-5 pt-4 pb-2">
         <span className="text-xl">🧠</span>
-        <span className="text-zinc-500 text-xs flex-1">{formatTimeAgo(dump.created_at)}</span>
+        <span
+          className="text-zinc-500 text-xs flex-1 cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {formatTimeAgo(dump.created_at)}
+        </span>
         <div className="flex items-center gap-2">
           {!dump.processed && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-400 border border-blue-800/50">
@@ -40,16 +109,32 @@ function BrainDumpCard({ dump }: { dump: BrainDump }) {
               🎯 Linked
             </span>
           )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(dump); }}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-blue-400 hover:bg-blue-900/30 transition-colors"
+            title="Bearbeiten"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(dump); }}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-900/30 transition-colors"
+            title="Löschen"
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="px-5 pb-4">
+      <div
+        className="px-5 pb-4 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
         <p className={cn("text-white text-sm leading-relaxed", !expanded && isLong && "line-clamp-3")}>
           {dump.raw_input}
         </p>
 
-        {/* AI interpretation - always show a preview, expand on click */}
         {dump.ai_interpretation && (
           <div className={cn("mt-3 pl-3 border-l-2 border-blue-600/70", !expanded && "line-clamp-2")}>
             <div className="text-xs text-zinc-500 mb-1">🤖 KI-Interpretation</div>
@@ -69,10 +154,53 @@ function BrainDumpCard({ dump }: { dump: BrainDump }) {
   );
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function BrainDumpsPage() {
-  const { data, error, isLoading } = useBrainDumps();
+  const { data, error, isLoading, mutate } = useBrainDumps();
   const [search, setSearch] = useState("");
   const [filterProcessed, setFilterProcessed] = useState<boolean | null>(null);
+  const { toasts, addToast, dismissToast } = useToast();
+
+  const [editingDump, setEditingDump] = useState<BrainDump | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingDump, setDeletingDump] = useState<BrainDump | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleSave = useCallback(async (raw_input: string) => {
+    if (!editingDump) return;
+    setSaving(true);
+    try {
+      await api.updateBrainDump(editingDump.id, { raw_input });
+      await mutate();
+      addToast("Brain Dump aktualisiert");
+      setEditingDump(null);
+    } catch {
+      addToast("Fehler beim Speichern", "error");
+    } finally {
+      setSaving(false);
+    }
+  }, [editingDump, mutate, addToast]);
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingDump) return;
+    setDeleting(true);
+    mutate(
+      (prev) => prev ? { brain_dumps: prev.brain_dumps.filter((d) => d.id !== deletingDump.id) } : prev,
+      false
+    );
+    try {
+      await api.deleteBrainDump(deletingDump.id);
+      await mutate();
+      addToast("Brain Dump gelöscht");
+    } catch {
+      await mutate();
+      addToast("Fehler beim Löschen", "error");
+    } finally {
+      setDeleting(false);
+      setDeletingDump(null);
+    }
+  }, [deletingDump, mutate, addToast]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
@@ -142,11 +270,36 @@ export default function BrainDumpsPage() {
       ) : (
         <div className="space-y-4">
           {dumps.map((dump) => (
-            <BrainDumpCard key={dump.id} dump={dump} />
+            <BrainDumpCard
+              key={dump.id}
+              dump={dump}
+              onEdit={setEditingDump}
+              onDelete={setDeletingDump}
+            />
           ))}
           <div className="text-center text-xs text-zinc-600 py-2">{dumps.length} Brain Dumps</div>
         </div>
       )}
+
+      {editingDump && (
+        <EditBrainDumpModal
+          dump={editingDump}
+          onSave={handleSave}
+          onClose={() => setEditingDump(null)}
+          saving={saving}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!deletingDump}
+        title="Brain Dump löschen?"
+        message={`"${deletingDump?.raw_input.slice(0, 80)}…" wird dauerhaft gelöscht.`}
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingDump(null)}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import CircularProgress from "@/components/CircularProgress";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastContainer, useToast } from "@/components/Toast";
 import { useLogs } from "@/hooks/useApi";
-import { getMoodEmoji, formatDateTime, cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Log } from "@/lib/api";
+import { getMoodEmoji, formatDateTime, cn } from "@/lib/utils";
+import { Trash2 } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -36,7 +40,7 @@ const LOG_TYPES = [
 
 const DAYS_OPTIONS = [7, 14, 30, 90];
 
-function WorkoutLogCard({ log }: { log: Log }) {
+function WorkoutLogCard({ log, onDelete }: { log: Log; onDelete: (log: Log) => void }) {
   const d = log.data;
   const exercise = String(d.exercise ?? "Training");
   const chips: string[] = [];
@@ -63,12 +67,19 @@ function WorkoutLogCard({ log }: { log: Log }) {
           {!!d.note && <p className="text-zinc-500 text-xs mt-1 italic">{String(d.note)}</p>}
           <div className="text-zinc-500 text-xs mt-1">{formatDateTime(log.logged_at)}</div>
         </div>
+        <button
+          onClick={() => onDelete(log)}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-900/30 transition-colors shrink-0"
+          title="Löschen"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );
 }
 
-function WaterLogCard({ log, allLogs }: { log: Log; allLogs: Log[] }) {
+function WaterLogCard({ log, allLogs, onDelete }: { log: Log; allLogs: Log[]; onDelete: (log: Log) => void }) {
   const d = log.data;
   const amount = Number(d.amount ?? 0);
   const dayTotal = allLogs
@@ -93,12 +104,19 @@ function WaterLogCard({ log, allLogs }: { log: Log; allLogs: Log[] }) {
           </div>
           <div className="text-zinc-500 text-xs mt-1">{formatDateTime(log.logged_at)}</div>
         </div>
+        <button
+          onClick={() => onDelete(log)}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-900/30 transition-colors shrink-0"
+          title="Löschen"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );
 }
 
-function MoodLogCard({ log }: { log: Log }) {
+function MoodLogCard({ log, onDelete }: { log: Log; onDelete: (log: Log) => void }) {
   const score = Number(log.data.score ?? 0);
   const emoji = getMoodEmoji(score);
   const scoreColor = score >= 8 ? "text-green-400" : score >= 5 ? "text-yellow-400" : "text-red-400";
@@ -117,12 +135,19 @@ function MoodLogCard({ log }: { log: Log }) {
           )}
           <div className="text-zinc-500 text-xs mt-1">{formatDateTime(log.logged_at)}</div>
         </div>
+        <button
+          onClick={() => onDelete(log)}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-900/30 transition-colors shrink-0"
+          title="Löschen"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );
 }
 
-function GratitudeLogCard({ log }: { log: Log }) {
+function GratitudeLogCard({ log, onDelete }: { log: Log; onDelete: (log: Log) => void }) {
   const note = String(log.data.note ?? log.raw_input ?? "");
   return (
     <div className="border-l-2 border-l-pink-400 bg-pink-400/5 rounded-r-lg px-4 py-3 mb-2 last:mb-0">
@@ -133,6 +158,13 @@ function GratitudeLogCard({ log }: { log: Log }) {
           <div className="text-zinc-500 text-xs mt-1.5">{formatDateTime(log.logged_at)}</div>
         </div>
         <span className="text-pink-400 text-2xl shrink-0 leading-none self-end">&rdquo;</span>
+        <button
+          onClick={() => onDelete(log)}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-900/30 transition-colors shrink-0"
+          title="Löschen"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );
@@ -145,7 +177,7 @@ const LOG_TYPE_STYLE: Record<string, { border: string; bg: string }> = {
   general: { border: "border-l-zinc-500", bg: "" },
 };
 
-function DefaultLogCard({ log }: { log: Log }) {
+function DefaultLogCard({ log, onDelete }: { log: Log; onDelete: (log: Log) => void }) {
   const d = log.data;
   const style = LOG_TYPE_STYLE[log.log_type] ?? { border: "border-l-zinc-700", bg: "" };
   let title = "";
@@ -174,18 +206,25 @@ function DefaultLogCard({ log }: { log: Log }) {
           )}
           <div className="text-zinc-500 text-xs mt-0.5">{formatDateTime(log.logged_at)}</div>
         </div>
+        <button
+          onClick={() => onDelete(log)}
+          className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-900/30 transition-colors shrink-0"
+          title="Löschen"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );
 }
 
-function LogCard({ log, allLogs }: { log: Log; allLogs: Log[] }) {
+function LogCard({ log, allLogs, onDelete }: { log: Log; allLogs: Log[]; onDelete: (log: Log) => void }) {
   switch (log.log_type) {
-    case "workout": return <WorkoutLogCard log={log} />;
-    case "water": return <WaterLogCard log={log} allLogs={allLogs} />;
-    case "mood": return <MoodLogCard log={log} />;
-    case "gratitude": return <GratitudeLogCard log={log} />;
-    default: return <DefaultLogCard log={log} />;
+    case "workout": return <WorkoutLogCard log={log} onDelete={onDelete} />;
+    case "water": return <WaterLogCard log={log} allLogs={allLogs} onDelete={onDelete} />;
+    case "mood": return <MoodLogCard log={log} onDelete={onDelete} />;
+    case "gratitude": return <GratitudeLogCard log={log} onDelete={onDelete} />;
+    default: return <DefaultLogCard log={log} onDelete={onDelete} />;
   }
 }
 
@@ -288,7 +327,31 @@ function WaterChart({ logs }: { logs: Log[] }) {
 export default function LogsPage() {
   const [logType, setLogType] = useState<string>("");
   const [days, setDays] = useState(30);
-  const { data, error, isLoading } = useLogs(logType || undefined, days);
+  const { data, error, isLoading, mutate } = useLogs(logType || undefined, days);
+  const { toasts, addToast, dismissToast } = useToast();
+
+  const [deletingLog, setDeletingLog] = useState<Log | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingLog) return;
+    setDeleting(true);
+    mutate(
+      (prev) => prev ? { logs: prev.logs.filter((l) => l.id !== deletingLog.id) } : prev,
+      false
+    );
+    try {
+      await api.deleteLog(deletingLog.id);
+      await mutate();
+      addToast("Log gelöscht");
+    } catch {
+      await mutate();
+      addToast("Fehler beim Löschen", "error");
+    } finally {
+      setDeleting(false);
+      setDeletingLog(null);
+    }
+  }, [deletingLog, mutate, addToast]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
@@ -341,11 +404,22 @@ export default function LogsPage() {
           <EmptyState emoji="📊" message="Keine Logs gefunden" />
         ) : (
           <>
-            {logs.map((log) => <LogCard key={log.id} log={log} allLogs={allLogs} />)}
+            {logs.map((log) => <LogCard key={log.id} log={log} allLogs={allLogs} onDelete={setDeletingLog} />)}
             <div className="pt-3 text-xs text-zinc-600 text-center">{logs.length} Einträge</div>
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deletingLog}
+        title="Log löschen?"
+        message={`Dieser Log-Eintrag (${deletingLog?.log_type}) wird dauerhaft gelöscht.`}
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingLog(null)}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

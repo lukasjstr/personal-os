@@ -5,7 +5,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, select
+from pydantic import BaseModel
+from sqlalchemy import and_, or_, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -816,3 +817,273 @@ async def generate_token(
     """Regenerate API token for a user."""
     token = await generate_api_token(session, user)
     return {"token": token}
+
+
+# ─── CRUD: Pydantic request bodies ────────────────────────────────────────────
+
+class UpdateObjectiveBody(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    target_date: Optional[str] = None
+    status: Optional[str] = None
+
+
+class UpdateTaskBody(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[int] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    objective_id: Optional[int] = None
+
+
+class UpdateRoutineBody(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    frequency_human: Optional[str] = None
+    status: Optional[str] = None
+
+
+class UpdateBrainDumpBody(BaseModel):
+    raw_input: Optional[str] = None
+
+
+# ─── Objectives CRUD ──────────────────────────────────────────────────────────
+
+@router.put("/objectives/{objective_id}")
+async def update_objective(
+    objective_id: int,
+    body: UpdateObjectiveBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update an objective."""
+    result = await session.execute(
+        select(Objective).where(and_(Objective.id == objective_id, Objective.user_id == user.id))
+    )
+    obj = result.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Objective not found")
+
+    if body.title is not None:
+        obj.title = body.title
+    if body.category is not None:
+        obj.category = body.category
+    if body.description is not None:
+        obj.description = body.description if body.description else None
+    if body.target_date is not None:
+        try:
+            obj.target_date = date.fromisoformat(body.target_date) if body.target_date else None
+        except ValueError:
+            pass
+    if body.status is not None:
+        obj.status = body.status
+
+    await session.flush()
+    return {"ok": True, "id": objective_id}
+
+
+@router.delete("/objectives/{objective_id}")
+async def delete_objective(
+    objective_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete objective + cascade to its KRs and Tasks."""
+    result = await session.execute(
+        select(Objective)
+        .options(selectinload(Objective.key_results))
+        .where(and_(Objective.id == objective_id, Objective.user_id == user.id))
+    )
+    obj = result.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Objective not found")
+
+    kr_ids = [kr.id for kr in obj.key_results]
+
+    # Delete tasks linked to this objective or its key results
+    if kr_ids:
+        task_filter = or_(Task.objective_id == objective_id, Task.key_result_id.in_(kr_ids))
+    else:
+        task_filter = Task.objective_id == objective_id
+
+    await session.execute(
+        sql_delete(Task).where(and_(Task.user_id == user.id, task_filter))
+    )
+
+    # Delete objective (cascades to key_results via ORM cascade)
+    await session.delete(obj)
+    await session.flush()
+    return {"ok": True, "deleted_id": objective_id}
+
+
+# ─── Tasks CRUD ───────────────────────────────────────────────────────────────
+
+@router.put("/tasks/{task_id}")
+async def update_task(
+    task_id: int,
+    body: UpdateTaskBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a task."""
+    result = await session.execute(
+        select(Task).where(and_(Task.id == task_id, Task.user_id == user.id))
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if body.title is not None:
+        task.title = body.title
+    if body.category is not None:
+        task.category = body.category if body.category else None
+    if body.priority is not None:
+        task.priority = max(1, min(5, body.priority))
+    if body.due_date is not None:
+        try:
+            task.due_date = date.fromisoformat(body.due_date) if body.due_date else None
+        except ValueError:
+            pass
+    if body.status is not None:
+        task.status = body.status
+        if body.status == "done" and not task.completed_at:
+            task.completed_at = datetime.utcnow()
+    if body.objective_id is not None:
+        task.objective_id = body.objective_id if body.objective_id > 0 else None
+
+    await session.flush()
+    return {"ok": True, "id": task_id}
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task(
+    task_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a task."""
+    result = await session.execute(
+        select(Task).where(and_(Task.id == task_id, Task.user_id == user.id))
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    await session.delete(task)
+    await session.flush()
+    return {"ok": True, "deleted_id": task_id}
+
+
+# ─── Routines CRUD ────────────────────────────────────────────────────────────
+
+@router.put("/routines/{routine_id}")
+async def update_routine(
+    routine_id: int,
+    body: UpdateRoutineBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a routine."""
+    result = await session.execute(
+        select(Routine).where(and_(Routine.id == routine_id, Routine.user_id == user.id))
+    )
+    routine = result.scalar_one_or_none()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    if body.title is not None:
+        routine.title = body.title
+    if body.description is not None:
+        routine.description = body.description if body.description else None
+    if body.frequency_human is not None:
+        routine.frequency_human = body.frequency_human if body.frequency_human else None
+    if body.status is not None:
+        routine.status = body.status
+
+    await session.flush()
+    return {"ok": True, "id": routine_id}
+
+
+@router.delete("/routines/{routine_id}")
+async def delete_routine(
+    routine_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a routine and its completion history."""
+    result = await session.execute(
+        select(Routine).where(and_(Routine.id == routine_id, Routine.user_id == user.id))
+    )
+    routine = result.scalar_one_or_none()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    await session.delete(routine)
+    await session.flush()
+    return {"ok": True, "deleted_id": routine_id}
+
+
+# ─── Brain Dumps CRUD ─────────────────────────────────────────────────────────
+
+@router.put("/brain-dumps/{dump_id}")
+async def update_brain_dump(
+    dump_id: int,
+    body: UpdateBrainDumpBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a brain dump."""
+    result = await session.execute(
+        select(BrainDump).where(and_(BrainDump.id == dump_id, BrainDump.user_id == user.id))
+    )
+    dump = result.scalar_one_or_none()
+    if not dump:
+        raise HTTPException(status_code=404, detail="Brain dump not found")
+
+    if body.raw_input is not None:
+        dump.raw_input = body.raw_input
+
+    await session.flush()
+    return {"ok": True, "id": dump_id}
+
+
+@router.delete("/brain-dumps/{dump_id}")
+async def delete_brain_dump(
+    dump_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a brain dump."""
+    result = await session.execute(
+        select(BrainDump).where(and_(BrainDump.id == dump_id, BrainDump.user_id == user.id))
+    )
+    dump = result.scalar_one_or_none()
+    if not dump:
+        raise HTTPException(status_code=404, detail="Brain dump not found")
+
+    await session.delete(dump)
+    await session.flush()
+    return {"ok": True, "deleted_id": dump_id}
+
+
+# ─── Logs CRUD ────────────────────────────────────────────────────────────────
+
+@router.delete("/logs/{log_id}")
+async def delete_log(
+    log_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a log entry."""
+    result = await session.execute(
+        select(Log).where(and_(Log.id == log_id, Log.user_id == user.id))
+    )
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+
+    await session.delete(log)
+    await session.flush()
+    return {"ok": True, "deleted_id": log_id}
