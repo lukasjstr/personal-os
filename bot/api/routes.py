@@ -1,7 +1,7 @@
-"""REST API routes — Phase 1 working endpoints + Phase 3 fitness + gamification."""
+"""REST API routes — Phase 1–4 working endpoints + fitness + gamification."""
 import math
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -92,7 +92,7 @@ async def list_tasks(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Get tasks, optionally filtered by status and category."""
+    """Get tasks with KR/objective info, optionally filtered by status and category."""
     conditions = [Task.user_id == user.id]
     if status:
         conditions.append(Task.status == status)
@@ -103,10 +103,12 @@ async def list_tasks(
 
     result = await session.execute(
         select(Task)
+        .options(selectinload(Task.key_result).selectinload(KeyResult.objective))
         .where(and_(*conditions))
         .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
     )
     tasks = result.scalars().all()
+    today = date.today()
     return {
         "tasks": [
             {
@@ -117,8 +119,11 @@ async def list_tasks(
                 "priority": t.priority,
                 "category": t.category,
                 "due_date": t.due_date.isoformat() if t.due_date else None,
+                "is_overdue": bool(t.due_date and t.due_date < today and t.status not in ("done", "cancelled")),
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 "key_result_id": t.key_result_id,
+                "key_result_title": t.key_result.title if t.key_result else None,
+                "objective_title": t.key_result.objective.title if t.key_result and t.key_result.objective else None,
                 "created_at": t.created_at.isoformat(),
             }
             for t in tasks
@@ -478,38 +483,306 @@ async def get_fitness_prs(
     }
 
 
-# ─── Phase 4 Stubs ────────────────────────────────────────────────────────────
+# ─── Phase 4 Endpoints ────────────────────────────────────────────────────────
+
+@router.get("/weekly-summary")
+async def get_weekly_summary(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Weekly summary: tasks done, objectives progress, workout count, mood trend."""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # Monday
+    week_start_dt = datetime.combine(week_start, datetime.min.time())
+    week_end_dt = datetime.combine(today, datetime.max.time())
+
+    # Tasks completed this week
+    done_result = await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status == "done",
+            Task.completed_at >= week_start_dt,
+            Task.completed_at <= week_end_dt,
+            Task.category != "shopping",
+        ))
+    )
+    done_tasks = done_result.scalars().all()
+
+    # Still open tasks
+    open_result = await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.category != "shopping",
+        ))
+    )
+    open_tasks = open_result.scalars().all()
+
+    # Workout days this week
+    workout_result = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type == "workout",
+            Log.logged_at >= week_start_dt,
+            Log.logged_at <= week_end_dt,
+        ))
+    )
+    workout_days = len({l.logged_at.date() for l in workout_result.scalars().all()})
+
+    # Mood trend this week
+    mood_result = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type == "mood",
+            Log.logged_at >= week_start_dt,
+            Log.logged_at <= week_end_dt,
+        )).order_by(Log.logged_at.asc())
+    )
+    mood_logs = mood_result.scalars().all()
+    mood_scores = [l.data.get("score") for l in mood_logs if l.data.get("score")]
+    mood_avg = round(sum(mood_scores) / len(mood_scores), 1) if mood_scores else None
+
+    # Routine completion rate this week
+    routine_result = await session.execute(
+        select(Routine).where(and_(Routine.user_id == user.id, Routine.status == "active"))
+    )
+    routines = routine_result.scalars().all()
+
+    comp_result = await session.execute(
+        select(RoutineCompletion).where(and_(
+            RoutineCompletion.user_id == user.id,
+            RoutineCompletion.completed_at >= week_start_dt,
+            RoutineCompletion.completed_at <= week_end_dt,
+        ))
+    )
+    completions = comp_result.scalars().all()
+    days_elapsed = (today - week_start).days + 1
+    max_completions = len(routines) * days_elapsed
+    routine_rate = round(len(completions) / max_completions * 100) if max_completions > 0 else 0
+
+    # Water average this week
+    water_result = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type == "water",
+            Log.logged_at >= week_start_dt,
+            Log.logged_at <= week_end_dt,
+        ))
+    )
+    water_by_day: dict = defaultdict(float)
+    for l in water_result.scalars().all():
+        water_by_day[l.logged_at.date().isoformat()] += l.data.get("amount", 0)
+    water_avg = round(sum(water_by_day.values()) / len(water_by_day), 2) if water_by_day else 0
+
+    return {
+        "week_start": week_start.isoformat(),
+        "tasks_done_this_week": len(done_tasks),
+        "tasks_open": len(open_tasks),
+        "workout_days": workout_days,
+        "routine_completion_rate": routine_rate,
+        "mood_avg": mood_avg,
+        "mood_scores": mood_scores,
+        "water_avg_liters": water_avg,
+    }
+
+
+@router.get("/priorities")
+async def get_priorities(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Top 5 priorities scored from: priority level, due date, objective importance."""
+    today = date.today()
+
+    result = await session.execute(
+        select(Task)
+        .options(selectinload(Task.key_result).selectinload(KeyResult.objective))
+        .where(and_(
+            Task.user_id == user.id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.category != "shopping",
+        ))
+    )
+    tasks = result.scalars().all()
+
+    scored = []
+    for t in tasks:
+        # Base score from priority (P1=50, P2=40, P3=30, P4=20, P5=10)
+        score = (6 - t.priority) * 10
+
+        # Due date bonuses
+        if t.due_date:
+            if t.due_date < today:
+                score += 40  # overdue
+            elif t.due_date == today:
+                score += 30  # due today
+            elif t.due_date <= today + timedelta(days=2):
+                score += 20  # due in 2 days
+            elif t.due_date <= today + timedelta(days=7):
+                score += 10  # due this week
+
+        # Objective importance bonus
+        if t.key_result and t.key_result.objective:
+            score += t.key_result.objective.priority_weight * 1
+
+        scored.append((score, t))
+
+    scored.sort(key=lambda x: -x[0])
+    top5 = scored[:5]
+
+    return {
+        "priorities": [
+            {
+                "rank": i + 1,
+                "score": s,
+                "task_id": t.id,
+                "title": t.title,
+                "priority": t.priority,
+                "category": t.category,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+                "is_overdue": bool(t.due_date and t.due_date < today),
+                "objective_title": t.key_result.objective.title if t.key_result and t.key_result.objective else None,
+            }
+            for i, (s, t) in enumerate(top5)
+        ]
+    }
+
+
+@router.get("/routines/history")
+async def get_routines_history(
+    days: int = Query(7, ge=1, le=30),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get routine completions for the last N days (default 7) for streak grid."""
+    today = date.today()
+    start_date = today - timedelta(days=days - 1)
+    start_dt = datetime.combine(start_date, datetime.min.time())
+
+    routines = await get_active_routines(session, user.id)
+
+    comp_result = await session.execute(
+        select(RoutineCompletion).where(and_(
+            RoutineCompletion.user_id == user.id,
+            RoutineCompletion.completed_at >= start_dt,
+        ))
+    )
+    completions = comp_result.scalars().all()
+
+    by_routine: dict[int, set[str]] = {}
+    for c in completions:
+        rid = c.routine_id
+        if rid not in by_routine:
+            by_routine[rid] = set()
+        by_routine[rid].add(c.completed_at.date().isoformat())
+
+    all_days = [(start_date + timedelta(days=i)).isoformat() for i in range(days)]
+
+    def calc_streak(dates: set[str]) -> int:
+        streak = 0
+        d = today
+        while d.isoformat() in dates:
+            streak += 1
+            d -= timedelta(days=1)
+        if streak == 0 and (today - timedelta(days=1)).isoformat() in dates:
+            # Started streak counting from yesterday
+            d = today - timedelta(days=1)
+            while d.isoformat() in dates:
+                streak += 1
+                d -= timedelta(days=1)
+        return streak
+
+    return {
+        "days": all_days,
+        "routines": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "completions": sorted(by_routine.get(r.id, set())),
+                "streak": calc_streak(by_routine.get(r.id, set())),
+            }
+            for r in routines
+        ],
+    }
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task_endpoint(
+    task_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Mark a task as done from the dashboard."""
+    result = await session.execute(
+        select(Task).where(and_(Task.id == task_id, Task.user_id == user.id))
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status == "done":
+        return {"ok": True, "message": "Already done"}
+
+    task.status = "done"
+    task.completed_at = datetime.utcnow()
+    await session.flush()
+    return {"ok": True, "task_id": task_id, "title": task.title}
+
+
+@router.post("/routines/{routine_id}/complete")
+async def complete_routine_endpoint(
+    routine_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Mark a routine as done for today from the dashboard."""
+    result = await session.execute(
+        select(Routine).where(and_(Routine.id == routine_id, Routine.user_id == user.id))
+    )
+    routine = result.scalar_one_or_none()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    already = await session.execute(
+        select(RoutineCompletion).where(and_(
+            RoutineCompletion.routine_id == routine_id,
+            RoutineCompletion.user_id == user.id,
+            RoutineCompletion.completed_at >= today_start,
+        ))
+    )
+    if already.scalar_one_or_none():
+        return {"ok": True, "message": "Already completed today"}
+
+    completion = RoutineCompletion(
+        routine_id=routine_id,
+        user_id=user.id,
+        completed_at=datetime.utcnow(),
+    )
+    session.add(completion)
+    await session.flush()
+    return {"ok": True, "routine_id": routine_id, "title": routine.title}
+
 
 @router.get("/brief/today")
 async def get_todays_brief(
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Phase 4: Get today's daily brief with priorities and schedule."""
-    return {"message": "Coming in Phase 4"}
-
-
-@router.get("/reflections")
-async def list_reflections(
-    user: User = Depends(get_current_user),
-) -> dict:
-    """Phase 4: Get weekly reflection history."""
-    return {"message": "Coming in Phase 4"}
-
-
-@router.get("/insights")
-async def list_insights(
-    user: User = Depends(get_current_user),
-) -> dict:
-    """Phase 4: Get user insights and detected patterns."""
-    return {"message": "Coming in Phase 4"}
-
-
-@router.get("/stats/week")
-async def get_week_stats(
-    user: User = Depends(get_current_user),
-) -> dict:
-    """Phase 4: Get detailed weekly statistics."""
-    return {"message": "Coming in Phase 4"}
+    """Get today's daily brief priorities snapshot."""
+    from bot.database.models import DailyBrief
+    today = date.today()
+    result = await session.execute(
+        select(DailyBrief).where(and_(
+            DailyBrief.user_id == user.id,
+            DailyBrief.brief_date == today,
+        ))
+    )
+    brief = result.scalar_one_or_none()
+    return {
+        "brief_sent": brief.brief_sent_at.isoformat() if brief and brief.brief_sent_at else None,
+        "review_sent": brief.review_sent_at.isoformat() if brief and brief.review_sent_at else None,
+        "day_score": brief.day_score if brief else None,
+    }
 
 
 @router.post("/auth/token")

@@ -82,10 +82,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to register webhook: %s", e)
 
-    # Start scheduler (Phase 1: no jobs, Phase 2+ will add jobs)
+    # Start scheduler with all Phase 4 active jobs
     scheduler = setup_scheduler()
     scheduler.start()
-    logger.info("Scheduler started (Phase 1: no active jobs)")
+    logger.info("Scheduler started: morning_brief, evening_review, reminders, weekly_reflection")
 
     yield
 

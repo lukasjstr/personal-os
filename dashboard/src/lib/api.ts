@@ -95,8 +95,11 @@ export interface Task {
   priority: number;
   category: string | null;
   due_date: string | null;
+  is_overdue: boolean;
   completed_at: string | null;
   key_result_id: number | null;
+  key_result_title: string | null;
+  objective_title: string | null;
   created_at: string;
 }
 
@@ -197,6 +200,43 @@ export interface FitnessPR {
   date: string;
 }
 
+// ─── Phase 4 Types ─────────────────────────────────────────────────────────
+
+export interface WeeklySummary {
+  week_start: string;
+  tasks_done_this_week: number;
+  tasks_open: number;
+  workout_days: number;
+  routine_completion_rate: number;
+  mood_avg: number | null;
+  mood_scores: number[];
+  water_avg_liters: number;
+}
+
+export interface Priority {
+  rank: number;
+  score: number;
+  task_id: number;
+  title: string;
+  priority: number;
+  category: string | null;
+  due_date: string | null;
+  is_overdue: boolean;
+  objective_title: string | null;
+}
+
+export interface RoutineHistoryEntry {
+  id: number;
+  title: string;
+  completions: string[];
+  streak: number;
+}
+
+export interface RoutinesHistory {
+  days: string[];
+  routines: RoutineHistoryEntry[];
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -219,6 +259,8 @@ export const api = {
       `/api/logs?days=${days}${log_type ? `&log_type=${log_type}` : ""}`
     ),
   routines: () => apiFetch<{ routines: Routine[] }>("/api/routines"),
+  routinesHistory: (days = 7) =>
+    apiFetch<RoutinesHistory>(`/api/routines/history?days=${days}`),
   calendar: (days = 60) =>
     apiFetch<{ events: CalendarEvent[] }>(`/api/calendar?days=${days}`),
   brainDumps: () => apiFetch<{ brain_dumps: BrainDump[] }>("/api/brain-dumps"),
@@ -228,4 +270,8 @@ export const api = {
   fitnessSummary: () => apiFetch<FitnessSummary>("/api/fitness/summary"),
   fitnessExercises: () => apiFetch<{ exercises: FitnessExercise[] }>("/api/fitness/exercises"),
   fitnessPRs: () => apiFetch<{ prs: FitnessPR[] }>("/api/fitness/prs"),
+  weeklySummary: () => apiFetch<WeeklySummary>("/api/weekly-summary"),
+  priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
+  completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
+  completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),
 };
