@@ -1249,6 +1249,14 @@ async def get_todays_brief(
     }
 
 
+@router.get("/auth/validate")
+async def validate_token(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Validate Bearer token — returns 200 if valid, 401 if not."""
+    return {"valid": True, "user_id": user.id}
+
+
 @router.post("/auth/token")
 async def generate_token(
     user: User = Depends(get_current_user),

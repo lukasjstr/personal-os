@@ -3,7 +3,7 @@ const API_URL =
 
 export async function validateToken(token: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/health`, {
+    const res = await fetch(`${API_URL}/api/auth/validate`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     return res.ok;
