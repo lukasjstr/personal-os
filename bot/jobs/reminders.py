@@ -287,7 +287,11 @@ async def _mark_reminder(
     await session.flush()
 
 
-# Legacy stub — kept for import compatibility
+# Legacy stubs — kept for import compatibility
 async def send_routine_reminders() -> None:
     """Replaced by process_reminders() in Phase 4."""
     logger.info("send_routine_reminders: use process_reminders() instead")
+
+
+# Alias for backward-compatible imports
+check_proactive_reminders = process_reminders

@@ -1250,6 +1250,7 @@ async def get_todays_brief(
 
 
 @router.get("/auth/validate")
+@router.post("/auth/validate")
 async def validate_token(
     user: User = Depends(get_current_user),
 ) -> dict:

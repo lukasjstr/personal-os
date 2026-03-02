@@ -325,3 +325,7 @@ async def get_or_generate_suggestions(
     if suggestion:
         return suggestion.suggestions
     return None
+
+
+# Alias for backward-compatible imports
+send_daily_suggestions = generate_daily_suggestions

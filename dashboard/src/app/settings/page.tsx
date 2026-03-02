@@ -113,7 +113,8 @@ function SaveButton({
 }
 
 export default function SettingsPage() {
-  const { data: settings } = useSWR<UserSettings>("/api/settings", api.getSettings);
+  const { data: settings, error: settingsError, isLoading: settingsLoading } = useSWR<UserSettings>("/api/settings", api.getSettings);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Token
   const [token, setTokenInput] = useState("");
@@ -205,13 +206,14 @@ export default function SettingsPage() {
 
   const saveProfile = async () => {
     setProfileSaving(true);
+    setSaveError(null);
     try {
       await api.updateProfile({ first_name: firstName });
       setProfileSaved(true);
       await mutate(() => true, undefined, { revalidate: true });
       setTimeout(() => setProfileSaved(false), 2000);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Speichern fehlgeschlagen");
     } finally {
       setProfileSaving(false);
     }
@@ -231,12 +233,13 @@ export default function SettingsPage() {
 
   const saveTimes = async () => {
     setTimesSaving(true);
+    setSaveError(null);
     try {
       await api.updateSettings(times);
       setTimesSaved(true);
       setTimeout(() => setTimesSaved(false), 2000);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Speichern fehlgeschlagen");
     } finally {
       setTimesSaving(false);
     }
@@ -244,12 +247,13 @@ export default function SettingsPage() {
 
   const saveWeights = async () => {
     setWeightsSaving(true);
+    setSaveError(null);
     try {
       await api.updateSettings({ category_weights: weights });
       setWeightsSaved(true);
       setTimeout(() => setWeightsSaved(false), 2000);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Speichern fehlgeschlagen");
     } finally {
       setWeightsSaving(false);
     }
@@ -257,6 +261,7 @@ export default function SettingsPage() {
 
   const handleExport = async () => {
     setExporting(true);
+    setSaveError(null);
     try {
       const data = await api.exportData();
       const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -269,7 +274,7 @@ export default function SettingsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Export fehlgeschlagen");
     } finally {
       setExporting(false);
     }
@@ -278,12 +283,13 @@ export default function SettingsPage() {
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== "LÖSCHEN") return;
     setDeleting(true);
+    setSaveError(null);
     try {
       await api.deleteAccount();
       clearToken();
       window.location.reload();
     } catch (e) {
-      console.error(e);
+      setSaveError(e instanceof Error ? e.message : "Löschen fehlgeschlagen");
       setDeleting(false);
     }
   };
@@ -293,6 +299,24 @@ export default function SettingsPage() {
   return (
     <div>
       <Header title="⚙️ Einstellungen" />
+
+      {settingsLoading && (
+        <div className="text-zinc-500 text-sm mb-4">Einstellungen laden…</div>
+      )}
+      {settingsError && (
+        <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
+          <span className="text-red-400 text-sm">Einstellungen konnten nicht geladen werden</span>
+          <button onClick={() => window.location.reload()} className="text-xs text-zinc-400 hover:text-white ml-4">
+            Neu laden
+          </button>
+        </div>
+      )}
+      {saveError && (
+        <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
+          <span className="text-red-400 text-sm">{saveError}</span>
+          <button onClick={() => setSaveError(null)} className="text-zinc-500 hover:text-white ml-4 text-lg leading-none">×</button>
+        </div>
+      )}
 
       <div className="space-y-6 max-w-lg">
         {/* ── Profil ────────────────────────────────────────────── */}
