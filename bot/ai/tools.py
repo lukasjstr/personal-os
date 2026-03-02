@@ -153,7 +153,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "log_workout",
-            "description": "Loggt ein Workout / eine Trainingseinheit. Nutze für Sport- und Fitness-Inputs.",
+            "description": "Loggt ein Workout / eine Trainingseinheit. Nutze für Sport- und Fitness-Inputs. Wenn User einen Split nennt (z.B. 'Push Day'), split_id aus dem Kontext setzen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -164,6 +164,7 @@ TOOLS: list[dict[str, Any]] = [
                     "duration_minutes": {"type": "integer", "description": "Dauer in Minuten (optional)"},
                     "notes": {"type": "string", "description": "Zusätzliche Notizen (optional)"},
                     "key_result_id": {"type": "integer", "description": "Zugehöriges Key Result (optional)"},
+                    "split_id": {"type": "integer", "description": "ID des Fitness-Splits (optional, wenn User Split nennt)"},
                 },
                 "required": ["exercise"],
             },
@@ -411,6 +412,58 @@ TOOLS: list[dict[str, Any]] = [
                     "work_start": {"type": "string", "description": "Arbeitsbeginn (HH:MM, default: 08:00)"},
                     "work_end": {"type": "string", "description": "Arbeitsende (HH:MM, default: 20:00)"},
                 },
+                "required": [],
+            },
+        },
+    },
+    # ─── Fitness Split Tools ──────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_fitness_split",
+            "description": "Erstellt einen neuen Fitness-Split (z.B. Push Day, Pull Day, Leg Day) mit Übungsliste. Nutze wenn User einen Trainingsplan oder Split definiert.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name des Splits (z.B. 'Push Day', 'Pull Day', 'Leg Day', 'Oberkörper')"},
+                    "exercises": {
+                        "type": "array",
+                        "description": "Liste der Übungen im Split",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Übungsname"},
+                                "sets": {"type": "integer", "description": "Anzahl Sätze (optional)"},
+                                "reps": {"type": "string", "description": "Wiederholungen, z.B. '8-10' oder '5' (optional)"},
+                                "target_weight": {"type": "number", "description": "Zielgewicht in kg (optional)"},
+                            },
+                            "required": ["name"],
+                        },
+                        "minItems": 1,
+                    },
+                    "day_of_week": {
+                        "type": "integer",
+                        "description": "Wochentag: 0=Montag, 1=Dienstag, ..., 6=Sonntag (optional)",
+                        "minimum": 0,
+                        "maximum": 6,
+                    },
+                    "order_in_rotation": {
+                        "type": "integer",
+                        "description": "Reihenfolge in der Split-Rotation (1, 2, 3, ...). Wichtig für Push/Pull/Leg-Planung.",
+                    },
+                },
+                "required": ["name", "exercises"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_fitness_plan",
+            "description": "Zeigt alle Fitness-Splits und empfiehlt den nächsten Split basierend auf letzten Workouts. Nutze wenn User fragt 'Was trainiere ich heute?', 'Nächster Split?' oder 'Zeig meinen Trainingsplan'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "required": [],
             },
         },

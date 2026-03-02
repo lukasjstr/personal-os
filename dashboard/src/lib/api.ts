@@ -243,6 +243,42 @@ export interface FitnessPR {
   date: string;
 }
 
+export interface FitnessSplitExercise {
+  name: string;
+  sets?: number | null;
+  reps?: string | null;
+  target_weight?: number | null;
+}
+
+export interface FitnessSplit {
+  id: number;
+  name: string;
+  exercises: FitnessSplitExercise[];
+  day_of_week: number | null;
+  order_in_rotation: number | null;
+  created_at: string;
+  workout_count: number;
+  last_used: string | null;
+  is_next: boolean;
+}
+
+export interface FitnessSplitsResponse {
+  splits: FitnessSplit[];
+  next_split_id: number | null;
+}
+
+export interface FitnessProgressionPoint {
+  date: string;
+  weight: number;
+  reps?: number | null;
+  sets?: number | null;
+}
+
+export interface FitnessProgression {
+  exercise: string;
+  data_points: FitnessProgressionPoint[];
+}
+
 // ─── Settings Types ─────────────────────────────────────────────────────────
 
 export interface UserSettings {
@@ -352,6 +388,11 @@ export const api = {
   fitnessSummary: () => apiFetch<FitnessSummary>("/api/fitness/summary"),
   fitnessExercises: () => apiFetch<{ exercises: FitnessExercise[] }>("/api/fitness/exercises"),
   fitnessPRs: () => apiFetch<{ prs: FitnessPR[] }>("/api/fitness/prs"),
+  fitnessSplits: () => apiFetch<FitnessSplitsResponse>("/api/fitness/splits"),
+  createFitnessSplit: (body: { name: string; exercises: FitnessSplitExercise[]; day_of_week?: number | null; order_in_rotation?: number | null }) =>
+    apiPost<FitnessSplit>("/api/fitness/splits", body),
+  fitnessProgression: (exercise: string) =>
+    apiFetch<FitnessProgression>(`/api/fitness/progression/${encodeURIComponent(exercise)}`),
   weeklySummary: () => apiFetch<WeeklySummary>("/api/weekly-summary"),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),

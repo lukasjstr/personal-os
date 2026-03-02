@@ -33,6 +33,7 @@ from bot.core.tasks import (
     search_logs,
     update_task_status,
 )
+from bot.core.fitness import create_fitness_split, get_fitness_plan as _get_fitness_plan
 from bot.core.user_settings import update_setting
 from bot.database.models import Conversation, User
 
@@ -282,6 +283,21 @@ async def _execute_tool(
                 lines.append(f"{emoji} {time_str}  {ev.title}")
             lines.append(f"\n✅ {len(created)} Blöcke im Kalender gespeichert.")
             return "\n".join(lines)
+
+        # ─── Fitness Splits ───────────────────────────────────────────────────
+        elif name == "create_fitness_split":
+            split = await create_fitness_split(session, user.id, **args)
+            ex_preview = ", ".join(e.get("name", "?") for e in (split.exercises or [])[:3])
+            if len(split.exercises or []) > 3:
+                ex_preview += f" +{len(split.exercises) - 3}"
+            return (
+                f"✅ Split #{split.id} erstellt: *{split.name}*\n"
+                f"   Übungen: {ex_preview}\n"
+                f"→ split_id={split.id} für log_workout verwenden"
+            )
+
+        elif name == "get_fitness_plan":
+            return await _get_fitness_plan(session, user.id)
 
         # ─── Settings ─────────────────────────────────────────────────────────
         elif name == "update_user_settings":

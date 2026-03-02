@@ -18,7 +18,7 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    BrainDump, CalendarEvent, KeyResult, Log, Objective, Routine,
+    BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
     RoutineCompletion, Task, User,
 )
 
@@ -603,6 +603,155 @@ async def get_fitness_prs(
 
     return {
         "prs": sorted(prs.values(), key=lambda x: -x["weight"])
+    }
+
+
+# ─── Fitness Split Endpoints ───────────────────────────────────────────────────
+
+class _SplitExercise(BaseModel):
+    name: str
+    sets: Optional[int] = None
+    reps: Optional[str] = None
+    target_weight: Optional[float] = None
+
+
+class _CreateFitnessSplitBody(BaseModel):
+    name: str
+    exercises: list[_SplitExercise]
+    day_of_week: Optional[int] = None
+    order_in_rotation: Optional[int] = None
+
+
+@router.get("/fitness/splits")
+async def get_fitness_splits(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all fitness splits with usage stats and next-split recommendation."""
+    result = await session.execute(
+        select(FitnessSplit)
+        .where(FitnessSplit.user_id == user.id)
+        .order_by(FitnessSplit.order_in_rotation.nulls_last(), FitnessSplit.created_at)
+    )
+    splits = result.scalars().all()
+
+    # Recent logs to determine usage + last split used
+    since_30 = datetime.utcnow() - timedelta(days=30)
+    log_result = await session.execute(
+        select(Log)
+        .where(and_(Log.user_id == user.id, Log.log_type == "workout", Log.logged_at >= since_30))
+        .order_by(Log.logged_at.desc())
+    )
+    recent_logs = log_result.scalars().all()
+
+    split_usage: dict = defaultdict(int)
+    last_used: dict = {}
+    last_split_id = None
+    for log in recent_logs:
+        sid = log.data.get("split_id")
+        if sid:
+            split_usage[sid] += 1
+            if sid not in last_used:
+                last_used[sid] = log.logged_at.date().isoformat()
+            if last_split_id is None:
+                last_split_id = sid
+
+    split_ids = [s.id for s in splits]
+    next_split_id = None
+    if split_ids:
+        if last_split_id and last_split_id in split_ids:
+            idx = split_ids.index(last_split_id)
+            next_split_id = split_ids[(idx + 1) % len(split_ids)]
+        else:
+            next_split_id = split_ids[0]
+
+    return {
+        "splits": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "exercises": s.exercises,
+                "day_of_week": s.day_of_week,
+                "order_in_rotation": s.order_in_rotation,
+                "created_at": s.created_at.isoformat(),
+                "workout_count": split_usage.get(s.id, 0),
+                "last_used": last_used.get(s.id),
+                "is_next": s.id == next_split_id,
+            }
+            for s in splits
+        ],
+        "next_split_id": next_split_id,
+    }
+
+
+@router.post("/fitness/splits")
+async def create_fitness_split_api(
+    body: _CreateFitnessSplitBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new fitness split."""
+    split = FitnessSplit(
+        user_id=user.id,
+        name=body.name,
+        exercises=[ex.model_dump(exclude_none=True) for ex in body.exercises],
+        day_of_week=body.day_of_week,
+        order_in_rotation=body.order_in_rotation,
+    )
+    session.add(split)
+    await session.flush()
+    await session.commit()
+    return {
+        "id": split.id,
+        "name": split.name,
+        "exercises": split.exercises,
+        "day_of_week": split.day_of_week,
+        "order_in_rotation": split.order_in_rotation,
+        "created_at": split.created_at.isoformat(),
+    }
+
+
+@router.get("/fitness/progression/{exercise}")
+async def get_exercise_progression(
+    exercise: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get weight progression for a specific exercise over time."""
+    result = await session.execute(
+        select(Log)
+        .where(and_(Log.user_id == user.id, Log.log_type == "workout"))
+        .order_by(Log.logged_at.asc())
+    )
+    workout_logs = result.scalars().all()
+
+    exercise_lower = exercise.lower()
+    data_points = []
+    seen_dates: set = set()
+    for log in workout_logs:
+        if str(log.data.get("exercise", "")).lower() == exercise_lower:
+            weight = float(log.data.get("weight", 0) or 0)
+            if weight > 0:
+                day = log.logged_at.date().isoformat()
+                if day in seen_dates:
+                    # Keep highest weight per day
+                    for dp in data_points:
+                        if dp["date"] == day and weight > dp["weight"]:
+                            dp["weight"] = weight
+                            dp["reps"] = log.data.get("reps")
+                            dp["sets"] = log.data.get("sets")
+                else:
+                    seen_dates.add(day)
+                    data_points.append({
+                        "date": day,
+                        "weight": weight,
+                        "reps": log.data.get("reps"),
+                        "sets": log.data.get("sets"),
+                    })
+
+    return {
+        "exercise": exercise,
+        "data_points": data_points,
     }
 
 

@@ -43,6 +43,7 @@ async def log_workout(
     duration_minutes: Optional[int] = None,
     notes: Optional[str] = None,
     key_result_id: Optional[int] = None,
+    split_id: Optional[int] = None,
 ) -> Log:
     """Log a workout entry."""
     data: dict[str, Any] = {"exercise": exercise}
@@ -56,6 +57,8 @@ async def log_workout(
         data["duration_minutes"] = duration_minutes
     if notes:
         data["notes"] = notes
+    if split_id is not None:
+        data["split_id"] = split_id
 
     raw = f"{exercise}"
     if weight:

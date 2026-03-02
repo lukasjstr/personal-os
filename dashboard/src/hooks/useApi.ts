@@ -53,6 +53,18 @@ export function useFitnessPRs() {
   return useSWR("fitness-prs", () => api.fitnessPRs(), { refreshInterval: 300_000 });
 }
 
+export function useFitnessSplits() {
+  return useSWR("fitness-splits", () => api.fitnessSplits(), { refreshInterval: 300_000 });
+}
+
+export function useFitnessProgression(exercise?: string) {
+  return useSWR(
+    exercise ? `fitness-progression-${exercise}` : null,
+    exercise ? () => api.fitnessProgression(exercise) : null,
+    { refreshInterval: 0 },
+  );
+}
+
 export function useWeeklySummary() {
   return useSWR("weekly-summary", () => api.weeklySummary(), { refreshInterval: 120_000 });
 }

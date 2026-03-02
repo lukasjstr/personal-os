@@ -7,7 +7,7 @@ from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Float, ForeignKey,
     Integer, String, Text, UniqueConstraint, func,
 )
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSON, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -56,6 +56,7 @@ class User(Base):
     weekly_reflections: Mapped[list["WeeklyReflection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     weekly_priorities: Mapped[list["WeeklyPriority"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     user_insights: Mapped[list["UserInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    fitness_splits: Mapped[list["FitnessSplit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -430,3 +431,24 @@ class UserInsight(Base):
 
     def __repr__(self) -> str:
         return f"<UserInsight id={self.id} type={self.insight_type}>"
+
+
+# ─── Phase 5.3 — Fitness Splits ──────────────────────────────────────────────
+
+class FitnessSplit(Base):
+    __tablename__ = "fitness_splits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    exercises: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # exercises JSON structure:
+    # [{"name": "Bankdrücken", "sets": 4, "reps": "8-10", "target_weight": 80}]
+    day_of_week: Mapped[Optional[int]] = mapped_column(Integer)  # 0=Mon, 6=Sun
+    order_in_rotation: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="fitness_splits")
+
+    def __repr__(self) -> str:
+        return f"<FitnessSplit id={self.id} name={self.name!r}>"
