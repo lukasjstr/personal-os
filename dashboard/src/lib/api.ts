@@ -410,6 +410,31 @@ export interface GamificationStats {
   }[];
 }
 
+// ─── Reflection Types ─────────────────────────────────────────────────────────
+
+export interface ReflectionAiSummary {
+  recommendations: string[];
+  goal_adjustments: string[];
+  motivation: string;
+}
+
+export interface WeeklyReflection {
+  id: number;
+  week_start: string;
+  week_number: number;
+  year: number;
+  status: string;
+  week_score: number | null;
+  biggest_win: string | null;
+  biggest_blocker: string | null;
+  key_learning: string | null;
+  raw_answers: Record<string, unknown>;
+  priorities_next_week: unknown | null;
+  ai_summary: ReflectionAiSummary | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -487,4 +512,6 @@ export const api = {
     apiPut<{ ok: boolean }>("/api/settings", body),
   exportData: () => apiFetch<unknown>("/api/settings/export"),
   deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
+  reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
+  reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),
 };

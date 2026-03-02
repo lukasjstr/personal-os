@@ -10,6 +10,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from bot.ai.client import process_message
 from bot.config import settings
 from bot.core.user_settings import get_or_create_user
+from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
 from bot.database.connection import get_session
 from bot.telegram.commands import (
     handle_help,
@@ -47,8 +48,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             tg_user.username,
             tg_user.first_name,
         )
-        reply = await process_message(session, user, text, source="text")
-        await session.commit()
+        # Check for active reflection session first
+        reflection = await get_active_reflection(session, user.id)
+        if reflection:
+            reply = await handle_reflection_answer(session, user, reflection, text)
+            await session.commit()
+        else:
+            reply = await process_message(session, user, text, source="text")
+            await session.commit()
 
     await send_message(chat_id, reply)
 

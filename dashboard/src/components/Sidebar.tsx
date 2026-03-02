@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Dumbbell,
   Trophy,
+  BookOpen,
   Menu,
   X,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const NAV = [
   { href: "/brain-dumps", label: "Brain Dumps", icon: Brain },
   { href: "/shopping", label: "Einkauf", icon: ShoppingCart, badge: "shopping_items" },
   { href: "/achievements", label: "Erfolge", icon: Trophy },
+  { href: "/reflection", label: "Reflexion", icon: BookOpen },
   { href: "/docs", label: "Dokumente", icon: FileText },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];

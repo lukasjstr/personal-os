@@ -1915,3 +1915,58 @@ async def recent_achievements(
             for ua in user_achievements
         ]
     }
+
+
+# ─── Reflections Endpoints ─────────────────────────────────────────────────────
+
+def _reflection_dict(r: WeeklyReflection) -> dict:
+    return {
+        "id": r.id,
+        "week_start": r.week_start.isoformat(),
+        "week_number": r.week_number,
+        "year": r.year,
+        "status": r.status,
+        "week_score": r.week_score,
+        "biggest_win": r.biggest_win,
+        "biggest_blocker": r.biggest_blocker,
+        "key_learning": r.key_learning,
+        "raw_answers": r.raw_answers or {},
+        "priorities_next_week": r.priorities_next_week,
+        "ai_summary": r.ai_summary,
+        "created_at": r.created_at.isoformat(),
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+@router.get("/reflections")
+async def list_reflections(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all weekly reflections for the user, ordered by most recent."""
+    result = await session.execute(
+        select(WeeklyReflection)
+        .where(WeeklyReflection.user_id == user.id)
+        .order_by(WeeklyReflection.week_start.desc())
+    )
+    reflections = result.scalars().all()
+    return {"reflections": [_reflection_dict(r) for r in reflections]}
+
+
+@router.get("/reflections/{reflection_id}")
+async def get_reflection(
+    reflection_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get a single reflection by ID."""
+    result = await session.execute(
+        select(WeeklyReflection).where(and_(
+            WeeklyReflection.id == reflection_id,
+            WeeklyReflection.user_id == user.id,
+        ))
+    )
+    r = result.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    return _reflection_dict(r)

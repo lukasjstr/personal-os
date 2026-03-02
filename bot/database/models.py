@@ -382,8 +382,10 @@ class WeeklyReflection(Base):
     biggest_win: Mapped[Optional[str]] = mapped_column(Text)
     biggest_blocker: Mapped[Optional[str]] = mapped_column(Text)
     key_learning: Mapped[Optional[str]] = mapped_column(Text)
+    week_score: Mapped[Optional[int]] = mapped_column(Integer)
     raw_answers: Mapped[dict] = mapped_column(JSON, default=dict)
     priorities_next_week: Mapped[Optional[dict]] = mapped_column(JSON)
+    ai_summary: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 

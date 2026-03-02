@@ -84,3 +84,15 @@ export function useRecentAchievements(limit = 5) {
 export function useGamificationStats() {
   return useSWR("gamification-stats", () => api.gamificationStats(), { refreshInterval: 120_000 });
 }
+
+export function useReflections() {
+  return useSWR("reflections", () => api.reflections(), { refreshInterval: 300_000 });
+}
+
+export function useReflection(id?: number) {
+  return useSWR(
+    id ? `reflection-${id}` : null,
+    id ? () => api.reflection(id) : null,
+    { refreshInterval: 0 },
+  );
+}
