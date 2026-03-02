@@ -561,7 +561,7 @@ async def get_gamification_stats(
         "xp": total_xp,
         "level": level,
         "level_title": get_level_title(level),
-        "xp_progress": total_xp - xp_for_current,
+        "xp_progress": max(0, total_xp - xp_for_current),
         "xp_to_next": xp_for_next - xp_for_current,
         "recent_achievements": [
             {
@@ -659,7 +659,7 @@ async def get_dashboard(
             "total_xp": total_xp,
             "level": level,
             "level_title": get_level_title(level),
-            "xp_progress": total_xp - xp_for_current,
+            "xp_progress": max(0, total_xp - xp_for_current),
             "xp_to_next": xp_for_next - xp_for_current,
         },
     }

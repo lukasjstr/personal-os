@@ -2,6 +2,7 @@
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from bot.jobs.daily_suggestions import generate_daily_suggestions
 from bot.jobs.evening_review import send_evening_review
@@ -18,34 +19,34 @@ def setup_scheduler() -> AsyncIOScheduler:
     """Initialize scheduler with all jobs.
 
     Jobs:
-    - Every minute: check if any user's morning brief or evening review time matches now
-    - Every minute: generate daily AI suggestions at 06:30 (before morning brief)
+    - 06:30 daily: generate daily AI suggestions (before morning brief)
+    - 07:00 daily: send morning brief
+    - 21:00 daily: send evening review
     - Every 30 minutes: process proactive reminders (calendar, overdue, routines, nudges)
-    - Every minute (Sundays only): check if any user's weekly reflection time matches now
+    - 08:00 Sundays: check and trigger weekly reflections
     """
-    # Daily AI suggestions: run every minute, function checks for 06:30
+    # Daily AI suggestions at 06:30
     _scheduler.add_job(
         generate_daily_suggestions,
-        "interval",
-        minutes=1,
+        CronTrigger(hour=6, minute=30, timezone="Europe/Berlin"),
         id="daily_suggestions",
         max_instances=1,
         coalesce=True,
     )
 
-    # Morning and evening briefs: run every minute, each function checks timing internally
+    # Morning brief at 07:00
     _scheduler.add_job(
         send_morning_brief,
-        "interval",
-        minutes=1,
+        CronTrigger(hour=7, minute=0, timezone="Europe/Berlin"),
         id="morning_brief",
         max_instances=1,
         coalesce=True,
     )
+
+    # Evening review at 21:00
     _scheduler.add_job(
         send_evening_review,
-        "interval",
-        minutes=1,
+        CronTrigger(hour=21, minute=0, timezone="Europe/Berlin"),
         id="evening_review",
         max_instances=1,
         coalesce=True,
@@ -61,11 +62,10 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
-    # Weekly reflection: every minute (function checks if it's Sunday internally)
+    # Weekly reflection: Sundays at 08:00
     _scheduler.add_job(
         check_and_trigger_reflections,
-        "interval",
-        minutes=1,
+        CronTrigger(hour=8, minute=0, day_of_week="sun", timezone="Europe/Berlin"),
         id="weekly_reflection",
         max_instances=1,
         coalesce=True,
