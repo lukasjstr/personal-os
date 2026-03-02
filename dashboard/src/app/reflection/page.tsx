@@ -12,7 +12,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import Header from "@/components/Header";
-import LoadingSpinner, { EmptyState } from "@/components/LoadingSpinner";
+import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
 import { useReflections } from "@/hooks/useApi";
 import type { WeeklyReflection } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -293,9 +293,7 @@ export default function ReflectionPage() {
   const [selected, setSelected] = useState<WeeklyReflection | null>(null);
 
   if (isLoading) return <LoadingSpinner />;
-  if (error) return (
-    <div className="text-red-400 text-sm p-4">Fehler: {error.message}</div>
-  );
+  if (error) return <ErrorState message={error.message} />;
 
   const reflections = data?.reflections ?? [];
   const completed = reflections.filter((r) => r.status === "completed");

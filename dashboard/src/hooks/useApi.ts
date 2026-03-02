@@ -29,6 +29,10 @@ export function useRoutines() {
   return useSWR("routines", () => api.routines(), { refreshInterval: 60_000 });
 }
 
+export function useRoutinesHistory(days = 7) {
+  return useSWR(`routines-history-${days}`, () => api.routinesHistory(days), { refreshInterval: 300_000 });
+}
+
 export function useCalendar(days = 60, daysPast = 0) {
   return useSWR(`calendar-${days}-${daysPast}`, () => api.calendar(days, daysPast), { refreshInterval: 300_000 });
 }

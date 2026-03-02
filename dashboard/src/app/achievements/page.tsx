@@ -1,7 +1,7 @@
 "use client";
 
 import Header from "@/components/Header";
-import LoadingSpinner, { EmptyState } from "@/components/LoadingSpinner";
+import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
 import { useAchievements } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import type { Achievement } from "@/lib/api";
@@ -116,9 +116,7 @@ export default function AchievementsPage() {
   const { data, error, isLoading } = useAchievements();
 
   if (isLoading) return <LoadingSpinner />;
-  if (error) return (
-    <div className="text-red-400 text-sm p-4">Fehler: {error.message}</div>
-  );
+  if (error) return <ErrorState message={error.message} />;
 
   const achievements = data?.achievements ?? [];
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
