@@ -152,63 +152,80 @@ async def organize_user_data(session: AsyncSession, user: User) -> dict:
 
 # ─── GPT helpers ──────────────────────────────────────────────────────────────
 
-async def _assign_tasks_to_objectives(
+BATCH_SIZE = 25  # Process tasks in chunks to stay within token limits
+
+
+async def _assign_tasks_batch(
     tasks: list[Task], objectives: list[Objective]
 ) -> list[dict]:
-    """Ask GPT-4o to assign each task to an objective or propose a new one."""
+    """Process a single batch of tasks (max BATCH_SIZE) via GPT-4o."""
     obj_list = [
         {"id": o.id, "title": o.title, "category": o.category}
         for o in objectives
     ]
     task_list = [{"id": t.id, "title": t.title} for t in tasks]
 
-    prompt = f"""Du bist ein persönlicher AI-COO. Analysiere die folgenden Tasks und ordne jeden Task
-dem passendsten bestehenden Objective zu. Falls kein Objective passt, schlage ein neues vor.
+    prompt = f"""Du bist ein persönlicher AI-COO. Ordne jeden Task dem semantisch passendsten Objective zu.
+Nutze NUR vorhandene Objectives — schlage neue NUR vor, wenn KEIN Objective thematisch passt.
 
-BESTEHENDE OBJECTIVES:
+OBJECTIVES:
 {json.dumps(obj_list, ensure_ascii=False, indent=2)}
 
-TASKS OHNE OBJECTIVE:
+TASKS ({len(task_list)} Stück):
 {json.dumps(task_list, ensure_ascii=False, indent=2)}
 
-Antworte mit einem JSON-Array (gleiche Reihenfolge wie Tasks). Jedes Element hat ENTWEDER:
-- "objective_id": <id aus obiger Liste>
-ODER (falls kein Objective passt):
-- "new_objective_title": "<kurzer, prägnanter Titel>",
-- "new_objective_description": "<1-2 Sätze>",
-- "new_objective_category": "<health|work|finance|personal|learning|general>"
+Antworte mit JSON: {{"assignments": [...]}} — Array in GLEICHER Reihenfolge wie Tasks.
+Jedes Element ENTWEDER:
+  {{"objective_id": <id>}}
+ODER (nur wenn wirklich kein Objective passt):
+  {{"new_objective_title": "...", "new_objective_description": "...", "new_objective_category": "health|work|finance|personal|learning|general"}}
 
-Antworte NUR mit dem JSON-Array, kein weiterer Text."""
+WICHTIG: Sei kreativ bei der Zuordnung — Tasks wie 'Slides vorbereiten' gehören zu 'Unterricht/Lehre', nicht zu 'Meditieren'."""
 
     try:
         response = await openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "Du bist ein hilfreicher persönlicher Assistent."},
+                {"role": "system", "content": "Du bist ein intelligenter persönlicher Assistent. Ordne Tasks sinnvoll und semantisch korrekt zu."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1500,
-            temperature=0.3,
+            max_tokens=3000,
+            temperature=0.2,
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content or "{}"
         data = json.loads(raw)
-        # GPT returns {"assignments": [...]} or just [...]
+        # Unwrap {"assignments": [...]} or {"tasks": [...]} or similar
         if isinstance(data, dict):
-            data = data.get("assignments", list(data.values())[0] if data else [])
-        if isinstance(data, list):
+            for key in ("assignments", "tasks", "results"):
+                if key in data and isinstance(data[key], list):
+                    data = data[key]
+                    break
+            else:
+                # Last resort: take the first list value
+                lists = [v for v in data.values() if isinstance(v, list)]
+                data = lists[0] if lists else []
+        if isinstance(data, list) and len(data) == len(tasks):
             return data
+        logger.warning("GPT returned %d assignments for %d tasks — skipping batch", len(data) if isinstance(data, list) else -1, len(tasks))
     except Exception:
-        logger.exception("GPT-4o failed during task assignment")
+        logger.exception("GPT-4o failed during task assignment batch")
 
-    # Fallback: assign all to first objective or leave unassigned
-    fallback = []
-    for t in tasks:
-        if objectives:
-            fallback.append({"objective_id": objectives[0].id})
-        else:
-            fallback.append({"new_objective_title": "Allgemeine Aufgaben", "new_objective_category": "general", "new_objective_description": "Aufgaben ohne spezifisches Ziel"})
-    return fallback
+    # Safe fallback: leave all tasks unassigned (better than wrong assignment)
+    return [{}] * len(tasks)
+
+
+async def _assign_tasks_to_objectives(
+    tasks: list[Task], objectives: list[Objective]
+) -> list[dict]:
+    """Assign tasks to objectives in batches of BATCH_SIZE to avoid token limits."""
+    all_results: list[dict] = []
+    for i in range(0, len(tasks), BATCH_SIZE):
+        batch = tasks[i : i + BATCH_SIZE]
+        logger.info("Processing batch %d/%d (%d tasks)", i // BATCH_SIZE + 1, (len(tasks) - 1) // BATCH_SIZE + 1, len(batch))
+        batch_results = await _assign_tasks_batch(batch, objectives)
+        all_results.extend(batch_results)
+    return all_results
 
 
 async def _suggest_tasks_for_objectives(
