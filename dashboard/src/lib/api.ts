@@ -394,6 +394,22 @@ export interface RecentAchievement {
   unlocked_at: string;
 }
 
+export interface GamificationStats {
+  xp: number;
+  level: number;
+  level_title: string;
+  xp_progress: number;
+  xp_to_next: number;
+  recent_achievements: {
+    id: number;
+    title: string;
+    emoji: string;
+    category: string;
+    xp_reward: number;
+    unlocked_at: string;
+  }[];
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -445,6 +461,7 @@ export const api = {
   weeklySummary: () => apiFetch<WeeklySummary>("/api/weekly-summary"),
   achievements: () => apiFetch<{ achievements: Achievement[] }>("/api/achievements"),
   recentAchievements: (limit = 5) => apiFetch<{ recent: RecentAchievement[] }>(`/api/achievements/recent?limit=${limit}`),
+  gamificationStats: () => apiFetch<GamificationStats>("/api/gamification/stats"),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
   completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),

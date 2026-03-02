@@ -14,6 +14,7 @@ import {
   useObjectives,
   useWeeklySummary,
   useFitnessSummary,
+  useGamificationStats,
 } from "@/hooks/useApi";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { Log } from "@/lib/api";
@@ -54,6 +55,7 @@ export default function DashboardPage() {
   const { data: objectivesData } = useObjectives();
   const { data: weeklySummary } = useWeeklySummary();
   const { data: fitnessSummary } = useFitnessSummary();
+  const { data: gamification } = useGamificationStats();
 
   if (dashLoading) return <LoadingSpinner />;
   if (dashError) {
@@ -118,20 +120,30 @@ export default function DashboardPage() {
     month: "long",
   });
 
+  const streakFlames =
+    streakDays >= 30 ? "🔥🔥🔥" : streakDays >= 14 ? "🔥🔥" : "🔥";
+
   return (
     <div>
       {/* Hero */}
       <div className="mb-6">
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h1 className="text-2xl font-bold text-white">
-              {greeting}{user?.first_name ? `, ${user.first_name}` : ""} 👋
-            </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold text-white">
+                {greeting}{user?.first_name ? `, ${user.first_name}` : ""} 👋
+              </h1>
+              {stats && stats.level != null && (
+                <span className="text-xs font-bold bg-gradient-to-br from-yellow-500 to-orange-600 text-white px-2 py-0.5 rounded-full">
+                  Lv.{stats.level}
+                </span>
+              )}
+            </div>
             <p className="text-zinc-500 text-sm mt-0.5">{dayStr}</p>
           </div>
           {streakDays > 0 && (
             <div className="bg-orange-950/60 border border-orange-800/40 rounded-xl px-3 py-2 flex items-center gap-2">
-              <span className="text-xl">🔥</span>
+              <span className="text-xl">{streakFlames}</span>
               <div>
                 <div className="text-orange-400 font-bold text-lg leading-none">{streakDays}</div>
                 <div className="text-orange-600 text-xs">Tage</div>
@@ -335,6 +347,42 @@ export default function DashboardPage() {
           </div>
         </Link>
       </div>
+
+      {/* Recent Achievements */}
+      {gamification && gamification.recent_achievements.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
+          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
+            <span>🏆</span> Letzte Erfolge
+            <Link
+              href="/achievements"
+              className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors"
+            >
+              Alle anzeigen →
+            </Link>
+          </h2>
+          <div className="space-y-2">
+            {gamification.recent_achievements.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0"
+              >
+                <span className="text-xl w-8 text-center shrink-0">{a.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-white text-sm font-medium truncate">{a.title}</div>
+                  <div className="text-zinc-500 text-xs">
+                    {new Date(a.unlocked_at).toLocaleDateString("de-DE", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
+                  </div>
+                </div>
+                <span className="text-yellow-500 text-xs font-medium shrink-0">+{a.xp_reward} XP</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Mission Board */}
       <div className="mb-6">

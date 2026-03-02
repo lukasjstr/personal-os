@@ -80,3 +80,7 @@ export function useAchievements() {
 export function useRecentAchievements(limit = 5) {
   return useSWR(`achievements-recent-${limit}`, () => api.recentAchievements(limit), { refreshInterval: 300_000 });
 }
+
+export function useGamificationStats() {
+  return useSWR("gamification-stats", () => api.gamificationStats(), { refreshInterval: 120_000 });
+}

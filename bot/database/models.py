@@ -38,6 +38,8 @@ class User(Base):
     #   "shopping_reminder_time": "10:00",
     #   "ical_token": "uuid4-string"
     # }
+    xp: Mapped[int] = mapped_column(Integer, default=0)
+    level: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     api_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

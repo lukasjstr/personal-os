@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from bot.api.auth import generate_api_token, get_current_user
 from bot.core.brain_dumps import get_all_brain_dumps
+from bot.core.gamification import add_xp as _add_xp, get_level, get_level_title
 from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
@@ -21,18 +22,9 @@ from bot.database.models import (
     Achievement, BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
     RoutineCompletion, ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
 )
+from bot.telegram.sender import send_message
 
 router = APIRouter(prefix="/api")
-
-LEVEL_TITLES = [
-    "Rookie", "Beginner", "Learner", "Achiever", "Warrior",
-    "Champion", "Master", "Expert", "Elite", "Legend", "Myth"
-]
-
-
-def get_level_title(level: int) -> str:
-    idx = min(level, len(LEVEL_TITLES) - 1)
-    return LEVEL_TITLES[idx]
 
 
 @router.get("/health")
@@ -491,6 +483,98 @@ async def list_brain_dumps(
     }
 
 
+class _CreateBrainDumpBody(BaseModel):
+    raw_input: str
+
+
+@router.post("/brain-dumps")
+async def create_brain_dump(
+    body: _CreateBrainDumpBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new brain dump and award XP."""
+    dump = BrainDump(user_id=user.id, raw_input=body.raw_input)
+    session.add(dump)
+    await session.flush()
+
+    _, new_level, leveled_up, _ = await _add_xp(user.id, 15, "brain_dump", session)
+    if leveled_up:
+        await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
+
+    return {"ok": True, "id": dump.id, "xp_gained": 15}
+
+
+class _CreateLogBody(BaseModel):
+    log_type: str
+    data: dict
+    raw_input: Optional[str] = None
+
+
+@router.post("/logs")
+async def create_log(
+    body: _CreateLogBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new log entry and award XP."""
+    log = Log(
+        user_id=user.id,
+        log_type=body.log_type,
+        data=body.data,
+        source="dashboard",
+        raw_input=body.raw_input,
+    )
+    session.add(log)
+    await session.flush()
+
+    _, new_level, leveled_up, _ = await _add_xp(user.id, 5, "log_created", session)
+    if leveled_up:
+        await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
+
+    return {"ok": True, "id": log.id, "xp_gained": 5}
+
+
+@router.get("/gamification/stats")
+async def get_gamification_stats(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get XP, level, and recent achievements for the user."""
+    total_xp = user.xp or 0
+    level = user.level or get_level(total_xp)
+    xp_for_current = level * level * 100
+    xp_for_next = (level + 1) * (level + 1) * 100
+
+    result = await session.execute(
+        select(UserAchievement)
+        .options(selectinload(UserAchievement.achievement))
+        .where(UserAchievement.user_id == user.id)
+        .order_by(UserAchievement.unlocked_at.desc())
+        .limit(3)
+    )
+    recent = result.scalars().all()
+
+    return {
+        "xp": total_xp,
+        "level": level,
+        "level_title": get_level_title(level),
+        "xp_progress": total_xp - xp_for_current,
+        "xp_to_next": xp_for_next - xp_for_current,
+        "recent_achievements": [
+            {
+                "id": ua.achievement.id,
+                "title": ua.achievement.title,
+                "emoji": ua.achievement.emoji,
+                "category": ua.achievement.category,
+                "xp_reward": ua.achievement.xp_reward,
+                "unlocked_at": ua.unlocked_at.isoformat(),
+            }
+            for ua in recent
+        ],
+    }
+
+
 @router.get("/dashboard")
 async def get_dashboard(
     user: User = Depends(get_current_user),
@@ -548,29 +632,9 @@ async def get_dashboard(
         streak += 1
         check_date -= timedelta(days=1)
 
-    # ── XP / Level calculation ──────────────────────────────────────────────
-    done_tasks_result = await session.execute(
-        select(Task).where(and_(Task.user_id == user.id, Task.status == "done"))
-    )
-    done_tasks_count = len(done_tasks_result.scalars().all())
-
-    workout_dates_result = await session.execute(
-        select(Log.logged_at).where(and_(Log.user_id == user.id, Log.log_type == "workout"))
-    )
-    workout_sessions = len({dt.date() for dt in workout_dates_result.scalars().all()})
-
-    rc_result = await session.execute(
-        select(RoutineCompletion).where(RoutineCompletion.user_id == user.id)
-    )
-    rc_count = len(rc_result.scalars().all())
-
-    mood_count_result = await session.execute(
-        select(Log).where(and_(Log.user_id == user.id, Log.log_type == "mood"))
-    )
-    mood_count = len(mood_count_result.scalars().all())
-
-    total_xp = done_tasks_count * 10 + workout_sessions * 25 + rc_count * 15 + mood_count * 5
-    level = math.floor(math.sqrt(total_xp / 100)) if total_xp > 0 else 0
+    # ── XP / Level (read from stored values) ───────────────────────────────
+    total_xp = user.xp or 0
+    level = user.level or get_level(total_xp)
     xp_for_current = level * level * 100
     xp_for_next = (level + 1) * (level + 1) * 100
 
@@ -1113,7 +1177,12 @@ async def complete_task_endpoint(
     task.status = "done"
     task.completed_at = datetime.utcnow()
     await session.flush()
-    return {"ok": True, "task_id": task_id, "title": task.title}
+
+    _, new_level, leveled_up, _ = await _add_xp(user.id, 10, "task_complete", session)
+    if leveled_up:
+        await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
+
+    return {"ok": True, "task_id": task_id, "title": task.title, "xp_gained": 10}
 
 
 @router.post("/routines/{routine_id}/complete")
@@ -1148,7 +1217,12 @@ async def complete_routine_endpoint(
     )
     session.add(completion)
     await session.flush()
-    return {"ok": True, "routine_id": routine_id, "title": routine.title}
+
+    _, new_level, leveled_up, _ = await _add_xp(user.id, 5, "routine_complete", session)
+    if leveled_up:
+        await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
+
+    return {"ok": True, "routine_id": routine_id, "title": routine.title, "xp_gained": 5}
 
 
 @router.get("/brief/today")

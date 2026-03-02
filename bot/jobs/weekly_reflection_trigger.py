@@ -79,9 +79,19 @@ async def check_and_trigger_reflections() -> None:
                     # Check achievements after reflection is triggered
                     try:
                         from bot.core.achievements import check_achievements, format_achievement_message
+                        from bot.core.gamification import add_xp
                         newly_unlocked = await check_achievements(user.id, session)
                         for achievement in newly_unlocked:
                             await send_message(user.telegram_id, format_achievement_message(achievement))
+                            if achievement.xp_reward > 0:
+                                _, new_level, leveled_up, _ = await add_xp(
+                                    user.id, achievement.xp_reward, f"achievement_{achievement.key}", session
+                                )
+                                if leveled_up:
+                                    await send_message(
+                                        user.telegram_id,
+                                        f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉",
+                                    )
                     except Exception:
                         logger.warning("Achievement check failed after reflection trigger for user %s", user.id)
             except Exception:

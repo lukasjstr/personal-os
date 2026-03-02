@@ -64,6 +64,11 @@ export default function Sidebar() {
         </button>
         <span className="ml-2 font-bold text-white text-sm">Personal OS</span>
         <span className="ml-1.5 text-zinc-500 text-xs">v3</span>
+        {stats && stats.level != null && (
+          <span className="ml-auto text-xs font-bold bg-gradient-to-br from-yellow-500 to-orange-600 text-white px-2 py-0.5 rounded-full">
+            Lv.{stats.level}
+          </span>
+        )}
       </div>
 
       {/* Backdrop (mobile) */}
@@ -104,10 +109,15 @@ export default function Sidebar() {
         <div className="hidden md:block px-5 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🤖</span>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="font-bold text-white text-sm">Personal OS</div>
               <div className="text-zinc-500 text-xs">Dashboard v3</div>
             </div>
+            {stats && stats.level != null && (
+              <span className="text-xs font-bold bg-gradient-to-br from-yellow-500 to-orange-600 text-white px-2 py-0.5 rounded-full shrink-0">
+                Lv.{stats.level}
+              </span>
+            )}
           </div>
         </div>
 

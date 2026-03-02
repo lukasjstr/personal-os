@@ -47,9 +47,19 @@ async def _notify_achievements(session: AsyncSession, user: User) -> None:
     """Check achievements and send Telegram notifications for newly unlocked ones."""
     try:
         from bot.telegram.sender import send_message
+        from bot.core.gamification import add_xp
         newly_unlocked = await check_achievements(user.id, session)
         for achievement in newly_unlocked:
             await send_message(user.telegram_id, format_achievement_message(achievement))
+            if achievement.xp_reward > 0:
+                _, new_level, leveled_up, _ = await add_xp(
+                    user.id, achievement.xp_reward, f"achievement_{achievement.key}", session
+                )
+                if leveled_up:
+                    await send_message(
+                        user.telegram_id,
+                        f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉",
+                    )
     except Exception as e:
         logger.warning("Achievement check failed: %s", e)
 

@@ -8,6 +8,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import settings
+from bot.core.gamification import get_level_title
 from bot.database.connection import get_session
 from bot.database.models import (
     CalendarEvent, DailyBrief, Log, Routine, Task, User,
@@ -134,6 +135,12 @@ async def _generate_brief_for_user(session: AsyncSession, user: User, today: dat
 
     if yesterday_mood:
         context_lines.append(f"\nGESTRIGE STIMMUNG: {yesterday_mood.data.get('score', '?')}/10")
+
+    # XP / Level
+    total_xp = user.xp or 0
+    level = user.level or 0
+    level_title = get_level_title(level)
+    context_lines.append(f"\nXP-STATUS: Level {level} ({level_title}) · {total_xp} XP gesamt")
 
     name = user.first_name or "Chef"
     day_map = {
