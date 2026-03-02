@@ -10,6 +10,8 @@ from sqlalchemy import and_, or_, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from fastapi.responses import JSONResponse
+
 from bot.api.auth import generate_api_token, get_current_user
 from bot.core.brain_dumps import get_all_brain_dumps
 from bot.core.routines import get_active_routines, get_todays_completions
@@ -1087,3 +1089,247 @@ async def delete_log(
     await session.delete(log)
     await session.flush()
     return {"ok": True, "deleted_id": log_id}
+
+
+# ─── Settings Endpoints ────────────────────────────────────────────────────────
+
+class UpdateProfileBody(BaseModel):
+    first_name: Optional[str] = None
+
+
+class UpdateSettingsBody(BaseModel):
+    priorities_enabled: Optional[bool] = None
+    review_enabled: Optional[bool] = None
+    proactive_enabled: Optional[bool] = None
+    reflection_enabled: Optional[bool] = None
+    morning_brief_time: Optional[str] = None
+    evening_review_time: Optional[str] = None
+    weekly_reflection_day: Optional[str] = None
+    weekly_reflection_time: Optional[str] = None
+    category_weights: Optional[dict] = None
+
+
+@router.get("/settings")
+async def get_settings(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Get user profile and settings."""
+    s = user.settings or {}
+    return {
+        "profile": {
+            "first_name": user.first_name,
+            "telegram_username": user.telegram_username,
+            "timezone": user.timezone,
+        },
+        "toggles": {
+            "priorities_enabled": s.get("priorities_enabled", True),
+            "review_enabled": s.get("review_enabled", True),
+            "proactive_enabled": s.get("proactive_enabled", True),
+            "reflection_enabled": s.get("reflection_enabled", False),
+        },
+        "times": {
+            "morning_brief_time": s.get("morning_brief_time", "06:30"),
+            "evening_review_time": s.get("evening_review_time", "21:00"),
+            "weekly_reflection_day": s.get("weekly_reflection_day", "sunday"),
+            "weekly_reflection_time": s.get("weekly_reflection_time", "19:00"),
+        },
+        "category_weights": s.get("category_weights", {}),
+    }
+
+
+@router.put("/settings/profile")
+async def update_profile(
+    body: UpdateProfileBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update user profile (name)."""
+    if body.first_name is not None:
+        stripped = body.first_name.strip()
+        if stripped:
+            user.first_name = stripped
+    await session.flush()
+    return {"ok": True, "first_name": user.first_name}
+
+
+@router.put("/settings")
+async def update_settings(
+    body: UpdateSettingsBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update user settings (toggles, times, category weights)."""
+    settings = dict(user.settings or {})
+    if body.priorities_enabled is not None:
+        settings["priorities_enabled"] = body.priorities_enabled
+    if body.review_enabled is not None:
+        settings["review_enabled"] = body.review_enabled
+    if body.proactive_enabled is not None:
+        settings["proactive_enabled"] = body.proactive_enabled
+    if body.reflection_enabled is not None:
+        settings["reflection_enabled"] = body.reflection_enabled
+    if body.morning_brief_time is not None:
+        settings["morning_brief_time"] = body.morning_brief_time
+    if body.evening_review_time is not None:
+        settings["evening_review_time"] = body.evening_review_time
+    if body.weekly_reflection_day is not None:
+        settings["weekly_reflection_day"] = body.weekly_reflection_day
+    if body.weekly_reflection_time is not None:
+        settings["weekly_reflection_time"] = body.weekly_reflection_time
+    if body.category_weights is not None:
+        settings["category_weights"] = body.category_weights
+    user.settings = settings
+    await session.flush()
+    return {"ok": True}
+
+
+@router.get("/settings/export")
+async def export_data(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Export all user data as JSON download."""
+    obj_result = await session.execute(
+        select(Objective)
+        .options(selectinload(Objective.key_results))
+        .where(Objective.user_id == user.id)
+        .order_by(Objective.created_at)
+    )
+    objectives = obj_result.scalars().all()
+
+    task_result = await session.execute(
+        select(Task).where(Task.user_id == user.id).order_by(Task.created_at)
+    )
+    tasks = task_result.scalars().all()
+
+    log_result = await session.execute(
+        select(Log)
+        .where(and_(Log.user_id == user.id, Log.logged_at >= datetime.utcnow() - timedelta(days=365)))
+        .order_by(Log.logged_at)
+    )
+    logs = log_result.scalars().all()
+
+    routine_result = await session.execute(
+        select(Routine).where(Routine.user_id == user.id).order_by(Routine.created_at)
+    )
+    routines = routine_result.scalars().all()
+
+    bd_result = await session.execute(
+        select(BrainDump).where(BrainDump.user_id == user.id).order_by(BrainDump.created_at)
+    )
+    brain_dumps = bd_result.scalars().all()
+
+    cal_result = await session.execute(
+        select(CalendarEvent).where(CalendarEvent.user_id == user.id).order_by(CalendarEvent.start_time)
+    )
+    calendar_events = cal_result.scalars().all()
+
+    payload = {
+        "exported_at": datetime.utcnow().isoformat(),
+        "profile": {
+            "first_name": user.first_name,
+            "telegram_username": user.telegram_username,
+            "timezone": user.timezone,
+            "settings": user.settings,
+            "created_at": user.created_at.isoformat(),
+        },
+        "objectives": [
+            {
+                "id": o.id,
+                "title": o.title,
+                "description": o.description,
+                "category": o.category,
+                "status": o.status,
+                "priority_weight": o.priority_weight,
+                "target_date": o.target_date.isoformat() if o.target_date else None,
+                "created_at": o.created_at.isoformat(),
+                "key_results": [
+                    {
+                        "id": kr.id,
+                        "title": kr.title,
+                        "metric_type": kr.metric_type,
+                        "target_value": kr.target_value,
+                        "current_value": kr.current_value,
+                        "unit": kr.unit,
+                        "frequency": kr.frequency,
+                        "status": kr.status,
+                    }
+                    for kr in o.key_results
+                ],
+            }
+            for o in objectives
+        ],
+        "tasks": [
+            {
+                "id": t.id,
+                "title": t.title,
+                "description": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "category": t.category,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "created_at": t.created_at.isoformat(),
+            }
+            for t in tasks
+        ],
+        "routines": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "description": r.description,
+                "frequency_human": r.frequency_human,
+                "status": r.status,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in routines
+        ],
+        "logs": [
+            {
+                "id": l.id,
+                "log_type": l.log_type,
+                "data": l.data,
+                "source": l.source,
+                "raw_input": l.raw_input,
+                "logged_at": l.logged_at.isoformat(),
+            }
+            for l in logs
+        ],
+        "brain_dumps": [
+            {
+                "id": bd.id,
+                "raw_input": bd.raw_input,
+                "processed": bd.processed,
+                "ai_interpretation": bd.ai_interpretation,
+                "created_at": bd.created_at.isoformat(),
+            }
+            for bd in brain_dumps
+        ],
+        "calendar_events": [
+            {
+                "id": e.id,
+                "title": e.title,
+                "start_time": e.start_time.isoformat(),
+                "end_time": e.end_time.isoformat() if e.end_time else None,
+                "all_day": e.all_day,
+                "event_type": e.event_type,
+            }
+            for e in calendar_events
+        ],
+    }
+
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f"attachment; filename=personal-os-export.json"},
+    )
+
+
+@router.delete("/settings/account")
+async def delete_account(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete user account and all associated data."""
+    await session.delete(user)
+    await session.flush()
+    return {"ok": True}

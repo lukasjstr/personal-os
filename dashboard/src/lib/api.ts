@@ -241,6 +241,41 @@ export interface FitnessPR {
   date: string;
 }
 
+// ─── Settings Types ─────────────────────────────────────────────────────────
+
+export interface UserSettings {
+  profile: {
+    first_name: string | null;
+    telegram_username: string | null;
+    timezone: string;
+  };
+  toggles: {
+    priorities_enabled: boolean;
+    review_enabled: boolean;
+    proactive_enabled: boolean;
+    reflection_enabled: boolean;
+  };
+  times: {
+    morning_brief_time: string;
+    evening_review_time: string;
+    weekly_reflection_day: string;
+    weekly_reflection_time: string;
+  };
+  category_weights: Record<string, number>;
+}
+
+export interface SettingsUpdateBody {
+  priorities_enabled?: boolean;
+  review_enabled?: boolean;
+  proactive_enabled?: boolean;
+  reflection_enabled?: boolean;
+  morning_brief_time?: string;
+  evening_review_time?: string;
+  weekly_reflection_day?: string;
+  weekly_reflection_time?: string;
+  category_weights?: Record<string, number>;
+}
+
 // ─── Phase 4 Types ─────────────────────────────────────────────────────────
 
 export interface WeeklySummary {
@@ -329,4 +364,12 @@ export const api = {
     apiPut<{ ok: boolean }>(`/api/brain-dumps/${id}`, body),
   deleteBrainDump: (id: number) => apiDelete<{ ok: boolean }>(`/api/brain-dumps/${id}`),
   deleteLog: (id: number) => apiDelete<{ ok: boolean }>(`/api/logs/${id}`),
+  // Settings
+  getSettings: () => apiFetch<UserSettings>("/api/settings"),
+  updateProfile: (body: { first_name: string }) =>
+    apiPut<{ ok: boolean; first_name: string | null }>("/api/settings/profile", body),
+  updateSettings: (body: SettingsUpdateBody) =>
+    apiPut<{ ok: boolean }>("/api/settings", body),
+  exportData: () => apiFetch<unknown>("/api/settings/export"),
+  deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
 };
