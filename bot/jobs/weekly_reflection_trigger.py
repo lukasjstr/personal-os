@@ -1,6 +1,6 @@
 """Phase 8.1: Weekly reflection — starts structured 7-question session every Sunday."""
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from openai import AsyncOpenAI
