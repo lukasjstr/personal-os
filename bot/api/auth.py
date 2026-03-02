@@ -32,8 +32,13 @@ async def get_current_user(
     return user
 
 
-async def generate_api_token(session: AsyncSession, user: User) -> str:
-    """Generate a new API token for a user."""
+async def generate_api_token(session: AsyncSession, user: User, force_new: bool = False) -> str:
+    """Return the existing API token or generate a new one.
+
+    Pass force_new=True to explicitly rotate the token.
+    """
+    if user.api_token and not force_new:
+        return user.api_token
     token = secrets.token_urlsafe(32)
     user.api_token = token
     await session.flush()

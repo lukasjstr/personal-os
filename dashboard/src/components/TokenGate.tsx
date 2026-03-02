@@ -28,8 +28,25 @@ export default function TokenGate({ children }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setAuthed(hasToken());
-    setChecked(true);
+    const check = async () => {
+      if (!hasToken()) {
+        setAuthed(false);
+        setChecked(true);
+        return;
+      }
+      // Validate stored token against the server
+      const storedToken = localStorage.getItem("api_token") ?? "";
+      const valid = await validateToken(storedToken).catch(() => false);
+      if (!valid) {
+        // Token is stale — clear it so user is prompted to re-enter
+        localStorage.removeItem("api_token");
+        setAuthed(false);
+      } else {
+        setAuthed(true);
+      }
+      setChecked(true);
+    };
+    check();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

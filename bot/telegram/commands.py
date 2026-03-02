@@ -313,26 +313,36 @@ async def handle_shopping(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def handle_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /token command — generate and send API token for dashboard."""
+    """Handle /token command — return (or reset) API token for dashboard.
+
+    /token      → returns existing token (same every time)
+    /token neu  → rotates to a fresh token
+    """
     if not update.message or not update.effective_user:
         return
     tg_user = update.effective_user
     chat_id = update.message.chat_id
 
+    args = context.args or []
+    force_new = len(args) > 0 and args[0].lower() in ("neu", "reset", "new")
+
     async with get_session() as session:
         user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
         from bot.api.auth import generate_api_token
-        token = await generate_api_token(session, user)
+        token = await generate_api_token(session, user, force_new=force_new)
         await session.commit()
 
+    note = "_(Neuer Token generiert)_\n\n" if force_new else "_(Dein Token bleibt immer gleich — einmal einrichten, fertig)_\n\n"
     await send_message(
         chat_id,
         f"🔑 *Dein Dashboard Token:*\n\n"
         f"`{token}`\n\n"
-        "Öffne http://95.111.252.176:3000 und füge den Token ein.\n\n"
-        "_Dieser Token gibt Zugriff auf dein Dashboard. Teile ihn nicht mit anderen._",
+        f"{note}"
+        "Öffne http://95.111.252.176:3000 und füge den Token ein.\n"
+        "Tipp: Als PWA zum Homescreen hinzufügen → bleibt dauerhaft eingeloggt.\n\n"
+        "_Token teilen = Zugriff auf dein Dashboard. Nicht weitergeben._",
     )
-    # Second message: plain text only so it's easy to copy on mobile
+    # Second message: plain token for easy copy on mobile
     await send_message(chat_id, token)
 
 
