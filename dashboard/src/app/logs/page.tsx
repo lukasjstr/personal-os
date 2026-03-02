@@ -355,6 +355,7 @@ export default function LogsPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const logs = data?.logs ?? [];
   const allLogs = data?.logs ?? [];

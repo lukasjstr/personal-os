@@ -204,6 +204,7 @@ export default function BrainDumpsPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   let dumps = data?.brain_dumps ?? [];
 

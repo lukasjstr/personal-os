@@ -460,6 +460,7 @@ export default function ObjectivesPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const all = data?.objectives ?? [];
   const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.tasks.length === 0 && o.status === "active");

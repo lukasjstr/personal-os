@@ -152,6 +152,7 @@ export default function DashboardPage() {
     }
     return <ErrorState message={dashError.message} />;
   }
+  if (!dash) return <LoadingSpinner />;
 
   const stats = dash?.stats;
   const user = dash?.user;

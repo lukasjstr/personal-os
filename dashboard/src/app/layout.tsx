@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import TokenGate from "@/components/TokenGate";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 export const metadata: Metadata = {
   title: "Personal OS",
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Sidebar />
             <main className="flex-1 md:ml-56 min-h-screen overflow-y-auto">
               <div className="max-w-5xl mx-auto px-4 md:px-6 pb-6 pt-[72px] md:pt-6">
-                {children}
+                <ErrorBoundary>
+                  {children}
+                </ErrorBoundary>
               </div>
             </main>
           </div>

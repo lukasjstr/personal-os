@@ -431,9 +431,6 @@ export default function TasksPage() {
     }
   }, [deletingTask, mutate, addToast]);
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorState message={error.message} />;
-
   const all = data?.tasks ?? [];
   const taskMap = useMemo(() => new Map(all.map((t) => [t.id, t])), [all]);
 
@@ -448,6 +445,10 @@ export default function TasksPage() {
       ).sort(),
     [all]
   );
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   let tasks = all;
   if (priorityFilter !== null) tasks = tasks.filter((t) => t.priority === priorityFilter);

@@ -337,6 +337,7 @@ export default function RoutinesPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const routines = data?.routines ?? [];
   const active = routines.filter((r) => r.status === "active");

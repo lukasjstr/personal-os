@@ -484,6 +484,7 @@ export default function CalendarPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const events = data?.events ?? [];
   const now = new Date();

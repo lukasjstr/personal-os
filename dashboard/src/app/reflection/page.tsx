@@ -294,6 +294,7 @@ export default function ReflectionPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const reflections = data?.reflections ?? [];
   const completed = reflections.filter((r) => r.status === "completed");

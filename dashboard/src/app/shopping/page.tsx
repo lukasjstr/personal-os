@@ -109,7 +109,8 @@ export default function ShoppingPage() {
 
   if (shoppingLoading || defaultsLoading) return <LoadingSpinner />;
   if (shoppingError || defaultsError)
-    return <ErrorState message={(shoppingError ?? defaultsError).message} />;
+    return <ErrorState message={(shoppingError ?? defaultsError)?.message ?? "Fehler beim Laden"} />;
+  if (!shoppingData || !defaultsData) return <LoadingSpinner />;
 
   const items = shoppingData?.items ?? [];
   const defaults = defaultsData?.defaults ?? [];

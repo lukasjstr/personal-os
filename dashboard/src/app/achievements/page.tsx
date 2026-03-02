@@ -117,6 +117,7 @@ export default function AchievementsPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
+  if (!data) return <LoadingSpinner />;
 
   const achievements = data?.achievements ?? [];
   const unlockedCount = achievements.filter((a) => a.unlocked).length;

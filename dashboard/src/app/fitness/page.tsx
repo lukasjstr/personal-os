@@ -295,6 +295,7 @@ export default function FitnessPage() {
 
   if (isLoading) return <LoadingSpinner />;
   if (summaryError) return <ErrorState message={summaryError.message} />;
+  if (!summary) return <LoadingSpinner />;
 
   const exercises = exercisesData?.exercises ?? [];
   const prs = prsData?.prs ?? [];
