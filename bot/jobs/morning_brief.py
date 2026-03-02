@@ -69,7 +69,11 @@ async def _generate_brief_for_user(session: AsyncSession, user: User, today: dat
     tasks = task_result.scalars().all()
 
     routine_result = await session.execute(
-        select(Routine).where(and_(Routine.user_id == user.id, Routine.status == "active"))
+        select(Routine).where(and_(
+            Routine.user_id == user.id,
+            Routine.status == "active",
+            Routine.time_of_day.in_(["morning", "anytime"]),
+        )).order_by(Routine.sort_order.asc(), Routine.id.asc())
     )
     routines = routine_result.scalars().all()
 
@@ -113,7 +117,7 @@ async def _generate_brief_for_user(session: AsyncSession, user: User, today: dat
             context_lines.append(f"  P{t.priority}: {t.title}{due}{overdue_flag}")
 
     if routines:
-        context_lines.append("\nROUTINEN HEUTE:")
+        context_lines.append("\nMORGEN-ROUTINEN:")
         for r in routines:
             context_lines.append(f"  ☐ {r.title}")
 

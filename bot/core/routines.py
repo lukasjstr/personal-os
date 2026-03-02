@@ -16,6 +16,8 @@ async def create_routine(
     schedule_cron: Optional[str] = None,
     linked_key_result_id: Optional[int] = None,
     description: Optional[str] = None,
+    time_of_day: str = "anytime",
+    sort_order: int = 0,
 ) -> Routine:
     """Create a new Routine. schedule_cron is optional."""
     routine = Routine(
@@ -26,6 +28,8 @@ async def create_routine(
         frequency_human=frequency_human,
         linked_key_result_id=linked_key_result_id,
         status="active",
+        time_of_day=time_of_day,
+        sort_order=sort_order,
     )
     session.add(routine)
     await session.flush()

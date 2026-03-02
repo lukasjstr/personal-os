@@ -35,7 +35,7 @@ from bot.core.tasks import (
 )
 from bot.core.fitness import create_fitness_split, get_fitness_plan as _get_fitness_plan
 from bot.core.user_settings import update_setting
-from bot.database.models import Conversation, User
+from bot.database.models import Conversation, ShoppingDefault, Task, User
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +298,63 @@ async def _execute_tool(
 
         elif name == "get_fitness_plan":
             return await _get_fitness_plan(session, user.id)
+
+        # ─── Shopping Defaults ────────────────────────────────────────────────
+        elif name == "create_shopping_default":
+            from sqlalchemy import select as sa_select
+            existing = await session.execute(
+                sa_select(ShoppingDefault).where(
+                    ShoppingDefault.user_id == user.id,
+                    ShoppingDefault.title == args["title"],
+                )
+            )
+            if existing.scalar_one_or_none():
+                return f"⭐ '{args['title']}' ist bereits ein Standard-Item."
+            sd = ShoppingDefault(
+                user_id=user.id,
+                title=args["title"],
+                category=args.get("category"),
+                active=True,
+            )
+            session.add(sd)
+            await session.flush()
+            return f"⭐ Standard-Item #{sd.id} gespeichert: *{sd.title}*" + (f" [{sd.category}]" if sd.category else "")
+
+        elif name == "load_shopping_defaults":
+            from sqlalchemy import select as sa_select
+            defaults_result = await session.execute(
+                sa_select(ShoppingDefault).where(
+                    ShoppingDefault.user_id == user.id,
+                    ShoppingDefault.active == True,  # noqa: E712
+                )
+            )
+            defaults = defaults_result.scalars().all()
+            if not defaults:
+                return "📋 Keine Standard-Items gespeichert. Nutze create_shopping_default um welche anzulegen."
+            # Check which ones already on the list
+            existing_result = await session.execute(
+                sa_select(Task).where(
+                    Task.user_id == user.id,
+                    Task.category == "shopping",
+                    Task.status.in_(["todo", "in_progress"]),
+                )
+            )
+            existing_titles = {t.title.lower() for t in existing_result.scalars().all()}
+            added = []
+            for d in defaults:
+                if d.title.lower() not in existing_titles:
+                    task = Task(
+                        user_id=user.id,
+                        title=d.title,
+                        category="shopping",
+                        priority=3,
+                    )
+                    session.add(task)
+                    added.append(d.title)
+            await session.flush()
+            if not added:
+                return "🛒 Alle Standard-Items sind bereits auf der Einkaufsliste."
+            return f"🛒 {len(added)} Standard-Items zur Einkaufsliste hinzugefügt:\n" + "\n".join(f"  ☐ {t}" for t in added)
 
         # ─── Settings ─────────────────────────────────────────────────────────
         elif name == "update_user_settings":

@@ -46,6 +46,15 @@ EINKAUFEN:
 - "Milch kaufen" → create_task(title="Milch", category="shopping")
 - "Was brauche ich noch?" → get_shopping_list
 - "Eingekauft" / "Einkaufen erledigt" → complete_shopping (ohne item_ids = alles)
+- "Standard-Liste laden" / "Einkaufsliste auffüllen" → load_shopping_defaults
+- "X ist immer auf meiner Liste" / "X immer kaufen" → create_shopping_default(title="X")
+- Nach 3 Käufen desselben Items: "Soll ich X als Standard hinzufügen?" vorschlagen
+
+ROUTINEN TAGESZEIT:
+- Erkenne automatisch aus dem Kontext: "morgens", "Morgenroutine", "nach dem Aufstehen" → time_of_day="morning"
+- "mittags", "Mittagspause", "nach dem Essen" → time_of_day="midday"
+- "abends", "Abendroutine", "vor dem Schlafen" → time_of_day="evening"
+- Ohne Tageszeit-Angabe → time_of_day="anytime"
 
 WORKOUT-ERKENNUNG:
 - "Bankdrücken 80kg×8×3" → log_workout(exercise="Bankdrücken", weight=80, reps=8, sets=3)

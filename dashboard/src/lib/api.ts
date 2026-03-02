@@ -161,7 +161,17 @@ export interface Routine {
   schedule_cron: string | null;
   frequency_human: string | null;
   status: string;
+  time_of_day: string;
+  sort_order: number;
   completed_today: boolean;
+}
+
+export interface ShoppingDefault {
+  id: number;
+  title: string;
+  category: string | null;
+  active: boolean;
+  created_at: string;
 }
 
 export interface CalendarEvent {
@@ -382,7 +392,13 @@ export const api = {
   addCalendarNotes: (id: number, notes: string) =>
     apiPost<CalendarEvent>(`/api/calendar/${id}/notes`, { notes }),
   brainDumps: () => apiFetch<{ brain_dumps: BrainDump[] }>("/api/brain-dumps"),
-  shopping: () => apiFetch<{ items: { id: number; title: string }[] }>("/api/shopping"),
+  shopping: () => apiFetch<{ items: { id: number; title: string; created_at: string }[] }>("/api/shopping"),
+  shoppingDefaults: () => apiFetch<{ defaults: ShoppingDefault[] }>("/api/shopping/defaults"),
+  createShoppingDefault: (body: { title: string; category?: string }) =>
+    apiPost<{ ok: boolean; id: number; title: string; category: string | null }>("/api/shopping/defaults", body),
+  loadShoppingDefaults: () =>
+    apiPost<{ ok: boolean; added: number; items: { title: string; category: string | null }[] }>("/api/shopping/load-defaults"),
+  deleteShoppingDefault: (id: number) => apiDelete<{ ok: boolean }>(`/api/shopping/defaults/${id}`),
   health: () => apiFetch<{ status: string }>("/api/health"),
   generateToken: () => apiPost<{ token: string }>("/api/auth/token"),
   fitnessSummary: () => apiFetch<FitnessSummary>("/api/fitness/summary"),
@@ -404,7 +420,7 @@ export const api = {
   updateTask: (id: number, body: Partial<{ title: string; category: string | null; priority: number; due_date: string | null; status: string; objective_id: number | null }>) =>
     apiPut<{ ok: boolean }>(`/api/tasks/${id}`, body),
   deleteTask: (id: number) => apiDelete<{ ok: boolean }>(`/api/tasks/${id}`),
-  updateRoutine: (id: number, body: Partial<{ title: string; description: string | null; frequency_human: string | null; status: string }>) =>
+  updateRoutine: (id: number, body: Partial<{ title: string; description: string | null; frequency_human: string | null; status: string; time_of_day: string; sort_order: number }>) =>
     apiPut<{ ok: boolean }>(`/api/routines/${id}`, body),
   deleteRoutine: (id: number) => apiDelete<{ ok: boolean }>(`/api/routines/${id}`),
   updateBrainDump: (id: number, body: { raw_input: string }) =>

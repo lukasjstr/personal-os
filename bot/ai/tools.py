@@ -245,7 +245,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_routine",
-            "description": "Erstellt eine neue wiederkehrende Routine.",
+            "description": "Erstellt eine neue wiederkehrende Routine. Erkenne Tageszeit-Referenzen: 'morgens/Morgen' → morning, 'mittags/Mittag' → midday, 'abends/Abend' → evening, sonst → anytime.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -253,6 +253,11 @@ TOOLS: list[dict[str, Any]] = [
                     "frequency_human": {"type": "string", "description": "Lesbare Beschreibung (z.B. 'Täglich', 'Jeden Dienstag', '3x pro Woche')"},
                     "schedule_cron": {"type": "string", "description": "Cron-Ausdruck optional (z.B. '0 9 * * 2')"},
                     "linked_key_result_id": {"type": "integer", "description": "Zugehöriges Key Result (optional)"},
+                    "time_of_day": {
+                        "type": "string",
+                        "enum": ["morning", "midday", "evening", "anytime"],
+                        "description": "Tageszeit: morning=morgens, midday=mittags, evening=abends, anytime=jederzeit",
+                    },
                 },
                 "required": ["title", "frequency_human"],
             },
@@ -461,6 +466,34 @@ TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "get_fitness_plan",
             "description": "Zeigt alle Fitness-Splits und empfiehlt den nächsten Split basierend auf letzten Workouts. Nutze wenn User fragt 'Was trainiere ich heute?', 'Nächster Split?' oder 'Zeig meinen Trainingsplan'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    # ─── Shopping Default Tools ───────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_shopping_default",
+            "description": "Legt ein Standard-Einkaufsitem an, das immer auf der Einkaufsliste erscheint. Nutze wenn User sagt 'X ist immer auf meiner Liste' oder wenn ein Item 3x oder mehr gekauft wurde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Name des Standard-Items (z.B. 'Milch', 'Brot')"},
+                    "category": {"type": "string", "description": "Kategorie (z.B. 'Milchprodukte', 'Gemüse', 'Fleisch'). Optional."},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_shopping_defaults",
+            "description": "Lädt alle aktiven Standard-Einkaufsitems als Tasks in die Einkaufsliste. Nutze wenn User 'Standard-Liste laden', 'Einkaufsliste auffüllen' oder 'normale Items hinzufügen' sagt.",
             "parameters": {
                 "type": "object",
                 "properties": {},

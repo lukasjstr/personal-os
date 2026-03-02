@@ -57,6 +57,7 @@ class User(Base):
     weekly_priorities: Mapped[list["WeeklyPriority"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     user_insights: Mapped[list["UserInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     fitness_splits: Mapped[list["FitnessSplit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    shopping_defaults: Mapped[list["ShoppingDefault"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -214,6 +215,8 @@ class Routine(Base):
     frequency_human: Mapped[str] = mapped_column(String(100))  # "Jeden Dienstag", "Täglich"
     linked_key_result_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("key_results.id", ondelete="SET NULL"))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active, paused
+    time_of_day: Mapped[str] = mapped_column(String(20), default="anytime")  # morning, midday, evening, anytime
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
@@ -452,3 +455,21 @@ class FitnessSplit(Base):
 
     def __repr__(self) -> str:
         return f"<FitnessSplit id={self.id} name={self.name!r}>"
+
+
+# ─── Phase 5.4 — Shopping Defaults ───────────────────────────────────────────
+
+class ShoppingDefault(Base):
+    __tablename__ = "shopping_defaults"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="shopping_defaults")
+
+    def __repr__(self) -> str:
+        return f"<ShoppingDefault id={self.id} title={self.title!r}>"

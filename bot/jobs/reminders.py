@@ -45,11 +45,15 @@ async def process_reminders() -> None:
                 if now_berlin.hour >= 8:
                     await _check_overdue_tasks(session, user, today, today_start)
 
-                # 3. Evening routine reminder (once per day after 18:00)
+                # 3. Midday routine reminder (once per day 11:30–13:30)
+                if 11 <= now_berlin.hour < 14:
+                    await _check_midday_routine_reminders(session, user, today, today_start)
+
+                # 4. Evening routine reminder (once per day after 18:00)
                 if now_berlin.hour >= 18:
                     await _check_routine_reminders(session, user, today, today_start)
 
-                # 4. Stale task/objective nudge (once per day after 10:00)
+                # 5. Stale task/objective nudge (once per day after 10:00)
                 if now_berlin.hour >= 10:
                     await _check_stale_nudges(session, user, today, today_start)
 
@@ -123,15 +127,19 @@ async def _check_overdue_tasks(
     logger.info("Overdue task reminder sent to user %s", user.id)
 
 
-async def _check_routine_reminders(
+async def _check_midday_routine_reminders(
     session: AsyncSession, user: User, today: date, today_start: datetime
 ) -> None:
-    """Send evening reminder for incomplete routines."""
-    if await _already_reminded(session, user.id, "routine_evening", today_start):
+    """Send midday reminder for incomplete midday routines."""
+    if await _already_reminded(session, user.id, "routine_midday", today_start):
         return
 
     routine_result = await session.execute(
-        select(Routine).where(and_(Routine.user_id == user.id, Routine.status == "active"))
+        select(Routine).where(and_(
+            Routine.user_id == user.id,
+            Routine.status == "active",
+            Routine.time_of_day == "midday",
+        ))
     )
     routines = routine_result.scalars().all()
 
@@ -151,7 +159,46 @@ async def _check_routine_reminders(
         return
 
     routines_str = "\n".join(f"  ☐ {r.title}" for r in pending[:5])
-    msg = f"🔄 *Noch nicht erledigt heute:*\n{routines_str}\n\nNoch Zeit heute Abend!"
+    msg = f"☀️ *Mittags-Routinen:*\n{routines_str}\n\nKurze Mittagspause nutzen!"
+
+    await send_message(user.telegram_id, msg)
+    await _mark_reminder(session, user.id, "routine_midday", msg)
+    logger.info("Routine midday reminder sent to user %s", user.id)
+
+
+async def _check_routine_reminders(
+    session: AsyncSession, user: User, today: date, today_start: datetime
+) -> None:
+    """Send evening reminder for incomplete evening/anytime routines."""
+    if await _already_reminded(session, user.id, "routine_evening", today_start):
+        return
+
+    routine_result = await session.execute(
+        select(Routine).where(and_(
+            Routine.user_id == user.id,
+            Routine.status == "active",
+            Routine.time_of_day.in_(["evening", "anytime"]),
+        ))
+    )
+    routines = routine_result.scalars().all()
+
+    if not routines:
+        return
+
+    comp_result = await session.execute(
+        select(RoutineCompletion.routine_id).where(and_(
+            RoutineCompletion.user_id == user.id,
+            RoutineCompletion.completed_at >= today_start,
+        ))
+    )
+    done_ids = set(comp_result.scalars().all())
+    pending = [r for r in routines if r.id not in done_ids]
+
+    if not pending:
+        return
+
+    routines_str = "\n".join(f"  ☐ {r.title}" for r in pending[:5])
+    msg = f"🌙 *Abend-Routinen noch offen:*\n{routines_str}\n\nNoch Zeit heute Abend!"
 
     await send_message(user.telegram_id, msg)
     await _mark_reminder(session, user.id, "routine_evening", msg)

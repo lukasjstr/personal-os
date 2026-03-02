@@ -10,7 +10,16 @@ import { useRoutines } from "@/hooks/useApi";
 import { api } from "@/lib/api";
 import type { Routine } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Check } from "lucide-react";
+
+// ─── Time-of-day config ───────────────────────────────────────────────────────
+
+const TIME_SECTIONS = [
+  { key: "morning", label: "Morgens", emoji: "🌅" },
+  { key: "midday",  label: "Mittags", emoji: "☀️" },
+  { key: "evening", label: "Abends",  emoji: "🌙" },
+  { key: "anytime", label: "Jederzeit", emoji: "🔄" },
+] as const;
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 
@@ -26,6 +35,7 @@ function EditRoutineModal({
     description: string | null;
     frequency_human: string | null;
     status: string;
+    time_of_day: string;
   }) => void;
   onClose: () => void;
   saving: boolean;
@@ -35,6 +45,7 @@ function EditRoutineModal({
     description: routine.description ?? "",
     frequency_human: routine.frequency_human ?? "",
     status: routine.status,
+    time_of_day: routine.time_of_day ?? "anytime",
   });
 
   function handleSave() {
@@ -43,6 +54,7 @@ function EditRoutineModal({
       description: form.description.trim() || null,
       frequency_human: form.frequency_human.trim() || null,
       status: form.status,
+      time_of_day: form.time_of_day,
     });
   }
 
@@ -83,6 +95,26 @@ function EditRoutineModal({
               placeholder="z.B. täglich morgens"
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
             />
+          </div>
+
+          <div>
+            <label className="text-zinc-400 text-xs mb-2 block">Tageszeit</label>
+            <div className="grid grid-cols-2 gap-2">
+              {TIME_SECTIONS.map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setForm((f) => ({ ...f, time_of_day: s.key }))}
+                  className={cn(
+                    "py-2 rounded-lg text-sm font-medium border transition-colors",
+                    form.time_of_day === s.key
+                      ? "bg-blue-900/60 border-blue-600 text-blue-300"
+                      : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white"
+                  )}
+                >
+                  {s.emoji} {s.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -129,6 +161,96 @@ function EditRoutineModal({
   );
 }
 
+// ─── Routine Card ─────────────────────────────────────────────────────────────
+
+function RoutineCard({
+  routine,
+  onComplete,
+  onEdit,
+  onDelete,
+  completing,
+}: {
+  routine: Routine;
+  onComplete: (id: number) => void;
+  onEdit: (r: Routine) => void;
+  onDelete: (r: Routine) => void;
+  completing: number | null;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 p-3.5 rounded-xl border transition-all group",
+        routine.completed_today
+          ? "bg-green-950/40 border-green-900/50"
+          : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
+      )}
+    >
+      {/* Completion checkbox */}
+      <button
+        onClick={() => !routine.completed_today && onComplete(routine.id)}
+        disabled={routine.completed_today || completing === routine.id}
+        className={cn(
+          "shrink-0 w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all",
+          routine.completed_today
+            ? "bg-green-600 border-green-600 cursor-default"
+            : completing === routine.id
+            ? "border-zinc-600 bg-zinc-800 animate-pulse"
+            : "border-zinc-600 bg-zinc-800 hover:border-green-500 hover:bg-green-950/40 cursor-pointer"
+        )}
+        title={routine.completed_today ? "Erledigt" : "Als erledigt markieren"}
+      >
+        {routine.completed_today && <Check size={14} className="text-white" strokeWidth={3} />}
+        {completing === routine.id && <div className="w-3 h-3 rounded-full bg-zinc-500" />}
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div
+          className={cn(
+            "font-medium text-sm",
+            routine.completed_today ? "text-zinc-400 line-through" : "text-white"
+          )}
+        >
+          {routine.title}
+        </div>
+        {routine.description && (
+          <p className="text-zinc-500 text-xs mt-0.5 truncate">{routine.description}</p>
+        )}
+        {routine.frequency_human && (
+          <p className="text-zinc-600 text-xs mt-0.5">{routine.frequency_human}</p>
+        )}
+      </div>
+
+      <div className="shrink-0 flex flex-col items-end gap-1.5">
+        {routine.completed_today ? (
+          <span className="text-green-400 text-xs font-medium bg-green-950/60 px-2 py-0.5 rounded-full border border-green-900/60">
+            Done ✅
+          </span>
+        ) : (
+          <span className="text-zinc-500 text-xs bg-zinc-800/60 px-2 py-0.5 rounded-full">
+            Offen
+          </span>
+        )}
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => onEdit(routine)}
+            className="text-zinc-500 hover:text-blue-400 transition-colors p-1 rounded"
+            title="Bearbeiten"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            onClick={() => onDelete(routine)}
+            className="text-zinc-500 hover:text-red-400 transition-colors p-1 rounded"
+            title="Löschen"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RoutinesPage() {
@@ -137,7 +259,35 @@ export default function RoutinesPage() {
   const [deletingRoutine, setDeletingRoutine] = useState<Routine | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [completing, setCompleting] = useState<number | null>(null);
   const { toasts, addToast, dismissToast } = useToast();
+
+  const handleComplete = useCallback(
+    async (routineId: number) => {
+      setCompleting(routineId);
+      mutate(
+        (prev) =>
+          prev
+            ? {
+                routines: prev.routines.map((r) =>
+                  r.id === routineId ? { ...r, completed_today: true } : r
+                ),
+              }
+            : prev,
+        false
+      );
+      try {
+        await api.completeRoutine(routineId);
+        addToast("Routine erledigt ✅", "success");
+      } catch {
+        await mutate();
+        addToast("Fehler beim Abhaken", "error");
+      } finally {
+        setCompleting(null);
+      }
+    },
+    [mutate, addToast]
+  );
 
   const handleEdit = useCallback(
     async (formData: {
@@ -145,6 +295,7 @@ export default function RoutinesPage() {
       description: string | null;
       frequency_human: string | null;
       status: string;
+      time_of_day: string;
     }) => {
       if (!editingRoutine) return;
       setSaving(true);
@@ -220,70 +371,40 @@ export default function RoutinesPage() {
             </div>
           </div>
 
-          {/* Routine grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            {active.map((r) => (
-              <div
-                key={r.id}
-                className={cn(
-                  "flex items-center gap-4 p-4 rounded-xl border transition-all group",
-                  r.completed_today
-                    ? "bg-green-950/40 border-green-900/50"
-                    : "bg-zinc-900 border-zinc-800 hover:border-zinc-700"
-                )}
-              >
-                <div className="shrink-0">
-                  {r.completed_today ? (
-                    <CircularProgress value={100} size={44} strokeWidth={4} color="#22c55e" label="✓" />
-                  ) : (
-                    <CircularProgress value={0} size={44} strokeWidth={4} color="#3f3f46" label="☐" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div
-                    className={cn(
-                      "font-medium text-sm",
-                      r.completed_today ? "text-zinc-400 line-through" : "text-white"
-                    )}
-                  >
-                    {r.title}
+          {/* Time-of-day sections */}
+          <div className="space-y-5 mb-6">
+            {TIME_SECTIONS.map(({ key, label, emoji }) => {
+              const sectionRoutines = active.filter(
+                (r) => (r.time_of_day || "anytime") === key
+              );
+              if (sectionRoutines.length === 0) return null;
+
+              const sectionDone = sectionRoutines.filter((r) => r.completed_today).length;
+
+              return (
+                <div key={key}>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="text-base">{emoji}</span>
+                    <h2 className="text-white font-semibold text-sm">{label}</h2>
+                    <span className="text-zinc-500 text-xs">
+                      {sectionDone}/{sectionRoutines.length}
+                    </span>
                   </div>
-                  {r.description && (
-                    <p className="text-zinc-500 text-xs mt-0.5 truncate">{r.description}</p>
-                  )}
-                  {r.frequency_human && (
-                    <p className="text-zinc-600 text-xs mt-0.5">{r.frequency_human}</p>
-                  )}
-                </div>
-                <div className="shrink-0 flex flex-col items-end gap-2">
-                  {r.completed_today ? (
-                    <span className="text-green-400 text-xs font-medium bg-green-950/60 px-2 py-1 rounded-full border border-green-900/60">
-                      Done ✅
-                    </span>
-                  ) : (
-                    <span className="text-zinc-500 text-xs bg-zinc-800 px-2 py-1 rounded-full">
-                      Offen
-                    </span>
-                  )}
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => setEditingRoutine(r)}
-                      className="text-zinc-500 hover:text-blue-400 transition-colors p-1 rounded"
-                      title="Bearbeiten"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={() => setDeletingRoutine(r)}
-                      className="text-zinc-500 hover:text-red-400 transition-colors p-1 rounded"
-                      title="Löschen"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {sectionRoutines.map((r) => (
+                      <RoutineCard
+                        key={r.id}
+                        routine={r}
+                        onComplete={handleComplete}
+                        onEdit={setEditingRoutine}
+                        onDelete={setDeletingRoutine}
+                        completing={completing}
+                      />
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -311,14 +432,12 @@ export default function RoutinesPage() {
                   <button
                     onClick={() => setEditingRoutine(r)}
                     className="text-zinc-500 hover:text-blue-400 transition-colors p-1 rounded"
-                    title="Bearbeiten"
                   >
                     <Pencil size={13} />
                   </button>
                   <button
                     onClick={() => setDeletingRoutine(r)}
                     className="text-zinc-500 hover:text-red-400 transition-colors p-1 rounded"
-                    title="Löschen"
                   >
                     <Trash2 size={13} />
                   </button>

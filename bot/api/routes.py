@@ -19,7 +19,7 @@ from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
-    RoutineCompletion, Task, User,
+    RoutineCompletion, ShoppingDefault, Task, User,
 )
 
 router = APIRouter(prefix="/api")
@@ -172,6 +172,119 @@ async def list_shopping(
     }
 
 
+# ─── Shopping Defaults Endpoints ──────────────────────────────────────────────
+
+class _CreateShoppingDefaultBody(BaseModel):
+    title: str
+    category: Optional[str] = None
+
+
+@router.get("/shopping/defaults")
+async def list_shopping_defaults(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all shopping defaults for the user."""
+    result = await session.execute(
+        select(ShoppingDefault)
+        .where(ShoppingDefault.user_id == user.id)
+        .order_by(ShoppingDefault.category.nulls_last(), ShoppingDefault.title)
+    )
+    defaults = result.scalars().all()
+    return {
+        "defaults": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "category": d.category,
+                "active": d.active,
+                "created_at": d.created_at.isoformat(),
+            }
+            for d in defaults
+        ]
+    }
+
+
+@router.post("/shopping/defaults")
+async def create_shopping_default_api(
+    body: _CreateShoppingDefaultBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new shopping default item."""
+    sd = ShoppingDefault(
+        user_id=user.id,
+        title=body.title,
+        category=body.category,
+        active=True,
+    )
+    session.add(sd)
+    await session.flush()
+    return {"ok": True, "id": sd.id, "title": sd.title, "category": sd.category}
+
+
+@router.post("/shopping/load-defaults")
+async def load_shopping_defaults_api(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Load all active shopping defaults as tasks into the shopping list."""
+    defaults_result = await session.execute(
+        select(ShoppingDefault).where(
+            and_(ShoppingDefault.user_id == user.id, ShoppingDefault.active == True)  # noqa: E712
+        )
+    )
+    defaults = defaults_result.scalars().all()
+
+    if not defaults:
+        return {"ok": True, "added": 0, "items": []}
+
+    existing_result = await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user.id,
+            Task.category == "shopping",
+            Task.status.in_(["todo", "in_progress"]),
+        ))
+    )
+    existing_titles = {t.title.lower() for t in existing_result.scalars().all()}
+
+    added = []
+    for d in defaults:
+        if d.title.lower() not in existing_titles:
+            task = Task(
+                user_id=user.id,
+                title=d.title,
+                category="shopping",
+                priority=3,
+            )
+            session.add(task)
+            added.append({"title": d.title, "category": d.category})
+
+    await session.flush()
+    return {"ok": True, "added": len(added), "items": added}
+
+
+@router.delete("/shopping/defaults/{default_id}")
+async def delete_shopping_default(
+    default_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a shopping default."""
+    result = await session.execute(
+        select(ShoppingDefault).where(and_(
+            ShoppingDefault.id == default_id,
+            ShoppingDefault.user_id == user.id,
+        ))
+    )
+    sd = result.scalar_one_or_none()
+    if not sd:
+        raise HTTPException(status_code=404, detail="Shopping default not found")
+    await session.delete(sd)
+    await session.flush()
+    return {"ok": True, "deleted_id": default_id}
+
+
 @router.get("/logs")
 async def list_logs(
     log_type: Optional[str] = Query(None),
@@ -216,6 +329,7 @@ async def list_routines(
     """Get routines with today's completion status."""
     routines = await get_active_routines(session, user.id)
     completed_today = await get_todays_completions(session, user.id)
+    routines_sorted = sorted(routines, key=lambda r: (r.sort_order, r.id))
     return {
         "routines": [
             {
@@ -225,9 +339,11 @@ async def list_routines(
                 "schedule_cron": r.schedule_cron,
                 "frequency_human": r.frequency_human,
                 "status": r.status,
+                "time_of_day": r.time_of_day or "anytime",
+                "sort_order": r.sort_order or 0,
                 "completed_today": r.id in completed_today,
             }
-            for r in routines
+            for r in routines_sorted
         ]
     }
 
@@ -1091,6 +1207,8 @@ class UpdateRoutineBody(BaseModel):
     description: Optional[str] = None
     frequency_human: Optional[str] = None
     status: Optional[str] = None
+    time_of_day: Optional[str] = None
+    sort_order: Optional[int] = None
 
 
 class UpdateBrainDumpBody(BaseModel):
@@ -1249,6 +1367,10 @@ async def update_routine(
         routine.frequency_human = body.frequency_human if body.frequency_human else None
     if body.status is not None:
         routine.status = body.status
+    if body.time_of_day is not None:
+        routine.time_of_day = body.time_of_day
+    if body.sort_order is not None:
+        routine.sort_order = body.sort_order
 
     await session.flush()
     return {"ok": True, "id": routine_id}

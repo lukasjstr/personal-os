@@ -41,6 +41,10 @@ export function useShopping() {
   return useSWR("shopping", () => api.shopping(), { refreshInterval: 60_000 });
 }
 
+export function useShoppingDefaults() {
+  return useSWR("shopping-defaults", () => api.shoppingDefaults(), { refreshInterval: 120_000 });
+}
+
 export function useFitnessSummary() {
   return useSWR("fitness-summary", () => api.fitnessSummary(), { refreshInterval: 300_000 });
 }
