@@ -52,3 +52,7 @@ export function useFitnessExercises() {
 export function useFitnessPRs() {
   return useSWR("fitness-prs", () => api.fitnessPRs(), { refreshInterval: 300_000 });
 }
+
+export function useWeeklySummary() {
+  return useSWR("weekly-summary", () => api.weeklySummary(), { refreshInterval: 120_000 });
+}

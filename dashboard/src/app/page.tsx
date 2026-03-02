@@ -6,7 +6,15 @@ import XPBar from "@/components/XPBar";
 import MissionBoard from "@/components/MissionBoard";
 import WeekHeatmap from "@/components/WeekHeatmap";
 import CircularProgress from "@/components/CircularProgress";
-import { useDashboard, useTasks, useRoutines, useLogs } from "@/hooks/useApi";
+import {
+  useDashboard,
+  useTasks,
+  useRoutines,
+  useLogs,
+  useObjectives,
+  useWeeklySummary,
+  useFitnessSummary,
+} from "@/hooks/useApi";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { Log } from "@/lib/api";
 
@@ -43,6 +51,9 @@ export default function DashboardPage() {
   const { data: taskData } = useTasks();
   const { data: routineData } = useRoutines();
   const { data: logsData } = useLogs(undefined, 7);
+  const { data: objectivesData } = useObjectives();
+  const { data: weeklySummary } = useWeeklySummary();
+  const { data: fitnessSummary } = useFitnessSummary();
 
   if (dashLoading) return <LoadingSpinner />;
   if (dashError) {
@@ -59,6 +70,45 @@ export default function DashboardPage() {
   const allLogs = logsData?.logs ?? [];
   const recentLogs = allLogs.slice(0, 8);
 
+  // Goal progress — average of all active objectives' key result progress
+  const objectives = objectivesData?.objectives ?? [];
+  const activeObjectives = objectives.filter((o) => o.status === "active");
+  let goalProgress = 0;
+  if (activeObjectives.length > 0) {
+    const allKRs = activeObjectives.flatMap((o) => o.key_results);
+    if (allKRs.length > 0) {
+      goalProgress = Math.round(
+        allKRs.reduce((sum, kr) => sum + kr.progress_pct, 0) / allKRs.length
+      );
+    }
+  }
+
+  // Weekly task stats
+  const tasksDoneThisWeek = weeklySummary?.tasks_done_this_week ?? 0;
+  const tasksOpenCount = weeklySummary?.tasks_open ?? 0;
+  const totalWeeklyTasks = tasksDoneThisWeek + tasksOpenCount;
+  const weeklyTasksPct =
+    totalWeeklyTasks > 0 ? Math.round((tasksDoneThisWeek / totalWeeklyTasks) * 100) : 0;
+
+  // Fitness shortcut data
+  const lastSession = fitnessSummary?.last_sessions?.[0];
+  const lastWorkoutLabel = lastSession
+    ? `Zuletzt: ${new Date(lastSession.date + "T00:00:00").toLocaleDateString("de-DE", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      })}`
+    : "Noch kein Training";
+  const workoutsThisWeek = stats?.workouts_this_week ?? 0;
+
+  // Other quick values
+  const streakDays = stats?.streak_days ?? 0;
+  const latestMood = stats?.latest_mood ?? null;
+  const waterToday = stats?.water_today_liters ?? 0;
+  const routinesDone = stats?.routines_done_today ?? 0;
+  const routinesTotal = stats?.routines_total ?? 0;
+  const shoppingItems = stats?.shopping_items ?? 0;
+
   const today = new Date();
   const greeting =
     today.getHours() < 12 ? "Guten Morgen" : today.getHours() < 18 ? "Guten Tag" : "Guten Abend";
@@ -67,10 +117,6 @@ export default function DashboardPage() {
     day: "numeric",
     month: "long",
   });
-
-  const openTasksCount = stats?.open_tasks ?? 0;
-  const taskCardColor =
-    openTasksCount > 15 ? "red" : openTasksCount > 10 ? "yellow" : "default";
 
   return (
     <div>
@@ -83,13 +129,11 @@ export default function DashboardPage() {
             </h1>
             <p className="text-zinc-500 text-sm mt-0.5">{dayStr}</p>
           </div>
-          {(stats?.streak_days ?? 0) > 0 && (
+          {streakDays > 0 && (
             <div className="bg-orange-950/60 border border-orange-800/40 rounded-xl px-3 py-2 flex items-center gap-2">
               <span className="text-xl">🔥</span>
               <div>
-                <div className="text-orange-400 font-bold text-lg leading-none">
-                  {stats?.streak_days}
-                </div>
+                <div className="text-orange-400 font-bold text-lg leading-none">{streakDays}</div>
                 <div className="text-orange-600 text-xs">Tage</div>
               </div>
             </div>
@@ -106,164 +150,195 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 h-full">
-            <div className="text-2xl mb-1">🎯</div>
-            <div
-              className={cn(
-                "text-2xl font-bold",
-                (stats?.active_objectives ?? 0) > 0 ? "text-blue-400" : "text-zinc-500"
-              )}
-            >
-              {stats?.active_objectives ?? 0}
-            </div>
-            <div className="text-zinc-500 text-xs mt-0.5">Aktive Ziele</div>
-          </div>
-        </Link>
+      {/* Quick Stats — horizontal scroll on mobile, 5-col grid on sm+ */}
+      <div className="overflow-x-auto -mx-4 sm:mx-0 mb-6">
+        <div className="flex sm:grid sm:grid-cols-5 gap-3 px-4 sm:px-0 min-w-max sm:min-w-0 pb-2 sm:pb-0">
 
-        <Link href="/tasks" className="block hover:opacity-90 transition-opacity">
-          <div
-            className={cn(
-              "bg-zinc-900 border rounded-xl p-4 h-full",
-              taskCardColor === "red"
-                ? "border-red-800/60"
-                : taskCardColor === "yellow"
-                ? "border-yellow-800/60"
-                : "border-zinc-800"
-            )}
-          >
-            <div className="text-2xl mb-1">✅</div>
-            <div
-              className={cn(
-                "text-2xl font-bold",
-                taskCardColor === "red"
-                  ? "text-red-400"
-                  : taskCardColor === "yellow"
-                  ? "text-yellow-400"
-                  : "text-white"
-              )}
-            >
-              {openTasksCount}
-            </div>
-            <div className="text-zinc-500 text-xs mt-0.5">Offene Tasks</div>
-          </div>
-        </Link>
-
-        <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 h-full">
-            <CircularProgress
-              value={Math.min(100, ((stats?.water_today_liters ?? 0) / 3) * 100)}
-              size={52}
-              strokeWidth={5}
-              color="#3b82f6"
-              label={`${stats?.water_today_liters ?? 0}L`}
-            />
-            <div>
-              <div className="text-zinc-400 text-xs">Wasser heute</div>
-              <div className="text-zinc-500 text-xs mt-0.5">Ziel: 3L</div>
-            </div>
-          </div>
-        </Link>
-
-        <Link href="/routines" className="block hover:opacity-90 transition-opacity">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3 h-full">
-            <CircularProgress
-              value={
-                stats?.routines_total
-                  ? Math.round(((stats.routines_done_today ?? 0) / stats.routines_total) * 100)
-                  : 0
-              }
-              size={52}
-              strokeWidth={5}
-              color="#22c55e"
-              label={`${stats?.routines_done_today ?? 0}/${stats?.routines_total ?? 0}`}
-            />
-            <div>
-              <div className="text-zinc-400 text-xs">Routinen heute</div>
-              <div className="text-zinc-500 text-xs mt-0.5">
-                {stats?.routines_done_today === stats?.routines_total &&
-                (stats?.routines_total ?? 0) > 0
-                  ? "✅ Alle done"
-                  : "Daily Quests"}
+          {/* 🎯 Ziel-Fortschritt */}
+          <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
+            <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
+              <CircularProgress
+                value={goalProgress}
+                size={52}
+                strokeWidth={5}
+                color="#3b82f6"
+                label={`${goalProgress}%`}
+              />
+              <div>
+                <div className="text-zinc-300 text-xs font-medium">Ziel-Fortschritt</div>
+                <div className="text-zinc-600 text-xs mt-0.5">{activeObjectives.length} aktiv</div>
               </div>
             </div>
+          </Link>
+
+          {/* 🔥 Streak */}
+          <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-1">
+            <div className="text-3xl">🔥</div>
+            <div
+              className={cn(
+                "text-2xl font-bold leading-none",
+                streakDays > 0 ? "text-orange-400" : "text-zinc-500"
+              )}
+            >
+              {streakDays}
+            </div>
+            <div className="text-zinc-500 text-xs">Tage Streak</div>
+            {streakDays > 0 && (
+              <div className="text-zinc-700 text-xs">am Laufen</div>
+            )}
+          </div>
+
+          {/* ⚡ Mood */}
+          <Link href="/logs?type=mood" className="block hover:opacity-90 transition-opacity">
+            <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-1">
+              <div className="text-3xl">
+                {latestMood != null ? getMoodEmoji(latestMood) : "⚡"}
+              </div>
+              {latestMood != null ? (
+                <>
+                  <div className="text-2xl font-bold text-yellow-400 leading-none">
+                    {latestMood}/10
+                  </div>
+                  <div className="text-zinc-500 text-xs">Letzte Stimmung</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-medium text-zinc-400">–</div>
+                  <div className="text-blue-500 text-xs">Jetzt tracken →</div>
+                </>
+              )}
+            </div>
+          </Link>
+
+          {/* 📊 Woche Tasks */}
+          <Link href="/tasks" className="block hover:opacity-90 transition-opacity">
+            <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
+              <CircularProgress
+                value={weeklyTasksPct}
+                size={52}
+                strokeWidth={5}
+                color="#22c55e"
+                label={`${tasksDoneThisWeek}/${totalWeeklyTasks}`}
+              />
+              <div>
+                <div className="text-zinc-300 text-xs font-medium">Tasks diese Woche</div>
+                <div className="text-zinc-600 text-xs mt-0.5">erledigt</div>
+              </div>
+            </div>
+          </Link>
+
+          {/* 💧 Wasser */}
+          <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
+            <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
+              <CircularProgress
+                value={Math.min(100, (waterToday / 3) * 100)}
+                size={52}
+                strokeWidth={5}
+                color="#38bdf8"
+                label={`${waterToday}L`}
+              />
+              <div>
+                <div className="text-zinc-300 text-xs font-medium">Wasser heute</div>
+                <div className="text-zinc-600 text-xs mt-0.5">Ziel: 3L</div>
+              </div>
+            </div>
+          </Link>
+        </div>
+      </div>
+
+      {/* Quick Access Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+
+        {/* 💪 Fitness */}
+        <Link href="/fitness" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
+            <div className="text-3xl shrink-0">💪</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">Dein Fitnessplan</div>
+              <div className="text-zinc-500 text-xs mt-0.5 truncate">{lastWorkoutLabel}</div>
+              <div className="text-zinc-600 text-xs">{workoutsThisWeek}× diese Woche</div>
+            </div>
+            <div className="text-zinc-600 shrink-0">›</div>
+          </div>
+        </Link>
+
+        {/* 🌅 Routinen */}
+        <Link href="/routines" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
+            <div className="text-3xl shrink-0">🌅</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">Deine Routine</div>
+              <div
+                className={cn(
+                  "text-xs mt-0.5",
+                  routinesDone === routinesTotal && routinesTotal > 0
+                    ? "text-green-400"
+                    : "text-zinc-500"
+                )}
+              >
+                {routinesDone} von {routinesTotal} erledigt
+              </div>
+              <div className="text-zinc-600 text-xs">Daily Quests</div>
+            </div>
+            <div className="text-zinc-600 shrink-0">›</div>
+          </div>
+        </Link>
+
+        {/* 🧠 AI Coach */}
+        <a
+          href="https://t.me"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block hover:opacity-90 transition-opacity"
+        >
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
+            <div className="text-3xl shrink-0">🧠</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">AI Coach</div>
+              <div className="text-zinc-500 text-xs mt-0.5">Telegram Bot öffnen</div>
+              <div className="text-zinc-600 text-xs">Dein persönlicher COO</div>
+            </div>
+            <div className="text-zinc-600 shrink-0">›</div>
+          </div>
+        </a>
+
+        {/* 📥 Brain Dump */}
+        <Link href="/brain-dumps" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
+            <div className="text-3xl shrink-0">📥</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">Brain Dump</div>
+              <div className="text-zinc-500 text-xs mt-0.5">Gedanken abladen</div>
+              <div className="text-zinc-600 text-xs">AI verarbeitet automatisch</div>
+            </div>
+            <div className="text-zinc-600 shrink-0">›</div>
+          </div>
+        </Link>
+
+        {/* 🛒 Einkaufsliste */}
+        <Link href="/shopping" className="block hover:opacity-90 transition-opacity">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
+            <div className="text-3xl shrink-0">🛒</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">Einkaufsliste</div>
+              <div
+                className={cn(
+                  "text-xs mt-0.5",
+                  shoppingItems > 0 ? "text-yellow-400" : "text-zinc-500"
+                )}
+              >
+                {shoppingItems > 0 ? `${shoppingItems} Items offen` : "Liste ist leer"}
+              </div>
+              <div className="text-zinc-600 text-xs">Per Telegram hinzufügen</div>
+            </div>
+            <div className="text-zinc-600 shrink-0">›</div>
           </div>
         </Link>
       </div>
 
-      {/* Mission Board + Quick Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      {/* Mission Board */}
+      <div className="mb-6">
         <MissionBoard routines={routines} tasks={tasks} />
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-          <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-            <span>📊</span> Schnellübersicht
-          </h2>
-          <div className="space-y-4">
-            {stats?.latest_mood !== null && stats?.latest_mood !== undefined && (
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400 text-sm">Letzte Stimmung</span>
-                <span className="flex items-center gap-1.5 text-sm text-white">
-                  {getMoodEmoji(stats.latest_mood)} {stats.latest_mood}/10
-                </span>
-              </div>
-            )}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-zinc-400 text-sm">Wasser heute</span>
-                <span className="text-sm text-white">{stats?.water_today_liters ?? 0}/3L</span>
-              </div>
-              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, ((stats?.water_today_liters ?? 0) / 3) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-zinc-400 text-sm">Routinen heute</span>
-                <span className="text-sm text-white">
-                  {stats?.routines_done_today ?? 0}/{stats?.routines_total ?? 0}
-                </span>
-              </div>
-              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-green-500 rounded-full transition-all"
-                  style={{
-                    width: `${
-                      stats?.routines_total
-                        ? ((stats.routines_done_today ?? 0) / stats.routines_total) * 100
-                        : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Workouts diese Woche</span>
-              <Link
-                href="/fitness"
-                className="text-sm text-white hover:text-blue-400 transition-colors"
-              >
-                💪 {stats?.workouts_this_week ?? 0}x
-              </Link>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-sm">Einkaufsliste</span>
-              <Link
-                href="/shopping"
-                className="text-sm text-white hover:text-blue-400 transition-colors"
-              >
-                🛒 {stats?.shopping_items ?? 0} Items
-              </Link>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Activity Timeline */}
