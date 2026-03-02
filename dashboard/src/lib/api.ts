@@ -75,6 +75,14 @@ export interface KeyResult {
   progress_pct: number;
 }
 
+export interface ObjectiveTask {
+  id: number;
+  title: string;
+  status: string;
+  priority: number;
+  parent_task_id: number | null;
+}
+
 export interface Objective {
   id: number;
   title: string;
@@ -82,9 +90,11 @@ export interface Objective {
   category: string;
   status: string;
   priority_weight: number;
+  parent_objective_id: number | null;
   target_date: string | null;
   created_at: string;
   key_results: KeyResult[];
+  tasks: ObjectiveTask[];
 }
 
 export interface Task {
@@ -98,6 +108,9 @@ export interface Task {
   is_overdue: boolean;
   completed_at: string | null;
   key_result_id: number | null;
+  objective_id: number | null;
+  parent_task_id: number | null;
+  blocked_by_task_id: number | null;
   key_result_title: string | null;
   objective_title: string | null;
   created_at: string;

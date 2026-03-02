@@ -7,7 +7,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_objective",
-            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze dies wenn der User ein neues großes Ziel nennt wie 'Ich will gesünder leben' oder 'Business aufbauen'.",
+            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze dies wenn der User ein neues großes Ziel nennt wie 'Ich will gesünder leben' oder 'Business aufbauen'. Nach der Erstellung: suggest_tasks_for_objective aufrufen um 3-5 konkrete Tasks automatisch zu erstellen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -57,13 +57,16 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_task",
-            "description": "Erstellt eine konkrete Aufgabe (Task). Für Einkaufsitems category='shopping' setzen. Für allgemeine Tasks category='general'.",
+            "description": "Erstellt eine konkrete Aufgabe (Task). Für Einkaufsitems category='shopping' setzen. Wenn möglich immer objective_id setzen um Task mit einem Ziel zu verknüpfen.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Titel der Aufgabe"},
                     "description": {"type": "string", "description": "Optionale Beschreibung"},
                     "key_result_id": {"type": "integer", "description": "Zugehöriges Key Result (optional)"},
+                    "objective_id": {"type": "integer", "description": "Direkt zugeordnetes Objective (optional, aber bevorzugt wenn möglich)"},
+                    "parent_task_id": {"type": "integer", "description": "Übergeordnete Task ID für Sub-Tasks (optional)"},
+                    "blocked_by_task_id": {"type": "integer", "description": "ID der Task die diese blockiert (optional)"},
                     "priority": {
                         "type": "integer",
                         "description": "Priorität: 1=höchste, 5=niedrigste",
@@ -357,6 +360,41 @@ TOOLS: list[dict[str, Any]] = [
                     "days_back": {"type": "integer", "description": "Wie viele Tage zurücksuchen (default: 30)"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    # ─── Objective-Task Linking ───────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_tasks_for_objective",
+            "description": "Erstellt 3-5 konkrete Tasks für ein Objective in einem Schritt. Nutze direkt nach create_objective oder wenn der User ein Objective hat und Tasks braucht.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "objective_id": {"type": "integer", "description": "ID des Objectives"},
+                    "tasks": {
+                        "type": "array",
+                        "description": "Liste der zu erstellenden Tasks",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string", "description": "Titel der Task"},
+                                "description": {"type": "string", "description": "Optionale Beschreibung"},
+                                "priority": {
+                                    "type": "integer",
+                                    "description": "Priorität 1-5",
+                                    "minimum": 1,
+                                    "maximum": 5,
+                                },
+                            },
+                            "required": ["title"],
+                        },
+                        "minItems": 1,
+                        "maxItems": 8,
+                    },
+                },
+                "required": ["objective_id", "tasks"],
             },
         },
     },

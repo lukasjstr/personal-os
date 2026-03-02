@@ -4,7 +4,7 @@ import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
-import type { Objective } from "@/lib/api";
+import type { Objective, ObjectiveTask } from "@/lib/api";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -30,17 +30,71 @@ const KR_TYPE_LABEL: Record<string, string> = {
   checklist: "☑",
 };
 
+function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
+  if (tasks.length === 0) return null;
+  const topLevel = tasks.filter((t) => !t.parent_task_id);
+  const subTaskMap = tasks.reduce<Record<number, ObjectiveTask[]>>((acc, t) => {
+    if (t.parent_task_id) {
+      (acc[t.parent_task_id] ??= []).push(t);
+    }
+    return acc;
+  }, {});
+
+  function TaskRow({ task, indent = 0 }: { task: ObjectiveTask; indent?: number }) {
+    const isDone = task.status === "done";
+    const subs = subTaskMap[task.id] ?? [];
+    return (
+      <>
+        <div
+          className={cn(
+            "flex items-center gap-2 py-1.5 text-sm",
+            indent > 0 && "pl-6 border-l border-zinc-700/50 ml-3",
+          )}
+        >
+          <span className={cn("shrink-0", isDone ? "text-green-400" : "text-zinc-500")}>
+            {isDone ? "✅" : "☐"}
+          </span>
+          <span className={cn("flex-1", isDone ? "text-zinc-500 line-through" : "text-zinc-300")}>
+            {task.title}
+          </span>
+          <span className="text-zinc-600 text-xs font-mono shrink-0">P{task.priority}</span>
+        </div>
+        {subs.map((sub) => (
+          <TaskRow key={sub.id} task={sub} indent={indent + 1} />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <div className="px-5 py-3 border-t border-zinc-800 space-y-0.5">
+      <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mb-2">Tasks</div>
+      {topLevel.map((t) => (
+        <TaskRow key={t.id} task={t} />
+      ))}
+    </div>
+  );
+}
+
 function ObjectiveCard({ obj }: { obj: Objective }) {
   const [expanded, setExpanded] = useState(obj.status === "active");
-  const isLifeArea = obj.key_results.length === 0;
+  const isLifeArea = obj.key_results.length === 0 && obj.tasks.length === 0;
   const catColor = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.default;
 
-  const avgProgress =
+  // Progress: prefer KR-based, fall back to task completion rate
+  const krProgress =
     obj.key_results.length > 0
       ? Math.round(
           obj.key_results.reduce((s, kr) => s + kr.progress_pct, 0) / obj.key_results.length
         )
-      : 0;
+      : null;
+
+  const taskProgress =
+    obj.tasks.length > 0
+      ? Math.round((obj.tasks.filter((t) => t.status === "done").length / obj.tasks.length) * 100)
+      : null;
+
+  const avgProgress = krProgress ?? taskProgress ?? 0;
 
   const progressColor =
     avgProgress >= 75 ? "#22c55e" : avgProgress >= 40 ? "#3b82f6" : avgProgress >= 20 ? "#f59e0b" : "#ef4444";
@@ -145,9 +199,19 @@ function ObjectiveCard({ obj }: { obj: Objective }) {
           </div>
         )}
 
+        {/* Task Checklist */}
+        {expanded && obj.tasks.length > 0 && (
+          <TaskChecklist tasks={obj.tasks} />
+        )}
+
         {/* Footer */}
         <div className="border-t border-zinc-800 px-5 py-2 flex items-center gap-4 text-xs text-zinc-500">
           <span>{obj.key_results.length} KRs</span>
+          {obj.tasks.length > 0 && (
+            <span>
+              {obj.tasks.filter((t) => t.status === "done").length}/{obj.tasks.length} Tasks
+            </span>
+          )}
           {obj.target_date && <span>📅 bis {formatDate(obj.target_date)}</span>}
           <span className="ml-auto">erstellt {formatDate(obj.created_at)}</span>
         </div>
@@ -173,8 +237,8 @@ export default function ObjectivesPage() {
   if (error) return <ErrorState message={error.message} />;
 
   const all = data?.objectives ?? [];
-  const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.status === "active");
-  const realObjectives = all.filter((o) => o.key_results.length > 0);
+  const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.tasks.length === 0 && o.status === "active");
+  const realObjectives = all.filter((o) => o.key_results.length > 0 || o.tasks.length > 0);
   const filtered = filter === "all" ? realObjectives : realObjectives.filter((o) => o.status === filter);
 
   const counts = {

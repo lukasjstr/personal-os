@@ -59,6 +59,14 @@ LANGE NACHRICHTEN / BRAIN DUMPS:
 - Fasse am Ende zusammen was du erstellt hast: 'X Tasks, Y Objectives, Z Routinen erstellt'
 - Bei Folgennachrichten wie 'ordne das zu' oder 'mach Tasks daraus': Beziehe dich auf die Chat-Historie!
 
+TASK-ZIEL ZUORDNUNG:
+- JEDE neue Task sollte einem Objective zugeordnet werden wenn möglich (objective_id setzen)
+- Wenn ein Objective erstellt wird: Direkt danach suggest_tasks_for_objective aufrufen und 3-5 konkrete Tasks erstellen
+- Wenn eine Task ohne Objective erstellt wird und es passende Objectives gibt: Frage ob sie zugeordnet werden soll
+- Wenn alle Tasks eines Objectives den Status "done" haben: Feiere und frage nach neuen Tasks oder ob das Objective abgeschlossen werden soll
+- Sub-Tasks: Nutze parent_task_id wenn eine Task eine größere Task konkretisiert
+- Blockierungen: Nutze blocked_by_task_id wenn eine Task erst nach einer anderen gemacht werden kann
+
 KONTEXT:
 {context}"""
 

@@ -45,7 +45,10 @@ async def list_objectives(
     """Get all objectives with key results."""
     result = await session.execute(
         select(Objective)
-        .options(selectinload(Objective.key_results))
+        .options(
+            selectinload(Objective.key_results),
+            selectinload(Objective.tasks),
+        )
         .where(Objective.user_id == user.id)
         .order_by(Objective.status, Objective.created_at)
     )
@@ -59,6 +62,7 @@ async def list_objectives(
                 "category": o.category,
                 "status": o.status,
                 "priority_weight": o.priority_weight,
+                "parent_objective_id": o.parent_objective_id,
                 "target_date": o.target_date.isoformat() if o.target_date else None,
                 "created_at": o.created_at.isoformat(),
                 "key_results": [
@@ -78,6 +82,16 @@ async def list_objectives(
                         ),
                     }
                     for kr in o.key_results
+                ],
+                "tasks": [
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "status": t.status,
+                        "priority": t.priority,
+                        "parent_task_id": t.parent_task_id,
+                    }
+                    for t in sorted(o.tasks, key=lambda t: (t.status != "done", t.priority, t.id))
                 ],
             }
             for o in objectives
@@ -103,7 +117,10 @@ async def list_tasks(
 
     result = await session.execute(
         select(Task)
-        .options(selectinload(Task.key_result).selectinload(KeyResult.objective))
+        .options(
+            selectinload(Task.key_result).selectinload(KeyResult.objective),
+            selectinload(Task.objective),
+        )
         .where(and_(*conditions))
         .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
     )
@@ -122,8 +139,14 @@ async def list_tasks(
                 "is_overdue": bool(t.due_date and t.due_date < today and t.status not in ("done", "cancelled")),
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 "key_result_id": t.key_result_id,
+                "objective_id": t.objective_id,
+                "parent_task_id": t.parent_task_id,
+                "blocked_by_task_id": t.blocked_by_task_id,
                 "key_result_title": t.key_result.title if t.key_result else None,
-                "objective_title": t.key_result.objective.title if t.key_result and t.key_result.objective else None,
+                "objective_title": (
+                    t.objective.title if t.objective
+                    else (t.key_result.objective.title if t.key_result and t.key_result.objective else None)
+                ),
                 "created_at": t.created_at.isoformat(),
             }
             for t in tasks

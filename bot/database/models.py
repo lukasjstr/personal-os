@@ -72,6 +72,7 @@ class Objective(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")  # active, completed, paused, abandoned
     target_date: Mapped[Optional[date]] = mapped_column(Date)
     priority_weight: Mapped[int] = mapped_column(Integer, default=5)  # 1-10
+    parent_objective_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="SET NULL"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
@@ -79,6 +80,22 @@ class Objective(Base):
     key_results: Mapped[list["KeyResult"]] = relationship(back_populates="objective", cascade="all, delete-orphan")
     brain_dumps: Mapped[list["BrainDump"]] = relationship(back_populates="linked_objective")
     weekly_priorities: Mapped[list["WeeklyPriority"]] = relationship(back_populates="linked_objective")
+    parent_objective: Mapped[Optional["Objective"]] = relationship(
+        "Objective",
+        foreign_keys="[Objective.parent_objective_id]",
+        back_populates="sub_objectives",
+        remote_side="Objective.id",
+    )
+    sub_objectives: Mapped[list["Objective"]] = relationship(
+        "Objective",
+        foreign_keys="[Objective.parent_objective_id]",
+        back_populates="parent_objective",
+    )
+    tasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        foreign_keys="[Task.objective_id]",
+        back_populates="objective",
+    )
 
     def __repr__(self) -> str:
         return f"<Objective id={self.id} title={self.title!r}>"
@@ -118,6 +135,9 @@ class Task(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key_result_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("key_results.id", ondelete="SET NULL"), index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    objective_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="SET NULL"), index=True)
+    parent_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
+    blocked_by_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="todo")  # todo, in_progress, done, cancelled
@@ -130,6 +150,27 @@ class Task(Base):
 
     user: Mapped["User"] = relationship(back_populates="tasks")
     key_result: Mapped[Optional["KeyResult"]] = relationship(back_populates="tasks")
+    objective: Mapped[Optional["Objective"]] = relationship(
+        "Objective",
+        foreign_keys="[Task.objective_id]",
+        back_populates="tasks",
+    )
+    parent_task: Mapped[Optional["Task"]] = relationship(
+        "Task",
+        foreign_keys="[Task.parent_task_id]",
+        back_populates="sub_tasks",
+        remote_side="Task.id",
+    )
+    sub_tasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        foreign_keys="[Task.parent_task_id]",
+        back_populates="parent_task",
+    )
+    blocked_by: Mapped[Optional["Task"]] = relationship(
+        "Task",
+        foreign_keys="[Task.blocked_by_task_id]",
+        remote_side="Task.id",
+    )
     logs: Mapped[list["Log"]] = relationship(back_populates="task")
     calendar_events: Mapped[list["CalendarEvent"]] = relationship(back_populates="linked_task")
     scheduled_reminders: Mapped[list["ScheduledReminder"]] = relationship(back_populates="linked_task")

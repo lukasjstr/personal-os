@@ -20,6 +20,7 @@ from bot.core.objectives import (
     create_objective,
     get_active_objectives,
     get_progress_report,
+    suggest_tasks_for_objective,
 )
 from bot.core.priorities import get_todays_priorities
 from bot.core.routines import complete_routine, create_routine
@@ -50,7 +51,10 @@ async def _execute_tool(
         # ─── OKR ──────────────────────────────────────────────────────────────
         if name == "create_objective":
             obj = await create_objective(session, user.id, **args)
-            return f"✅ Objective #{obj.id} erstellt: *{obj.title}* [{obj.category}]"
+            return (
+                f"✅ Objective #{obj.id} erstellt: *{obj.title}* [{obj.category}]\n"
+                f"→ Jetzt suggest_tasks_for_objective aufrufen um konkrete Tasks zu erstellen."
+            )
 
         elif name == "create_key_result":
             kr = await create_key_result(session, user.id, **args)
@@ -154,6 +158,14 @@ async def _execute_tool(
         elif name == "store_brain_dump":
             bd = await create_brain_dump(session, user.id, args["content"], args.get("linked_objective_id"))
             return f"🧠 Brain Dump #{bd.id} gespeichert. Wird später eingeordnet."
+
+        # ─── Objective-Task Linking ───────────────────────────────────────────
+        elif name == "suggest_tasks_for_objective":
+            return await suggest_tasks_for_objective(
+                session, user.id,
+                args["objective_id"],
+                args.get("tasks", []),
+            )
 
         # ─── Query Tools ──────────────────────────────────────────────────────
         elif name == "get_todays_priorities":

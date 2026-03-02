@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from bot.database.models import KeyResult, Log, Objective, Task
+from bot.core.tasks import create_task as _create_task
 
 
 async def create_objective(
@@ -71,6 +72,42 @@ async def create_key_result(
     session.add(kr)
     await session.flush()
     return kr
+
+
+async def suggest_tasks_for_objective(
+    session: AsyncSession,
+    user_id: int,
+    objective_id: int,
+    tasks: list[dict],
+) -> str:
+    """Bulk-create suggested tasks for a given objective."""
+    result = await session.execute(
+        select(Objective).where(and_(Objective.id == objective_id, Objective.user_id == user_id))
+    )
+    obj = result.scalar_one_or_none()
+    if not obj:
+        return f"Objective #{objective_id} nicht gefunden."
+
+    created_lines = []
+    for t in tasks:
+        task = await _create_task(
+            session,
+            user_id,
+            title=t["title"],
+            description=t.get("description"),
+            priority=t.get("priority", 3),
+            objective_id=objective_id,
+        )
+        created_lines.append(f"  ☐ #{task.id} {task.title} [P{task.priority}]")
+
+    if not created_lines:
+        return f"Keine Tasks für Objective #{objective_id} erstellt."
+
+    return (
+        f"✅ {len(created_lines)} Tasks für *{obj.title}* erstellt:\n"
+        + "\n".join(created_lines)
+        + "\n\nDiese Tasks sind jetzt mit dem Objective verknüpft."
+    )
 
 
 async def get_active_objectives(session: AsyncSession, user_id: int) -> str:

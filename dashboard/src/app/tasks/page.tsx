@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import { useAllTasks } from "@/hooks/useApi";
@@ -22,7 +22,20 @@ const PRIORITY_DOT: Record<number, string> = {
   5: "bg-zinc-500",
 };
 
-function TaskCard({ task }: { task: Task }) {
+const OBJECTIVE_COLORS = [
+  "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444",
+  "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#6366f1",
+];
+
+function TaskCard({
+  task,
+  indent = 0,
+  taskMap,
+}: {
+  task: Task;
+  indent?: number;
+  taskMap: Map<number, Task>;
+}) {
   const isOverdue =
     task.due_date &&
     task.status !== "done" &&
@@ -31,23 +44,51 @@ function TaskCard({ task }: { task: Task }) {
 
   const catColor = task.category ? (CATEGORY_COLORS[task.category] ?? CATEGORY_COLORS.default) : null;
 
+  const blocker = task.blocked_by_task_id ? taskMap.get(task.blocked_by_task_id) : null;
+  const isBlocked = blocker != null && blocker.status !== "done" && blocker.status !== "cancelled";
+
   return (
     <div
       className={cn(
         "flex items-start gap-3 py-3 px-4 border-b border-zinc-800/60 last:border-0",
         task.status === "done" && "opacity-50",
-        isOverdue && "bg-red-950/20"
+        isOverdue && "bg-red-950/20",
+        isBlocked && "opacity-40",
+        indent > 0 && "pl-10 border-l-2 border-zinc-700/30 ml-4",
       )}
     >
       {/* Priority dot */}
-      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", PRIORITY_DOT[task.priority] ?? "bg-zinc-600")} title={PRIORITY_LABEL[task.priority]} />
+      <div
+        className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", PRIORITY_DOT[task.priority] ?? "bg-zinc-600")}
+        title={PRIORITY_LABEL[task.priority]}
+      />
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2 flex-wrap">
-          <span className={cn("text-sm", task.status === "done" ? "text-zinc-500 line-through" : isOverdue ? "text-red-300" : "text-white")}>
+          <span
+            className={cn(
+              "text-sm",
+              task.status === "done"
+                ? "text-zinc-500 line-through"
+                : isOverdue
+                ? "text-red-300"
+                : isBlocked
+                ? "text-zinc-500"
+                : "text-white",
+            )}
+          >
             {task.title}
           </span>
+
+          {/* Objective badge */}
+          {task.objective_title && (
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-purple-900/40 text-purple-300 border border-purple-700/40">
+              🎯 {task.objective_title}
+            </span>
+          )}
+
+          {/* Category badge */}
           {catColor && task.category && task.category !== "general" && (
             <span
               className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0"
@@ -60,7 +101,20 @@ function TaskCard({ task }: { task: Task }) {
               {task.category}
             </span>
           )}
+
+          {/* Blocked badge */}
+          {isBlocked && blocker && (
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-red-900/30 text-red-400 border border-red-800/40">
+              🔒 wartet auf: {truncate(blocker.title, 30)}
+            </span>
+          )}
+
+          {/* Sub-task indicator */}
+          {task.parent_task_id && (
+            <span className="text-xs text-zinc-600 shrink-0">↳ Sub-Task</span>
+          )}
         </div>
+
         {task.description && (
           <p className="text-zinc-500 text-xs mt-0.5">{truncate(task.description, 100)}</p>
         )}
@@ -83,8 +137,26 @@ function TaskCard({ task }: { task: Task }) {
   );
 }
 
-function KanbanSection({ section, tasks }: { section: typeof STATUS_SECTIONS[0]; tasks: Task[] }) {
+function KanbanSection({
+  section,
+  tasks,
+  taskMap,
+}: {
+  section: (typeof STATUS_SECTIONS)[0];
+  tasks: Task[];
+  taskMap: Map<number, Task>;
+}) {
   const [collapsed, setCollapsed] = useState(section.key === "cancelled");
+
+  // Separate top-level tasks and sub-tasks for rendering
+  const topLevel = tasks.filter((t) => !t.parent_task_id || !tasks.find((p) => p.id === t.parent_task_id));
+  const subTaskMap = tasks.reduce<Record<number, Task[]>>((acc, t) => {
+    if (t.parent_task_id && tasks.find((p) => p.id === t.parent_task_id)) {
+      (acc[t.parent_task_id] ??= []).push(t);
+    }
+    return acc;
+  }, {});
+
   if (tasks.length === 0) return null;
 
   return (
@@ -100,7 +172,14 @@ function KanbanSection({ section, tasks }: { section: typeof STATUS_SECTIONS[0];
       </button>
       {!collapsed && (
         <div>
-          {tasks.map((task) => <TaskCard key={task.id} task={task} />)}
+          {topLevel.map((task) => (
+            <div key={task.id}>
+              <TaskCard task={task} taskMap={taskMap} />
+              {(subTaskMap[task.id] ?? []).map((sub) => (
+                <TaskCard key={sub.id} task={sub} indent={1} taskMap={taskMap} />
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -112,24 +191,43 @@ export default function TasksPage() {
   const [priorityFilter, setPriorityFilter] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [objectiveFilter, setObjectiveFilter] = useState<string>("");
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
 
-  let tasks = data?.tasks ?? [];
+  const all = data?.tasks ?? [];
 
+  // Build a map for quick lookup (used for blocker name + sub-task detection)
+  const taskMap = useMemo(() => new Map(all.map((t) => [t.id, t])), [all]);
+
+  // Unique objectives from tasks that have one
+  const objectives = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          all
+            .filter((t) => t.objective_title)
+            .map((t) => [t.objective_title!, t.objective_title!]),
+        ).values(),
+      ).sort(),
+    [all],
+  );
+
+  let tasks = all;
   if (priorityFilter !== null) tasks = tasks.filter((t) => t.priority === priorityFilter);
   if (categoryFilter) tasks = tasks.filter((t) => t.category === categoryFilter);
+  if (objectiveFilter) tasks = tasks.filter((t) => t.objective_title === objectiveFilter);
   if (search.trim()) {
     const q = search.toLowerCase();
     tasks = tasks.filter(
       (t) =>
         t.title.toLowerCase().includes(q) ||
-        (t.description?.toLowerCase().includes(q) ?? false)
+        (t.description?.toLowerCase().includes(q) ?? false) ||
+        (t.objective_title?.toLowerCase().includes(q) ?? false),
     );
   }
 
-  const all = data?.tasks ?? [];
   const counts = {
     todo: all.filter((t) => t.status === "todo").length,
     in_progress: all.filter((t) => t.status === "in_progress").length,
@@ -157,7 +255,7 @@ export default function TasksPage() {
               onClick={() => setPriorityFilter(p)}
               className={cn(
                 "px-2.5 py-1 rounded text-xs transition-colors",
-                priorityFilter === p ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"
+                priorityFilter === p ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white",
               )}
             >
               {p === null ? "Alle" : `P${p}`}
@@ -165,12 +263,15 @@ export default function TasksPage() {
           ))}
         </div>
 
-        {/* Category + Search */}
+        {/* Category */}
         <div className="flex gap-2 flex-wrap items-center">
           <span className="text-zinc-500 text-xs">Kategorie:</span>
           <button
             onClick={() => setCategoryFilter("")}
-            className={cn("px-2.5 py-1 rounded text-xs transition-colors", !categoryFilter ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white")}
+            className={cn(
+              "px-2.5 py-1 rounded text-xs transition-colors",
+              !categoryFilter ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white",
+            )}
           >
             Alle
           </button>
@@ -191,14 +292,50 @@ export default function TasksPage() {
               </button>
             );
           })}
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Suchen..."
-            className="flex-1 min-w-32 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
-          />
         </div>
+
+        {/* Objective filter */}
+        {objectives.length > 0 && (
+          <div className="flex gap-2 flex-wrap items-center">
+            <span className="text-zinc-500 text-xs">Objective:</span>
+            <button
+              onClick={() => setObjectiveFilter("")}
+              className={cn(
+                "px-2.5 py-1 rounded text-xs transition-colors",
+                !objectiveFilter ? "bg-purple-700 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white",
+              )}
+            >
+              Alle
+            </button>
+            {objectives.map((obj, i) => (
+              <button
+                key={obj}
+                onClick={() => setObjectiveFilter(obj)}
+                className={cn("px-2.5 py-1 rounded text-xs transition-colors border")}
+                style={
+                  objectiveFilter === obj
+                    ? {
+                        color: OBJECTIVE_COLORS[i % OBJECTIVE_COLORS.length],
+                        backgroundColor: OBJECTIVE_COLORS[i % OBJECTIVE_COLORS.length] + "20",
+                        borderColor: OBJECTIVE_COLORS[i % OBJECTIVE_COLORS.length] + "60",
+                      }
+                    : { color: "#71717a", backgroundColor: "transparent", borderColor: "#3f3f46" }
+                }
+              >
+                🎯 {obj}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Search */}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tasks suchen..."
+          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+        />
       </div>
 
       {/* Kanban Sections */}
@@ -211,6 +348,7 @@ export default function TasksPage() {
               key={section.key}
               section={section}
               tasks={tasks.filter((t) => t.status === section.key)}
+              taskMap={taskMap}
             />
           ))}
         </div>
