@@ -232,28 +232,125 @@ async def list_routines(
     }
 
 
+def _event_dict(e: CalendarEvent) -> dict:
+    return {
+        "id": e.id,
+        "title": e.title,
+        "description": e.description,
+        "start_time": e.start_time.isoformat(),
+        "end_time": e.end_time.isoformat() if e.end_time else None,
+        "all_day": e.all_day,
+        "event_type": e.event_type,
+        "linked_task_id": e.linked_task_id,
+    }
+
+
 @router.get("/calendar")
 async def list_calendar(
     days: int = Query(30, ge=1, le=365),
+    days_past: int = Query(0, ge=0, le=365),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Get upcoming calendar events."""
-    from bot.core.calendar import get_upcoming_events
-    events = await get_upcoming_events(session, user.id, days=days)
-    return {
-        "events": [
-            {
-                "id": e.id,
-                "title": e.title,
-                "start_time": e.start_time.isoformat(),
-                "end_time": e.end_time.isoformat() if e.end_time else None,
-                "all_day": e.all_day,
-                "event_type": e.event_type,
-            }
-            for e in events
-        ]
-    }
+    """Get calendar events within a range (days_past ago → days ahead)."""
+    now = datetime.utcnow()
+    start = now - timedelta(days=days_past)
+    end = now + timedelta(days=days)
+    result = await session.execute(
+        select(CalendarEvent)
+        .where(and_(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.start_time >= start,
+            CalendarEvent.start_time <= end,
+        ))
+        .order_by(CalendarEvent.start_time)
+    )
+    events = result.scalars().all()
+    return {"events": [_event_dict(e) for e in events]}
+
+
+class CalendarEventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    all_day: Optional[bool] = None
+    event_type: Optional[str] = None
+
+
+class CalendarNoteUpdate(BaseModel):
+    notes: str
+
+
+@router.put("/calendar/{event_id}")
+async def update_calendar_event(
+    event_id: int,
+    body: CalendarEventUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a calendar event."""
+    result = await session.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event nicht gefunden")
+
+    if body.title is not None:
+        event.title = body.title
+    if body.description is not None:
+        event.description = body.description
+    if body.all_day is not None:
+        event.all_day = body.all_day
+    if body.event_type is not None:
+        event.event_type = body.event_type
+    if body.start_time is not None:
+        from bot.core.calendar import create_calendar_event as _ccal  # noqa: F401
+        fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"]
+        for fmt in fmts:
+            try:
+                event.start_time = datetime.strptime(body.start_time, fmt)
+                break
+            except ValueError:
+                continue
+    if body.end_time is not None:
+        fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"]
+        for fmt in fmts:
+            try:
+                event.end_time = datetime.strptime(body.end_time, fmt)
+                break
+            except ValueError:
+                continue
+
+    await session.flush()
+    return _event_dict(event)
+
+
+@router.post("/calendar/{event_id}/notes")
+async def add_calendar_notes(
+    event_id: int,
+    body: CalendarNoteUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Add or update notes for a calendar event."""
+    result = await session.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event nicht gefunden")
+
+    event.description = body.notes
+    await session.flush()
+    return _event_dict(event)
 
 
 @router.get("/brain-dumps")

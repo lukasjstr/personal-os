@@ -23,12 +23,13 @@ from bot.core.objectives import (
     suggest_tasks_for_objective,
 )
 from bot.core.priorities import get_todays_priorities
-from bot.core.routines import complete_routine, create_routine
+from bot.core.routines import complete_routine, create_routine, get_active_routines, get_todays_completions
 from bot.core.shopping import complete_shopping, get_shopping_summary
 from bot.core.tasks import (
     complete_task,
     create_task,
     get_next_task_in_kr,
+    get_open_tasks,
     search_logs,
     update_task_status,
 )
@@ -184,6 +185,103 @@ async def _execute_tool(
                 args.get("log_type"),
                 args.get("days_back", 30),
             )
+
+        # ─── Day Planning ─────────────────────────────────────────────────────
+        elif name == "plan_my_day":
+            import re
+            from datetime import date as date_cls
+            from bot.core.calendar import create_calendar_event as _create_event, get_todays_events
+
+            plan_date_str = args.get("date") or date_cls.today().isoformat()
+            work_start = args.get("work_start", "08:00")
+            work_end = args.get("work_end", "20:00")
+
+            # Load context
+            tasks = await get_open_tasks(session, user.id, limit=15)
+            routines = await get_active_routines(session, user.id)
+            completed_ids = await get_todays_completions(session, user.id)
+            events = await get_todays_events(session, user.id)
+
+            tasks_text = "\n".join(
+                f"- [P{t.priority}] {t.title}" + (f" (fällig: {t.due_date})" if t.due_date else "")
+                for t in tasks
+            ) or "Keine offenen Tasks"
+
+            routines_text = "\n".join(
+                f"- {r.title}" + (" ✅ erledigt" if r.id in completed_ids else "")
+                for r in routines
+            ) or "Keine Routinen"
+
+            events_text = "\n".join(
+                f"- {e.start_time.strftime('%H:%M')}"
+                + (f"–{e.end_time.strftime('%H:%M')}" if e.end_time else "")
+                + f" {e.title}"
+                for e in events
+            ) or "Keine Termine"
+
+            plan_prompt = (
+                f"Erstelle einen JSON-Tagesplan für {plan_date_str} ({work_start}–{work_end}).\n\n"
+                f"OFFENE TASKS (Priorität 1=hoch):\n{tasks_text}\n\n"
+                f"ROUTINEN:\n{routines_text}\n\n"
+                f"BESTEHENDE TERMINE (diese Zeiten freilassen!):\n{events_text}\n\n"
+                "Erstelle einen JSON-Array mit Zeitblöcken:\n"
+                '[{"title":"...","start":"HH:MM","end":"HH:MM","type":"work|training|routine|meeting|break","focus":"optionaler Fokus-Hinweis"}]\n\n'
+                "Regeln:\n"
+                "- Bestehende Termine NICHT überschreiben\n"
+                "- Fokusblöcke 45–90 Min, dann 15 Min Pause\n"
+                "- Höchstpriorität-Tasks zuerst planen\n"
+                "- Mahlzeiten einplanen (Frühstück ~08:00, Mittag ~12:30, Abend ~18:30)\n"
+                "- Nur JSON-Array zurückgeben, kein anderer Text"
+            )
+
+            plan_response = await openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": plan_prompt}],
+                max_tokens=800,
+                temperature=0.3,
+            )
+            raw = plan_response.choices[0].message.content or "[]"
+            json_match = re.search(r"\[.*\]", raw, re.DOTALL)
+            blocks: list[dict] = []
+            if json_match:
+                try:
+                    blocks = json.loads(json_match.group())
+                except Exception:
+                    pass
+
+            TYPE_MAP = {
+                "work": "reminder", "training": "training", "routine": "routine",
+                "meeting": "meeting", "break": "reminder", "deadline": "deadline",
+            }
+            EMOJI_MAP = {
+                "training": "💪", "routine": "📋", "meeting": "🤝",
+                "deadline": "🔴", "reminder": "⏰",
+            }
+
+            created = []
+            for block in blocks:
+                try:
+                    ev = await _create_event(
+                        session, user.id,
+                        title=block["title"],
+                        start_time=f"{plan_date_str} {block['start']}",
+                        end_time=f"{plan_date_str} {block['end']}",
+                        event_type=TYPE_MAP.get(block.get("type", "work"), "reminder"),
+                        description=block.get("focus"),
+                    )
+                    created.append((ev, block.get("type", "work")))
+                except Exception as e:
+                    logger.warning("plan_my_day block failed: %s", e)
+
+            lines = [f"📅 *Tagesplan {plan_date_str}* ({work_start}–{work_end})\n"]
+            for ev, btype in created:
+                emoji = EMOJI_MAP.get(ev.event_type, "⏰")
+                time_str = ev.start_time.strftime("%H:%M")
+                if ev.end_time:
+                    time_str += f"–{ev.end_time.strftime('%H:%M')}"
+                lines.append(f"{emoji} {time_str}  {ev.title}")
+            lines.append(f"\n✅ {len(created)} Blöcke im Kalender gespeichert.")
+            return "\n".join(lines)
 
         # ─── Settings ─────────────────────────────────────────────────────────
         elif name == "update_user_settings":

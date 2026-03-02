@@ -167,10 +167,12 @@ export interface Routine {
 export interface CalendarEvent {
   id: number;
   title: string;
+  description: string | null;
   start_time: string;
   end_time: string | null;
   all_day: boolean;
   event_type: string;
+  linked_task_id: number | null;
 }
 
 export interface BrainDump {
@@ -337,8 +339,12 @@ export const api = {
   routines: () => apiFetch<{ routines: Routine[] }>("/api/routines"),
   routinesHistory: (days = 7) =>
     apiFetch<RoutinesHistory>(`/api/routines/history?days=${days}`),
-  calendar: (days = 60) =>
-    apiFetch<{ events: CalendarEvent[] }>(`/api/calendar?days=${days}`),
+  calendar: (days = 60, daysPast = 0) =>
+    apiFetch<{ events: CalendarEvent[] }>(`/api/calendar?days=${days}&days_past=${daysPast}`),
+  updateCalendarEvent: (id: number, body: Partial<{ title: string; description: string | null; start_time: string; end_time: string | null; all_day: boolean; event_type: string }>) =>
+    apiPut<CalendarEvent>(`/api/calendar/${id}`, body),
+  addCalendarNotes: (id: number, notes: string) =>
+    apiPost<CalendarEvent>(`/api/calendar/${id}/notes`, { notes }),
   brainDumps: () => apiFetch<{ brain_dumps: BrainDump[] }>("/api/brain-dumps"),
   shopping: () => apiFetch<{ items: { id: number; title: string }[] }>("/api/shopping"),
   health: () => apiFetch<{ status: string }>("/api/health"),

@@ -398,6 +398,23 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Day Planning Tool ────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_my_day",
+            "description": "Erstellt einen vollständigen Tagesplan mit konkreten Zeitblöcken. Lädt offene Tasks (nach Priorität), heutige Routinen und bestehende Kalender-Events, erstellt daraus einen strukturierten Zeitplan und speichert jeden Block als Kalender-Event. Nutze dieses Tool wenn der User 'Plan meinen Tag', 'Tagesplan', 'Was soll ich heute machen' oder ähnliches sagt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Datum für den Plan (YYYY-MM-DD, default: heute)"},
+                    "work_start": {"type": "string", "description": "Arbeitsbeginn (HH:MM, default: 08:00)"},
+                    "work_end": {"type": "string", "description": "Arbeitsende (HH:MM, default: 20:00)"},
+                },
+                "required": [],
+            },
+        },
+    },
     # ─── Settings Tool ────────────────────────────────────────────────────────
     {
         "type": "function",
