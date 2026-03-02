@@ -60,6 +60,7 @@ class User(Base):
     user_insights: Mapped[list["UserInsight"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     fitness_splits: Mapped[list["FitnessSplit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     shopping_defaults: Mapped[list["ShoppingDefault"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    daily_suggestions: Mapped[list["DailySuggestion"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -513,3 +514,28 @@ class UserAchievement(Base):
 
     def __repr__(self) -> str:
         return f"<UserAchievement user_id={self.user_id} achievement_id={self.achievement_id}>"
+
+
+# ─── Phase 8.2 — Daily AI Suggestions ────────────────────────────────────────
+
+class DailySuggestion(Base):
+    __tablename__ = "daily_suggestions"
+    __table_args__ = (UniqueConstraint("user_id", "date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    suggestions: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # suggestions JSONB structure:
+    # {
+    #   "fokus_heute": [{"task": "...", "begruendung": "..."}, ...],  # 3 items
+    #   "tipp": "...",
+    #   "streak_warnung": "..." or null,
+    #   "dimension_check": "..." or null,
+    # }
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="daily_suggestions")
+
+    def __repr__(self) -> str:
+        return f"<DailySuggestion user_id={self.user_id} date={self.date}>"

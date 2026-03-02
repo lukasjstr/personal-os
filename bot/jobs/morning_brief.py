@@ -13,6 +13,7 @@ from bot.database.connection import get_session
 from bot.database.models import (
     CalendarEvent, DailyBrief, Log, Routine, Task, User,
 )
+from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
 
 logger = logging.getLogger(__name__)
@@ -173,10 +174,31 @@ Sei direkt und prägnant. Max 300 Wörter."""
             max_tokens=600,
             temperature=0.7,
         )
-        return response.choices[0].message.content or _fallback_brief(tasks, routines, events, name)
+        brief_text = response.choices[0].message.content or _fallback_brief(tasks, routines, events, name)
     except Exception:
         logger.exception("GPT-4o failed for morning brief, using fallback")
-        return _fallback_brief(tasks, routines, events, name)
+        brief_text = _fallback_brief(tasks, routines, events, name)
+
+    # Append daily AI suggestions if available
+    suggestions = await get_or_generate_suggestions(session, user, today)
+    if suggestions:
+        ai_lines = ["\n\n💡 Dein AI-Coach:"]
+        fokus = suggestions.get("fokus_heute", [])
+        if fokus:
+            fokus_items = " · ".join(
+                f.get("task", "") for f in fokus if f.get("task") and f["task"] != "—"
+            )
+            if fokus_items:
+                ai_lines.append(f"→ Fokus heute: {fokus_items}")
+        tipp = suggestions.get("tipp", "")
+        if tipp:
+            ai_lines.append(f"→ {tipp}")
+        streak_warn = suggestions.get("streak_warnung")
+        if streak_warn:
+            ai_lines.append(f"⚠️ Streak-Alarm: {streak_warn}")
+        brief_text += "\n".join(ai_lines)
+
+    return brief_text
 
 
 def _fallback_brief(tasks: list, routines: list, events: list, name: str) -> str:

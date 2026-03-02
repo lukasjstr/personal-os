@@ -410,6 +410,25 @@ export interface GamificationStats {
   }[];
 }
 
+// ─── Daily Suggestions Types ─────────────────────────────────────────────────
+
+export interface FokusTodayItem {
+  task: string;
+  begruendung: string;
+}
+
+export interface DailySuggestions {
+  fokus_heute: FokusTodayItem[];
+  tipp: string;
+  streak_warnung: string | null;
+  dimension_check: string | null;
+}
+
+export interface DailySuggestionsResponse {
+  date: string;
+  suggestions: DailySuggestions | null;
+}
+
 // ─── Reflection Types ─────────────────────────────────────────────────────────
 
 export interface ReflectionAiSummary {
@@ -514,4 +533,5 @@ export const api = {
   deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
   reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
   reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),
+  todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
 };

@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import LoadingSpinner, { ErrorState } from "@/components/LoadingSpinner";
 import XPBar from "@/components/XPBar";
@@ -15,9 +16,10 @@ import {
   useWeeklySummary,
   useFitnessSummary,
   useGamificationStats,
+  useTodaySuggestions,
 } from "@/hooks/useApi";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
-import type { Log } from "@/lib/api";
+import type { DailySuggestionsResponse, Log } from "@/lib/api";
 
 const LOG_TYPE_COLOR: Record<string, string> = {
   workout: "text-green-400",
@@ -47,6 +49,91 @@ function formatActivityLog(log: Log): string {
   }
 }
 
+function AiCoachSection({ suggestionsData }: { suggestionsData: DailySuggestionsResponse | undefined }) {
+  const [open, setOpen] = React.useState(true);
+  const s = suggestionsData?.suggestions;
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl mb-6 overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/50 transition-colors"
+      >
+        <h2 className="text-white font-semibold flex items-center gap-2">
+          <span>💡</span> Dein AI-Coach sagt heute:
+        </h2>
+        <span className="text-zinc-500 text-sm">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-4">
+          {!suggestionsData ? (
+            <p className="text-zinc-500 text-sm">Lädt…</p>
+          ) : !s ? (
+            <p className="text-zinc-500 text-sm italic">
+              Empfehlungen werden morgen früh um 06:30 generiert.
+            </p>
+          ) : (
+            <>
+              {/* Fokus-Tasks */}
+              {s.fokus_heute && s.fokus_heute.filter((f) => f.task && f.task !== "—").length > 0 && (
+                <div>
+                  <div className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">
+                    Fokus heute
+                  </div>
+                  <ul className="space-y-2">
+                    {s.fokus_heute.filter((f) => f.task && f.task !== "—").map((f, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-blue-400 font-bold shrink-0 mt-0.5">{i + 1}.</span>
+                        <div>
+                          <div className="text-white text-sm font-medium">{f.task}</div>
+                          {f.begruendung && (
+                            <div className="text-zinc-500 text-xs mt-0.5">{f.begruendung}</div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Tipp */}
+              {s.tipp && (
+                <div className="bg-emerald-950/50 border border-emerald-800/40 rounded-lg px-4 py-3">
+                  <div className="text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1">
+                    Tipp des Tages
+                  </div>
+                  <p className="text-emerald-200 text-sm">{s.tipp}</p>
+                </div>
+              )}
+
+              {/* Streak-Warnung */}
+              {s.streak_warnung && (
+                <div className="bg-orange-950/50 border border-orange-800/40 rounded-lg px-4 py-3">
+                  <div className="text-orange-400 text-xs font-semibold uppercase tracking-wider mb-1">
+                    ⚠️ Streak-Alarm
+                  </div>
+                  <p className="text-orange-200 text-sm">{s.streak_warnung}</p>
+                </div>
+              )}
+
+              {/* Dimension Check */}
+              {s.dimension_check && (
+                <div className="bg-purple-950/50 border border-purple-800/40 rounded-lg px-4 py-3">
+                  <div className="text-purple-400 text-xs font-semibold uppercase tracking-wider mb-1">
+                    Dimensionen-Check
+                  </div>
+                  <p className="text-purple-200 text-sm">{s.dimension_check}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { data: dash, error: dashError, isLoading: dashLoading } = useDashboard();
   const { data: taskData } = useTasks();
@@ -56,6 +143,7 @@ export default function DashboardPage() {
   const { data: weeklySummary } = useWeeklySummary();
   const { data: fitnessSummary } = useFitnessSummary();
   const { data: gamification } = useGamificationStats();
+  const { data: suggestionsData } = useTodaySuggestions();
 
   if (dashLoading) return <LoadingSpinner />;
   if (dashError) {
@@ -257,6 +345,9 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* AI Coach Daily Suggestions */}
+      <AiCoachSection suggestionsData={suggestionsData} />
 
       {/* Quick Access Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">

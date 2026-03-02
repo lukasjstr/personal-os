@@ -19,9 +19,11 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    Achievement, BrainDump, CalendarEvent, FitnessSplit, KeyResult, Log, Objective, Routine,
-    RoutineCompletion, ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
+    Achievement, BrainDump, CalendarEvent, DailySuggestion, FitnessSplit, KeyResult, Log,
+    Objective, Routine, RoutineCompletion, ShoppingDefault, Task, User, UserAchievement,
+    WeeklyReflection,
 )
+from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
 
 router = APIRouter(prefix="/api")
@@ -1970,3 +1972,19 @@ async def get_reflection(
     if not r:
         raise HTTPException(status_code=404, detail="Reflection not found")
     return _reflection_dict(r)
+
+
+# ─── Daily Suggestions Endpoint ────────────────────────────────────────────────
+
+@router.get("/suggestions/today")
+async def get_todays_suggestions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return today's AI suggestions, generating them on-demand if not yet available."""
+    from zoneinfo import ZoneInfo
+    today = datetime.now(tz=ZoneInfo("Europe/Berlin")).date()
+    suggestions = await get_or_generate_suggestions(session, user, today)
+    if suggestions is None:
+        return {"date": today.isoformat(), "suggestions": None}
+    return {"date": today.isoformat(), "suggestions": suggestions}

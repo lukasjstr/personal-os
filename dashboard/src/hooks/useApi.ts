@@ -96,3 +96,7 @@ export function useReflection(id?: number) {
     { refreshInterval: 0 },
   );
 }
+
+export function useTodaySuggestions() {
+  return useSWR("today-suggestions", () => api.todaySuggestions(), { refreshInterval: 300_000 });
+}
