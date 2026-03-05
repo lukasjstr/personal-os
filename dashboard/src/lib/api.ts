@@ -484,6 +484,26 @@ export interface BehavioralPatterns {
   mood_trend: MoodTrend | null;
 }
 
+// ─── Confidence Scoring Types (E5) ────────────────────────────────────────────
+
+export interface ConfidenceEscalation {
+  code: string;
+  severity: "high" | "medium" | "low";
+  message: string;
+}
+
+export interface AutopilotConfidence {
+  confidence: number;
+  level: "high" | "medium" | "low";
+  scores: {
+    data_recency: number;
+    objective_coverage: number;
+    routine_adherence: number;
+    reflection_freshness: number;
+  };
+  escalations: ConfidenceEscalation[];
+}
+
 // ─── Active Hours Types (E4) ──────────────────────────────────────────────────
 
 export interface ActiveHoursWindow {
@@ -685,4 +705,5 @@ export const api = {
     apiPatch<{ ok: boolean }>(`/api/autopilot/action-queue/${id}`, { state: "completed" }),
   autopilotPatterns: () => apiFetch<BehavioralPatterns>("/api/autopilot/patterns"),
   autopilotActiveHours: (days = 30) => apiFetch<ActiveHoursResponse>(`/api/autopilot/active-hours?days=${days}`),
+  autopilotConfidence: () => apiFetch<AutopilotConfidence>("/api/autopilot/confidence"),
 };

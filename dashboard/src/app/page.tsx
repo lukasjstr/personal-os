@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useApi";
 import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
 import PatternsCard from "@/components/PatternsCard";
+import ConfidenceCard from "@/components/ConfidenceCard";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { DailySuggestionsResponse, Log } from "@/lib/api";
 
@@ -351,6 +352,9 @@ export default function DashboardPage() {
 
       {/* AI Coach Daily Suggestions */}
       <AiCoachSection suggestionsData={suggestionsData} />
+
+      {/* Autopilot Confidence (E5) */}
+      <ConfidenceCard />
 
       {/* Behavioral Patterns (E3) */}
       <PatternsCard />

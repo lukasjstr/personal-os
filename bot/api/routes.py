@@ -2719,6 +2719,131 @@ async def get_active_hours(
     }
 
 
+# ─── E5: Autopilot Confidence Scoring ─────────────────────────────────────────
+
+@router.get("/autopilot/confidence")
+async def get_autopilot_confidence(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Calculate autopilot confidence score (0–100) + escalation flags.
+
+    Confidence is derived from:
+    - Data recency: how recently the user logged data
+    - Objective coverage: % of active objectives with recent tasks
+    - Routine adherence: avg completion rate across all routines
+    - Reflection freshness: days since last completed reflection
+
+    Escalation rules fire when confidence < 40 or specific signals missing.
+    """
+    today = date.today()
+    seven_ago = datetime.combine(today - timedelta(days=7), datetime.min.time())
+    fourteen_ago = datetime.combine(today - timedelta(days=14), datetime.min.time())
+    thirty_ago = datetime.combine(today - timedelta(days=30), datetime.min.time())
+
+    scores: dict[str, int] = {}
+    escalations: list[dict] = []
+
+    # ── Data recency (0–25 pts) ────────────────────────────────────────────
+    recent_log_res = await session.execute(
+        select(func.count()).select_from(Log).where(and_(
+            Log.user_id == user.id,
+            Log.logged_at >= seven_ago,
+        ))
+    )
+    recent_logs = recent_log_res.scalar() or 0
+    data_score = min(25, int((recent_logs / 10) * 25))
+    scores["data_recency"] = data_score
+    if recent_logs == 0:
+        escalations.append({"code": "no_recent_data", "severity": "high",
+                            "message": "Keine Aktivität in den letzten 7 Tagen"})
+
+    # ── Objective coverage (0–25 pts) ──────────────────────────────────────
+    obj_res = await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user.id,
+            Objective.status == "active",
+        ))
+    )
+    objectives = obj_res.scalars().all()
+    covered = 0
+    for obj in objectives:
+        task_res = await session.execute(
+            select(func.count()).select_from(Task).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.updated_at >= fourteen_ago,
+            ))
+        )
+        if (task_res.scalar() or 0) > 0:
+            covered += 1
+    coverage_pct = (covered / len(objectives)) if objectives else 1.0
+    coverage_score = int(coverage_pct * 25)
+    scores["objective_coverage"] = coverage_score
+    if objectives and coverage_pct < 0.5:
+        escalations.append({"code": "low_objective_coverage", "severity": "medium",
+                            "message": f"Nur {covered}/{len(objectives)} Ziele aktiv (letzte 14 Tage)"})
+
+    # ── Routine adherence (0–25 pts) ───────────────────────────────────────
+    routine_res = await session.execute(
+        select(Routine).where(Routine.user_id == user.id)
+    )
+    routines = routine_res.scalars().all()
+    if routines:
+        rates = []
+        for r in routines:
+            count_res = await session.execute(
+                select(func.count()).select_from(RoutineCompletion).where(and_(
+                    RoutineCompletion.routine_id == r.id,
+                    RoutineCompletion.completed_at >= thirty_ago,
+                ))
+            )
+            rate = min((count_res.scalar() or 0) / 30, 1.0)
+            rates.append(rate)
+        avg_rate = sum(rates) / len(rates)
+        routine_score = int(avg_rate * 25)
+    else:
+        avg_rate = 0.0
+        routine_score = 0
+    scores["routine_adherence"] = routine_score
+    if routines and avg_rate < 0.3:
+        escalations.append({"code": "low_routine_adherence", "severity": "medium",
+                            "message": f"Routinen-Erfüllungsrate unter 30% ({round(avg_rate*100)}%)"})
+
+    # ── Reflection freshness (0–25 pts) ────────────────────────────────────
+    latest_reflection_res = await session.execute(
+        select(WeeklyReflection)
+        .where(and_(
+            WeeklyReflection.user_id == user.id,
+            WeeklyReflection.status == "completed",
+        ))
+        .order_by(WeeklyReflection.week_start.desc())
+        .limit(1)
+    )
+    latest_reflection = latest_reflection_res.scalar_one_or_none()
+    if latest_reflection:
+        days_since = (today - latest_reflection.week_start).days
+        reflection_score = max(0, 25 - int((days_since / 14) * 25))
+        if days_since > 21:
+            escalations.append({"code": "stale_reflection", "severity": "low",
+                                "message": f"Letzte Reflexion vor {days_since} Tagen"})
+    else:
+        reflection_score = 0
+        escalations.append({"code": "no_reflection", "severity": "low",
+                            "message": "Noch keine wöchentliche Reflexion"})
+    scores["reflection_freshness"] = reflection_score
+
+    total = sum(scores.values())
+    level = "high" if total >= 70 else "medium" if total >= 40 else "low"
+
+    return {
+        "confidence": total,
+        "level": level,
+        "scores": scores,
+        "escalations": escalations,
+    }
+
+
 # ─── Autopilot Notification Endpoints (A1) ─────────────────────────────────────
 
 def _notification_dict(n: AutopilotNotification) -> dict:
