@@ -19,7 +19,7 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    Achievement, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
+    Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
     FitnessSplit, KeyResult, Log, Objective, Routine, RoutineCompletion, ShoppingDefault,
     Task, User, UserAchievement, WeeklyReflection,
 )
@@ -2350,3 +2350,166 @@ async def snooze_notification(
     notification.snoozed_until = now + timedelta(minutes=body.minutes)
     await session.flush()
     return {"ok": True, "notification": _notification_dict(notification)}
+
+
+# ─── Action Queue Endpoints (A3) ───────────────────────────────────────────────
+
+# Valid states and allowed transitions:
+#   planned  → suggested
+#   suggested → accepted | snoozed
+#   accepted  → completed | snoozed
+#   snoozed  → suggested  (when snooze expires, or manual re-surface)
+_VALID_STATES = {"planned", "suggested", "accepted", "completed", "snoozed"}
+_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
+    "planned":   {"suggested"},
+    "suggested": {"accepted", "snoozed"},
+    "accepted":  {"completed", "snoozed"},
+    "snoozed":   {"suggested"},
+    "completed": set(),
+}
+
+
+def _queue_item_dict(item: ActionQueueItem) -> dict:
+    return {
+        "id": item.id,
+        "state": item.state,
+        "item_type": item.item_type,
+        "title": item.title,
+        "description": item.description,
+        "reason": item.reason,
+        "linked_task_id": item.linked_task_id,
+        "snoozed_until": item.snoozed_until.isoformat() if item.snoozed_until else None,
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+@router.get("/autopilot/action-queue")
+async def list_action_queue(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    state: Optional[str] = Query(None, description="Filter by state. Omit for active (non-completed) items."),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """List action queue items for the current user.
+
+    Returns active (non-completed) items by default.
+    Pass state=all for every item, or a specific state to filter.
+    Also returns counts per state for dashboard display.
+    """
+    from datetime import timezone as _tz
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+
+    # Auto-unsnoze expired items before returning
+    expired_result = await session.execute(
+        select(ActionQueueItem).where(
+            and_(
+                ActionQueueItem.user_id == user.id,
+                ActionQueueItem.state == "snoozed",
+                ActionQueueItem.snoozed_until <= now,
+            )
+        )
+    )
+    for item in expired_result.scalars().all():
+        item.state = "suggested"
+    await session.flush()
+
+    # Build filter
+    if state == "all":
+        where_clause = ActionQueueItem.user_id == user.id
+    elif state in _VALID_STATES:
+        where_clause = and_(
+            ActionQueueItem.user_id == user.id,
+            ActionQueueItem.state == state,
+        )
+    else:
+        # Default: active items (not completed)
+        where_clause = and_(
+            ActionQueueItem.user_id == user.id,
+            ActionQueueItem.state != "completed",
+        )
+
+    items_result = await session.execute(
+        select(ActionQueueItem)
+        .where(where_clause)
+        .order_by(ActionQueueItem.created_at.desc())
+        .limit(limit)
+    )
+    items = list(items_result.scalars().all())
+
+    # Counts per state
+    counts_result = await session.execute(
+        select(ActionQueueItem.state, func.count(ActionQueueItem.id))
+        .where(ActionQueueItem.user_id == user.id)
+        .group_by(ActionQueueItem.state)
+    )
+    counts: dict[str, int] = {row[0]: row[1] for row in counts_result.all()}
+    counts_by_state = {s: counts.get(s, 0) for s in _VALID_STATES}
+
+    return {
+        "items": [_queue_item_dict(i) for i in items],
+        "counts": counts_by_state,
+        "total_active": sum(counts.get(s, 0) for s in ("planned", "suggested", "accepted")),
+    }
+
+
+class ActionQueueStateUpdate(BaseModel):
+    state: str
+    snooze_minutes: int = 60  # used when transitioning to snoozed
+
+
+@router.patch("/autopilot/action-queue/{item_id}")
+async def update_action_queue_state(
+    item_id: int,
+    body: ActionQueueStateUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update the state of an action queue item (idempotent).
+
+    Allowed transitions:
+      planned  → suggested
+      suggested → accepted | snoozed
+      accepted  → completed | snoozed
+      snoozed  → suggested
+    Transitioning to the current state is a no-op (idempotent).
+    """
+    from datetime import timezone as _tz
+
+    new_state = body.state
+    if new_state not in _VALID_STATES:
+        raise HTTPException(status_code=400, detail=f"Invalid state '{new_state}'. Valid: {sorted(_VALID_STATES)}")
+
+    result = await session.execute(
+        select(ActionQueueItem).where(
+            and_(
+                ActionQueueItem.id == item_id,
+                ActionQueueItem.user_id == user.id,
+            )
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Action queue item not found")
+
+    # Idempotent: already in target state
+    if item.state == new_state:
+        return {"ok": True, "item": _queue_item_dict(item), "changed": False}
+
+    allowed = _ALLOWED_TRANSITIONS.get(item.state, set())
+    if new_state not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot transition from '{item.state}' to '{new_state}'. Allowed: {sorted(allowed) or 'none'}",
+        )
+
+    item.state = new_state
+    if new_state == "snoozed":
+        minutes = max(1, min(body.snooze_minutes, 10080))
+        now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+        item.snoozed_until = now + timedelta(minutes=minutes)
+    else:
+        item.snoozed_until = None
+
+    await session.flush()
+    return {"ok": True, "item": _queue_item_dict(item), "changed": True}

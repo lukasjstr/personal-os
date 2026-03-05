@@ -152,6 +152,36 @@ interface NotificationsResponse {
   latest: AutopilotNudge | null;
 }
 
+// ── Action Queue (A3) ─────────────────────────────────────────────────────
+
+type ActionQueueState = 'planned' | 'suggested' | 'accepted' | 'completed' | 'snoozed';
+
+interface ActionQueueItem {
+  id: number;
+  state: ActionQueueState;
+  item_type: string;
+  title: string;
+  description?: string | null;
+  reason?: string | null;
+  linked_task_id?: number | null;
+  snoozed_until?: string | null;
+  created_at: string;
+}
+
+interface ActionQueueCounts {
+  planned: number;
+  suggested: number;
+  accepted: number;
+  completed: number;
+  snoozed: number;
+}
+
+interface ActionQueueResponse {
+  items: ActionQueueItem[];
+  counts: ActionQueueCounts;
+  total_active: number;
+}
+
 // ── Daily Plan Orchestrator (A2) ──────────────────────────────────────────
 
 interface DailyPlanItem {
@@ -1198,6 +1228,119 @@ function DailyPlanOrchestratorCard({
   );
 }
 
+// ── ActionQueueCard (A3) ───────────────────────────────────────────────────
+
+const STATE_LABEL: Record<ActionQueueState, string> = {
+  planned: 'Planned',
+  suggested: 'Suggested',
+  accepted: 'Accepted',
+  completed: 'Completed',
+  snoozed: 'Snoozed',
+};
+
+function ActionQueueCard({
+  data,
+  loading,
+  onAccept,
+  onComplete,
+}: {
+  data: ActionQueueResponse | null;
+  loading: boolean;
+  onAccept: (id: number) => void;
+  onComplete: (id: number) => void;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Action Queue" />
+        <View style={styles.aqCountsRow}>
+          {(['suggested', 'accepted', 'snoozed'] as const).map(s => (
+            <SkeletonLine key={s} width={60} height={44} style={{ borderRadius: 8 }} />
+          ))}
+        </View>
+        <SkeletonLine height={16} style={{ marginBottom: 4 }} />
+        <SkeletonLine width="75%" height={16} />
+      </Card>
+    );
+  }
+
+  if (!data || data.total_active === 0) {
+    return (
+      <Card>
+        <SectionLabel text="Action Queue" />
+        <Text style={styles.emptySubtext}>Queue empty — nothing pending.</Text>
+      </Card>
+    );
+  }
+
+  const { counts, items } = data;
+  const actionable = items.filter(i => i.state === 'suggested' || i.state === 'accepted').slice(0, 3);
+
+  return (
+    <Card>
+      <SectionLabel text="Action Queue" />
+
+      {/* State count pills */}
+      <View style={styles.aqCountsRow}>
+        {(['suggested', 'accepted', 'snoozed'] as const).map(s => {
+          const n = counts[s];
+          if (n === 0) return null;
+          return (
+            <View key={s} style={[styles.aqCountPill, s === 'accepted' && styles.aqPillAccepted, s === 'snoozed' && styles.aqPillSnoozed]}>
+              <Text style={styles.aqCountNum}>{n}</Text>
+              <Text style={styles.aqCountLabel}>{STATE_LABEL[s]}</Text>
+            </View>
+          );
+        })}
+        {counts.planned > 0 && (
+          <View style={[styles.aqCountPill, styles.aqPillPlanned]}>
+            <Text style={styles.aqCountNum}>{counts.planned}</Text>
+            <Text style={styles.aqCountLabel}>Planned</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Actionable items */}
+      {actionable.map((item, idx) => (
+        <View key={item.id} style={[styles.aqItemRow, idx > 0 && styles.priorityRowBorder]}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.aqItemHeader}>
+              <Text style={styles.aqItemState}>{STATE_LABEL[item.state]}</Text>
+              {item.item_type !== 'task' && (
+                <Text style={styles.aqItemType}>{item.item_type}</Text>
+              )}
+            </View>
+            <Text style={styles.aqItemTitle} numberOfLines={2}>{item.title}</Text>
+            {item.reason != null && (
+              <Text style={styles.aqItemReason} numberOfLines={1}>{item.reason}</Text>
+            )}
+          </View>
+          <View style={styles.aqItemActions}>
+            {item.state === 'suggested' && (
+              <TouchableOpacity
+                style={[styles.aqActionBtn, styles.aqBtnAccept]}
+                onPress={() => onAccept(item.id)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.aqActionBtnText}>Accept</Text>
+              </TouchableOpacity>
+            )}
+            {item.state === 'accepted' && (
+              <TouchableOpacity
+                style={[styles.aqActionBtn, styles.aqBtnComplete]}
+                onPress={() => onComplete(item.id)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.aqActionBtnText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -1228,6 +1371,9 @@ export default function HomeScreen() {
 
   // Daily Plan Orchestrator (A2) — graceful fallback when unavailable
   const dailyPlanApi = useApi<DailyPlanResponse>('/api/autopilot/daily-plan');
+
+  // Action Queue (A3) — safe fallback when endpoint unavailable
+  const actionQueueApi = useApi<ActionQueueResponse>('/api/autopilot/action-queue');
 
   const isDashboardLoading = health.loading || dashboard.loading;
   const isAutopilotLoading = nextAction.loading || prioritiesApi.loading || planApi.loading;
@@ -1270,6 +1416,7 @@ export default function HomeScreen() {
     weeklyPlanApi.refetch();
     notificationsApi.refetch();
     dailyPlanApi.refetch();
+    actionQueueApi.refetch();
   }
 
   async function handleAcknowledgeNudge(id: number) {
@@ -1291,6 +1438,30 @@ export default function HomeScreen() {
       // best-effort — silent fail
     }
     notificationsApi.refetch();
+  }
+
+  async function handleAcceptQueueItem(id: number) {
+    try {
+      await apiRequest(`/api/autopilot/action-queue/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ state: 'accepted' }),
+      });
+    } catch {
+      // best-effort — silent fail
+    }
+    actionQueueApi.refetch();
+  }
+
+  async function handleCompleteQueueItem(id: number) {
+    try {
+      await apiRequest(`/api/autopilot/action-queue/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ state: 'completed' }),
+      });
+    } catch {
+      // best-effort — silent fail
+    }
+    actionQueueApi.refetch();
   }
 
   useEffect(() => {
@@ -1475,6 +1646,13 @@ export default function HomeScreen() {
         <DailyPlanOrchestratorCard
           data={dailyPlanApi.error ? null : (dailyPlanApi.data ?? null)}
           loading={dailyPlanApi.loading && tasksApi.loading}
+        />
+
+        <ActionQueueCard
+          data={actionQueueApi.error ? null : (actionQueueApi.data ?? null)}
+          loading={actionQueueApi.loading}
+          onAccept={handleAcceptQueueItem}
+          onComplete={handleCompleteQueueItem}
         />
       </ScrollView>
     </SafeAreaView>
@@ -1866,4 +2044,36 @@ const styles = StyleSheet.create({
   orchestratorItemRow: { paddingVertical: 6 },
   orchestratorItemTitle: { fontSize: 13, color: '#f9fafb', fontWeight: '500' },
   orchestratorItemReason: { fontSize: 11, color: '#6b7280', marginTop: 1 },
+
+  // Action Queue card (A3)
+  aqCountsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 12 },
+  aqCountPill: {
+    backgroundColor: '#1e3a5f',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    minWidth: 60,
+  },
+  aqPillAccepted: { backgroundColor: '#052e16' },
+  aqPillSnoozed: { backgroundColor: '#1c1917' },
+  aqPillPlanned: { backgroundColor: '#1e1b4b' },
+  aqCountNum: { fontSize: 18, fontWeight: '700', color: '#f9fafb' },
+  aqCountLabel: { fontSize: 9, fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 2 },
+  aqItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10 },
+  aqItemHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  aqItemState: { fontSize: 10, fontWeight: '700', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.4 },
+  aqItemType: { fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.3 },
+  aqItemTitle: { fontSize: 14, fontWeight: '600', color: '#f9fafb' },
+  aqItemReason: { fontSize: 11, color: '#6b7280', marginTop: 2, fontStyle: 'italic' },
+  aqItemActions: { justifyContent: 'center' },
+  aqActionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 7,
+    alignItems: 'center',
+  },
+  aqBtnAccept: { backgroundColor: '#4f46e5' },
+  aqBtnComplete: { backgroundColor: '#15803d' },
+  aqActionBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 });

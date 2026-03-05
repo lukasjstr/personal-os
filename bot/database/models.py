@@ -62,6 +62,7 @@ class User(Base):
     shopping_defaults: Mapped[list["ShoppingDefault"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_suggestions: Mapped[list["DailySuggestion"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     autopilot_notifications: Mapped[list["AutopilotNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    action_queue_items: Mapped[list["ActionQueueItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -563,6 +564,33 @@ class AutopilotNotification(Base):
 
     def __repr__(self) -> str:
         return f"<AutopilotNotification id={self.id} type={self.notification_type} status={self.status}>"
+
+
+# ─── Phase A3 — Action Queue ──────────────────────────────────────────────────
+
+class ActionQueueItem(Base):
+    __tablename__ = "action_queue_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # States: planned → suggested → accepted → completed | snoozed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="planned", index=True)
+    # Types: task, routine, event, suggestion
+    item_type: Mapped[str] = mapped_column(String(30), nullable=False, default="task")
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    # optional link to a real task
+    linked_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"))
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="action_queue_items")
+
+    def __repr__(self) -> str:
+        return f"<ActionQueueItem id={self.id} state={self.state} title={self.title!r}>"
+
 
     def __repr__(self) -> str:
         return f"<DailySuggestion user_id={self.user_id} date={self.date}>"
