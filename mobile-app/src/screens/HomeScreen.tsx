@@ -448,7 +448,7 @@ function PriorityListCard({
     <Card>
       <SectionLabel text="Top Priorities" />
       {items.map((item, idx) => (
-        <View key={item.id} style={[styles.priorityRow, idx > 0 && styles.priorityRowBorder]}>
+        <View key={`${item.id ?? 'noid'}-${item.title}-${idx}`} style={[styles.priorityRow, idx > 0 && styles.priorityRowBorder]}>
           <Text style={styles.priorityIndex}>{idx + 1}</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.priorityTitle} numberOfLines={2}>
@@ -1219,7 +1219,7 @@ function DailyPlanOrchestratorCard({
         <View key={section.id} style={styles.orchestratorSection}>
           <Text style={styles.orchestratorSectionTitle}>{section.title}</Text>
           {section.items.slice(0, 4).map((item, i) => (
-            <View key={item.id} style={[styles.orchestratorItemRow, i > 0 && styles.priorityRowBorder]}>
+            <View key={`${item.id ?? 'noid'}-${item.title}-${i}`} style={[styles.orchestratorItemRow, i > 0 && styles.priorityRowBorder]}>
               <Text style={styles.orchestratorItemTitle} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.orchestratorItemReason} numberOfLines={1}>{item.reason}</Text>
             </View>
@@ -1304,7 +1304,7 @@ function ActionQueueCard({
 
       {/* Actionable items */}
       {actionable.map((item, idx) => (
-        <View key={item.id} style={[styles.aqItemRow, idx > 0 && styles.priorityRowBorder]}>
+        <View key={`${item.id ?? 'noid'}-${item.title ?? 'item'}-${idx}`} style={[styles.aqItemRow, idx > 0 && styles.priorityRowBorder]}>
           <View style={{ flex: 1 }}>
             <View style={styles.aqItemHeader}>
               <Text style={styles.aqItemState}>{STATE_LABEL[item.state]}</Text>
