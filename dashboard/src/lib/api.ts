@@ -658,6 +658,7 @@ export const api = {
   achievements: () => apiFetch<{ achievements: Achievement[] }>("/api/achievements"),
   recentAchievements: (limit = 5) => apiFetch<{ recent: RecentAchievement[] }>(`/api/achievements/recent?limit=${limit}`),
   checkAchievements: () => apiPost<{ ok: boolean; newly_unlocked: { key: string; title: string; emoji: string; xp_reward: number }[]; count: number }>("/api/achievements/check", {}),
+  xpHistory: (days = 30) => apiFetch<{ history: { date: string; xp: number }[]; days: number; total_xp: number }>(`/api/gamification/xp-history?days=${days}`),
   gamificationStats: () => apiFetch<GamificationStats>("/api/gamification/stats"),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),

@@ -811,6 +811,60 @@ async def get_gamification_stats(
     }
 
 
+@router.get("/gamification/xp-history")
+async def get_xp_history(
+    days: int = Query(30, ge=7, le=90),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return daily XP earned over the last N days.
+
+    XP sources:
+    - Completed tasks: 5 XP each (task.completed_at)
+    - Unlocked achievements: their xp_reward (user_achievement.unlocked_at)
+    """
+    cutoff = datetime.combine(date.today() - timedelta(days=days), datetime.min.time())
+    today = date.today()
+
+    # Build empty buckets
+    xp_by_day: dict[str, int] = {}
+    for i in range(days):
+        d = (today - timedelta(days=i)).isoformat()
+        xp_by_day[d] = 0
+
+    # Tasks completed: 5 XP each
+    tasks_res = await session.execute(
+        select(Task.completed_at).where(and_(
+            Task.user_id == user.id,
+            Task.status == "done",
+            Task.completed_at >= cutoff,
+        ))
+    )
+    for (completed_at,) in tasks_res.all():
+        if completed_at:
+            day_key = completed_at.date().isoformat()
+            if day_key in xp_by_day:
+                xp_by_day[day_key] += 5
+
+    # Achievement unlocks
+    ach_res = await session.execute(
+        select(UserAchievement.unlocked_at, Achievement.xp_reward)
+        .join(Achievement, Achievement.id == UserAchievement.achievement_id)
+        .where(and_(
+            UserAchievement.user_id == user.id,
+            UserAchievement.unlocked_at >= cutoff,
+        ))
+    )
+    for unlocked_at, xp_reward in ach_res.all():
+        day_key = unlocked_at.date().isoformat()
+        if day_key in xp_by_day:
+            xp_by_day[day_key] += xp_reward
+
+    # Return sorted ascending
+    history = [{"date": d, "xp": xp_by_day[d]} for d in sorted(xp_by_day)]
+    return {"history": history, "days": days, "total_xp": user.xp or 0}
+
+
 @router.get("/dashboard")
 async def get_dashboard(
     user: User = Depends(get_current_user),

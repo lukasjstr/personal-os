@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import useSWR from "swr";
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import Header from "@/components/Header";
 import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
 import { useAchievements } from "@/hooks/useApi";
@@ -136,6 +138,8 @@ export default function AchievementsPage() {
     }
   };
 
+  const { data: xpHistoryData } = useSWR("xp-history-30", () => api.xpHistory(30));
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
   if (!data) return <LoadingSpinner />;
@@ -194,6 +198,27 @@ export default function AchievementsPage() {
               style={{ width: `${(unlockedCount / achievements.length) * 100}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {/* XP history chart (F2) */}
+      {xpHistoryData && xpHistoryData.history.some((d) => d.xp > 0) && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white font-semibold text-sm">XP Verlauf (30 Tage)</h3>
+            <span className="text-zinc-500 text-xs">{xpHistoryData.total_xp.toLocaleString("de-DE")} XP gesamt</span>
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={xpHistoryData.history.slice(-30)} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+              <XAxis dataKey="date" hide />
+              <Tooltip
+                contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", fontSize: "11px", color: "#f4f4f5" }}
+                formatter={(v) => [`${v} XP`, "XP"]}
+                labelFormatter={(l) => new Date(l).toLocaleDateString("de-DE", { day: "2-digit", month: "short" })}
+              />
+              <Bar dataKey="xp" fill="#eab308" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 
