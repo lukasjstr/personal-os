@@ -617,6 +617,8 @@ export const api = {
   deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
   reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
   reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),
+  regenerateReflectionInsights: (id: number) =>
+    apiPost<{ ok: boolean; ai_summary: Record<string, unknown> }>(`/api/reflections/${id}/insights`, {}),
   todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
   // Autopilot intelligence
   autopilotDailyPlan: () => apiFetch<AutopilotDailyPlan>("/api/autopilot/daily-plan"),

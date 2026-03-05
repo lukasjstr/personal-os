@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   LineChart,
   Line,
@@ -15,6 +15,7 @@ import Header from "@/components/Header";
 import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
 import { useReflections } from "@/hooks/useApi";
 import type { WeeklyReflection } from "@/lib/api";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // ─── Score color helper ──────────────────────────────────────────────────────
@@ -50,8 +51,24 @@ function ReflectionDetail({
     month: "2-digit",
     year: "numeric",
   });
-  const ai = reflection.ai_summary;
+  const [aiSummary, setAiSummary] = useState(reflection.ai_summary);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+  const ai = aiSummary;
   const raw = reflection.raw_answers || {};
+
+  const handleRegenerate = useCallback(async () => {
+    setRegenerating(true);
+    setRegenError(null);
+    try {
+      const res = await api.regenerateReflectionInsights(reflection.id);
+      if (res.ai_summary) setAiSummary(res.ai_summary as unknown as WeeklyReflection["ai_summary"]);
+    } catch {
+      setRegenError("Insights konnten nicht neu generiert werden.");
+    } finally {
+      setRegenerating(false);
+    }
+  }, [reflection.id]);
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-start justify-center p-4 overflow-y-auto">
@@ -62,7 +79,7 @@ function ReflectionDetail({
             <h2 className="text-white font-bold text-lg">🪞 Reflexion {weekLabel}</h2>
             <p className="text-zinc-500 text-sm mt-0.5">Woche ab {dateLabel}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {reflection.week_score && (
               <div className={cn(
                 "border rounded-xl px-3 py-1.5 text-sm font-bold",
@@ -71,6 +88,16 @@ function ReflectionDetail({
               )}>
                 {reflection.week_score}/10
               </div>
+            )}
+            {reflection.status === "completed" && (
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating}
+                title="AI-Insights neu generieren"
+                className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-lg text-xs transition-colors disabled:opacity-50"
+              >
+                {regenerating ? "..." : "🤖 Neu"}
+              </button>
             )}
             <button
               onClick={onClose}
@@ -83,6 +110,11 @@ function ReflectionDetail({
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          {regenError && (
+            <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-3 py-2 text-red-400 text-xs">
+              {regenError}
+            </div>
+          )}
           {/* Answers */}
           {reflection.biggest_win && (
             <Section label="💪 Größter Erfolg" content={reflection.biggest_win} />
@@ -336,6 +368,41 @@ export default function ReflectionPage() {
               {avgScore ?? "—"}
             </div>
             <div className="text-zinc-500 text-xs mt-0.5">Ø Score</div>
+          </div>
+        </div>
+      )}
+
+      {/* Recurring patterns */}
+      {completed.length >= 2 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
+          <h3 className="text-white font-semibold text-sm mb-3">🔍 Wiederkehrende Muster</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {completed.slice(0, 4).some((r) => r.biggest_blocker) && (
+              <div>
+                <div className="text-zinc-500 text-xs uppercase tracking-wide mb-2">Letzte Blocker</div>
+                <div className="space-y-1">
+                  {completed.slice(0, 3).filter((r) => r.biggest_blocker).map((r) => (
+                    <div key={r.id} className="flex items-start gap-2">
+                      <span className="text-red-400 text-xs mt-0.5 shrink-0">•</span>
+                      <span className="text-zinc-400 text-xs line-clamp-2">{r.biggest_blocker}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {completed.slice(0, 4).some((r) => r.biggest_win) && (
+              <div>
+                <div className="text-zinc-500 text-xs uppercase tracking-wide mb-2">Letzte Erfolge</div>
+                <div className="space-y-1">
+                  {completed.slice(0, 3).filter((r) => r.biggest_win).map((r) => (
+                    <div key={r.id} className="flex items-start gap-2">
+                      <span className="text-emerald-400 text-xs mt-0.5 shrink-0">✓</span>
+                      <span className="text-zinc-400 text-xs line-clamp-2">{r.biggest_win}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

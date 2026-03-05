@@ -2462,6 +2462,36 @@ async def get_reflection(
     return _reflection_dict(r)
 
 
+@router.post("/reflections/{reflection_id}/insights")
+async def regenerate_reflection_insights(
+    reflection_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Regenerate AI insights for a completed reflection using GPT-4o."""
+    from bot.core.weekly_reflections import _generate_ai_summary
+
+    result = await session.execute(
+        select(WeeklyReflection).where(and_(
+            WeeklyReflection.id == reflection_id,
+            WeeklyReflection.user_id == user.id,
+        ))
+    )
+    r = result.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    if r.status != "completed":
+        raise HTTPException(status_code=400, detail="Reflection not yet completed")
+
+    try:
+        ai_summary = await _generate_ai_summary(session, r)
+        r.ai_summary = ai_summary
+        await session.flush()
+        return {"ok": True, "ai_summary": ai_summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+
 # ─── Daily Suggestions Endpoint ────────────────────────────────────────────────
 
 @router.get("/suggestions/today")
