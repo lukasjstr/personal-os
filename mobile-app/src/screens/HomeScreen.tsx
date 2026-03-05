@@ -92,6 +92,45 @@ interface PlanResponse {
   event_count?: number | null;
 }
 
+// ── Weekly Focus / Reflection types ────────────────────────────────────────
+
+interface ReflectionWeeklyPriority {
+  id?: number;
+  title: string;
+  category?: string | null;
+}
+
+interface LatestReflectionResponse {
+  week_score?: number | null;
+  biggest_win?: string | null;
+  ai_summary?: {
+    weekly_priorities?: ReflectionWeeklyPriority[] | null;
+    suggested_tasks?: string[] | null;
+    recommendations?: string[] | null;
+  } | null;
+  weekly_priorities?: ReflectionWeeklyPriority[] | null;
+}
+
+interface WeeklyPlanSuggestedTask {
+  id?: number;
+  title: string;
+  category?: string | null;
+}
+
+interface WeeklyTimeBlock {
+  label?: string | null;
+  time?: string | null;
+  title?: string | null;
+  start_time?: string | null;
+}
+
+interface WeeklyPlanResponse {
+  priorities?: ReflectionWeeklyPriority[] | null;
+  suggested_tasks?: WeeklyPlanSuggestedTask[] | null;
+  time_blocks?: WeeklyTimeBlock[] | null;
+  summary?: string | null;
+}
+
 // ── Shared task / calendar types (for fallback) ────────────────────────────
 
 interface Task {
@@ -336,6 +375,167 @@ function TodayPlanCard({
   );
 }
 
+// ── Weekly Focus card ──────────────────────────────────────────────────────
+
+function WeeklyFocusCard({
+  reflection,
+  weeklyPlan,
+  priorities,
+  tasks,
+  events,
+  loading,
+}: {
+  reflection: LatestReflectionResponse | null;
+  weeklyPlan: WeeklyPlanResponse | null;
+  priorities: PriorityItem[] | null;
+  tasks: Task[];
+  events: CalendarEvent[];
+  loading: boolean;
+}) {
+  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
+  const [applied, setApplied] = useState(false);
+
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Weekly Focus" />
+        <ActivityIndicator size="small" color="#10b981" style={{ alignSelf: 'flex-start' }} />
+      </Card>
+    );
+  }
+
+  // Top 3 priorities — priority chain: reflection → weekly plan → autopilot → derived
+  const weekPriorities: ReflectionWeeklyPriority[] =
+    (reflection?.weekly_priorities && reflection.weekly_priorities.length > 0
+      ? reflection.weekly_priorities
+      : reflection?.ai_summary?.weekly_priorities && reflection.ai_summary.weekly_priorities.length > 0
+        ? reflection.ai_summary.weekly_priorities
+        : weeklyPlan?.priorities && weeklyPlan.priorities.length > 0
+          ? weeklyPlan.priorities
+          : (priorities ?? deriveTopTasks(tasks)).map(p => ({ id: p.id, title: p.title, category: p.category }))
+    ).slice(0, 3);
+
+  // Suggested tasks
+  let suggestedTasks: string[];
+  if (weeklyPlan?.suggested_tasks && weeklyPlan.suggested_tasks.length > 0) {
+    suggestedTasks = weeklyPlan.suggested_tasks.slice(0, 3).map(t => t.title);
+  } else if (reflection?.ai_summary?.suggested_tasks && reflection.ai_summary.suggested_tasks.length > 0) {
+    suggestedTasks = reflection.ai_summary.suggested_tasks.slice(0, 3);
+  } else {
+    suggestedTasks = deriveWeeklySuggestedTasks(tasks);
+  }
+
+  // Time blocks
+  let timeBlocks: string[];
+  if (weeklyPlan?.time_blocks && weeklyPlan.time_blocks.length > 0) {
+    timeBlocks = weeklyPlan.time_blocks
+      .map(b => {
+        if (b.label) return b.label;
+        if (b.title) return b.title;
+        if (b.time) return b.time;
+        if (b.start_time) {
+          try {
+            const d = new Date(b.start_time);
+            const day = d.toLocaleDateString('en-US', { weekday: 'short' });
+            const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            return `${day} ${time}`;
+          } catch {
+            return b.start_time;
+          }
+        }
+        return '';
+      })
+      .filter((s): s is string => s.length > 0)
+      .slice(0, 3);
+  } else {
+    timeBlocks = deriveWeeklyTimeBlocks(events);
+  }
+
+  const hasContent = weekPriorities.length > 0 || suggestedTasks.length > 0 || timeBlocks.length > 0;
+
+  if (!hasContent) {
+    return (
+      <Card>
+        <SectionLabel text="Weekly Focus" />
+        <Text style={styles.emptySubtext}>
+          No weekly plan yet — complete a reflection to get started.
+        </Text>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionLabel text="Weekly Focus" />
+
+      {weekPriorities.length > 0 && (
+        <>
+          <Text style={styles.weeklySubheading}>This Week's Priorities</Text>
+          {weekPriorities.map((p, i) => (
+            <View
+              key={p.id ?? i}
+              style={[styles.weeklyPriorityRow, i > 0 && styles.priorityRowBorder]}
+            >
+              <Text style={styles.weeklyPriorityNum}>{i + 1}</Text>
+              <Text style={styles.weeklyPriorityTitle} numberOfLines={2}>
+                {p.title}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+
+      {suggestedTasks.length > 0 && (
+        <>
+          <Text style={[styles.weeklySubheading, weekPriorities.length > 0 && { marginTop: 12 }]}>
+            Tasks to Start
+          </Text>
+          {suggestedTasks.map((t, i) => (
+            <View key={i} style={styles.weeklyTaskRow}>
+              <Text style={styles.weeklyTaskBullet}>•</Text>
+              <Text style={styles.weeklyTaskTitle} numberOfLines={2}>
+                {t}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+
+      {timeBlocks.length > 0 && (
+        <>
+          <Text style={[styles.weeklySubheading, { marginTop: 12 }]}>Time Blocks</Text>
+          {timeBlocks.map((b, i) => (
+            <Text key={i} style={styles.weeklyTimeBlock}>
+              {b}
+            </Text>
+          ))}
+        </>
+      )}
+
+      <View style={[styles.ctaRow, { marginTop: 16 }]}>
+        <TouchableOpacity
+          style={[
+            styles.ctaButton,
+            styles.ctaWeeklyApply,
+            applied && styles.ctaWeeklyApplied,
+          ]}
+          onPress={() => setApplied(s => !s)}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaStartText}>{applied ? 'Applied ✓' : 'Apply this week'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaOpen]}
+          onPress={() => navigation.navigate('Calendar')}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaOpenText}>Open Calendar</Text>
+        </TouchableOpacity>
+      </View>
+    </Card>
+  );
+}
+
 // ── Fallback derivation helpers ────────────────────────────────────────────
 
 function deriveNextTask(tasks: Task[]): (NextActionTask & { is_overdue?: boolean }) | null {
@@ -363,6 +563,36 @@ function deriveTopTasks(tasks: Task[]): PriorityItem[] {
     due_date: t.due_date,
     is_overdue: t.is_overdue,
   }));
+}
+
+function deriveWeeklySuggestedTasks(tasks: Task[]): string[] {
+  const open = tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+  const sorted = [...open].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  return sorted.slice(0, 3).map(t => t.title);
+}
+
+function deriveWeeklyTimeBlocks(events: CalendarEvent[]): string[] {
+  const now = new Date();
+  const weekEnd = new Date();
+  weekEnd.setDate(now.getDate() + 7);
+  const upcoming = events.filter(e => {
+    try {
+      const d = new Date(e.start_time);
+      return d >= now && d <= weekEnd;
+    } catch {
+      return false;
+    }
+  });
+  return upcoming.slice(0, 3).map(e => {
+    try {
+      const d = new Date(e.start_time);
+      const day = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      return `${day} ${time} — ${e.title}`;
+    } catch {
+      return e.title;
+    }
+  });
 }
 
 function derivePlanSummary(tasks: Task[], events: CalendarEvent[]): string {
@@ -402,6 +632,10 @@ export default function HomeScreen() {
   const tasksApi = useApi<TasksResponse>('/api/tasks');
   const calendarApi = useApi<CalendarResponse>('/api/calendar');
 
+  // Weekly Focus data sources (may 404 on older backends)
+  const reflectionApi = useApi<LatestReflectionResponse>('/api/reflections/latest');
+  const weeklyPlanApi = useApi<WeeklyPlanResponse>('/api/autopilot/weekly-plan');
+
   const isDashboardLoading = health.loading || dashboard.loading;
   const isAutopilotLoading = nextAction.loading || prioritiesApi.loading || planApi.loading;
   const isFallbackLoading = tasksApi.loading || calendarApi.loading;
@@ -429,6 +663,8 @@ export default function HomeScreen() {
     planApi.refetch();
     tasksApi.refetch();
     calendarApi.refetch();
+    reflectionApi.refetch();
+    weeklyPlanApi.refetch();
   }
 
   const autopilotCardLoading =
@@ -504,6 +740,19 @@ export default function HomeScreen() {
             </View>
           </>
         )}
+
+        {/* ── Weekly Focus Section ── */}
+        <Text style={styles.sectionTitle}>Weekly Focus</Text>
+        <WeeklyFocusCard
+          reflection={reflectionApi.error ? null : (reflectionApi.data ?? null)}
+          weeklyPlan={weeklyPlanApi.error ? null : (weeklyPlanApi.data ?? null)}
+          priorities={resolvedPriorities}
+          tasks={tasks}
+          events={events}
+          loading={
+            reflectionApi.loading && weeklyPlanApi.loading && tasksApi.loading
+          }
+        />
 
         {/* ── Autopilot Section ── */}
         <Text style={styles.sectionTitle}>Autopilot</Text>
@@ -688,4 +937,56 @@ const styles = StyleSheet.create({
   },
 
   planText: { fontSize: 14, color: '#d1d5db', lineHeight: 20 },
+
+  // Weekly Focus
+  weeklySubheading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  weeklyPriorityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  weeklyPriorityNum: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#10b981',
+    minWidth: 16,
+    marginTop: 1,
+  },
+  weeklyPriorityTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f9fafb',
+    flex: 1,
+  },
+  weeklyTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  weeklyTaskBullet: {
+    fontSize: 14,
+    color: '#6366f1',
+    marginTop: 1,
+  },
+  weeklyTaskTitle: {
+    fontSize: 13,
+    color: '#d1d5db',
+    flex: 1,
+  },
+  weeklyTimeBlock: {
+    fontSize: 12,
+    color: '#9ca3af',
+    paddingVertical: 2,
+  },
+  ctaWeeklyApply: { backgroundColor: '#059669' },
+  ctaWeeklyApplied: { backgroundColor: '#065f46' },
 });
