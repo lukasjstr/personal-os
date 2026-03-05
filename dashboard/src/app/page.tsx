@@ -19,6 +19,7 @@ import {
   useTodaySuggestions,
 } from "@/hooks/useApi";
 import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
+import PatternsCard from "@/components/PatternsCard";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { DailySuggestionsResponse, Log } from "@/lib/api";
 
@@ -350,6 +351,9 @@ export default function DashboardPage() {
 
       {/* AI Coach Daily Suggestions */}
       <AiCoachSection suggestionsData={suggestionsData} />
+
+      {/* Behavioral Patterns (E3) */}
+      <PatternsCard />
 
       {/* Autopilot Intelligence Cards (D1) */}
       <AutopilotIntelligenceCards />

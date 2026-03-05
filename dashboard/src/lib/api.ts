@@ -455,6 +455,35 @@ export interface DailySuggestionsHistory {
   history: DailySuggestionsHistoryEntry[];
 }
 
+// ─── Behavioral Patterns Types ────────────────────────────────────────────────
+
+export interface MissedRoutine {
+  id: number;
+  title: string;
+  completion_rate: number;
+  completions_30d: number;
+}
+
+export interface DriftingObjective {
+  id: number;
+  title: string;
+  category: string | null;
+  days_inactive: number;
+}
+
+export interface MoodTrend {
+  recent_avg: number;
+  prior_avg: number;
+  delta: number;
+  direction: "up" | "down" | "stable";
+}
+
+export interface BehavioralPatterns {
+  missed_routines: MissedRoutine[];
+  drifting_objectives: DriftingObjective[];
+  mood_trend: MoodTrend | null;
+}
+
 // ─── Autopilot Intelligence Types ─────────────────────────────────────────────
 
 export interface AutopilotDailyPlanItem {
@@ -638,4 +667,5 @@ export const api = {
   autopilotNextAction: () => apiFetch<AutopilotNextAction>("/api/autopilot/next-action"),
   autopilotCompleteQueueItem: (id: number) =>
     apiPatch<{ ok: boolean }>(`/api/autopilot/action-queue/${id}`, { state: "completed" }),
+  autopilotPatterns: () => apiFetch<BehavioralPatterns>("/api/autopilot/patterns"),
 };

@@ -2563,6 +2563,109 @@ async def regenerate_todays_suggestions(
     return {"date": today.isoformat(), "suggestions": new_suggestions}
 
 
+# ─── E3: Behavioral Pattern Detector ──────────────────────────────────────────
+
+@router.get("/autopilot/patterns")
+async def get_behavioral_patterns(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Detect behavioral patterns: missed routines, context drift, mood trends."""
+    today = date.today()
+    thirty_ago = datetime.combine(today - timedelta(days=30), datetime.min.time())
+    fourteen_ago = datetime.combine(today - timedelta(days=14), datetime.min.time())
+    seven_ago = datetime.combine(today - timedelta(days=7), datetime.min.time())
+
+    # ── 1. Missed routines ───────────────────────────────────────────────────
+    routines_res = await session.execute(
+        select(Routine).where(Routine.user_id == user.id)
+    )
+    routines = routines_res.scalars().all()
+
+    missed_routines = []
+    for routine in routines:
+        count_res = await session.execute(
+            select(func.count()).select_from(RoutineCompletion).where(and_(
+                RoutineCompletion.routine_id == routine.id,
+                RoutineCompletion.completed_at >= thirty_ago,
+            ))
+        )
+        completions = count_res.scalar() or 0
+        rate = min(round((completions / 30) * 100), 100)
+        if rate < 50:
+            missed_routines.append({
+                "id": routine.id,
+                "title": routine.title,
+                "completion_rate": rate,
+                "completions_30d": completions,
+            })
+    missed_routines.sort(key=lambda x: x["completion_rate"])
+
+    # ── 2. Context drift: active objectives with no recent task done ─────────
+    obj_res = await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user.id,
+            Objective.status == "active",
+        ))
+    )
+    objectives = obj_res.scalars().all()
+
+    drifting = []
+    for obj in objectives:
+        done_res = await session.execute(
+            select(func.count()).select_from(Task).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.updated_at >= fourteen_ago,
+            ))
+        )
+        recent_done = done_res.scalar() or 0
+        if recent_done == 0:
+            drifting.append({
+                "id": obj.id,
+                "title": obj.title,
+                "category": obj.category,
+                "days_inactive": 14,
+            })
+
+    # ── 3. Mood trend: recent 7d vs prior 7d ────────────────────────────────
+    mood_logs_res = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type == "mood",
+            Log.logged_at >= datetime.combine(today - timedelta(days=14), datetime.min.time()),
+        ))
+    )
+    mood_logs = mood_logs_res.scalars().all()
+
+    recent_moods = [
+        l.data.get("mood") for l in mood_logs
+        if l.logged_at >= seven_ago and l.data.get("mood") is not None
+    ]
+    prior_moods = [
+        l.data.get("mood") for l in mood_logs
+        if l.logged_at < seven_ago and l.data.get("mood") is not None
+    ]
+
+    mood_trend = None
+    if recent_moods and prior_moods:
+        recent_avg = round(sum(recent_moods) / len(recent_moods), 1)
+        prior_avg = round(sum(prior_moods) / len(prior_moods), 1)
+        delta = recent_avg - prior_avg
+        mood_trend = {
+            "recent_avg": recent_avg,
+            "prior_avg": prior_avg,
+            "delta": round(delta, 1),
+            "direction": "up" if delta > 0.4 else "down" if delta < -0.4 else "stable",
+        }
+
+    return {
+        "missed_routines": missed_routines[:5],
+        "drifting_objectives": drifting[:5],
+        "mood_trend": mood_trend,
+    }
+
+
 # ─── Autopilot Notification Endpoints (A1) ─────────────────────────────────────
 
 def _notification_dict(n: AutopilotNotification) -> dict:
