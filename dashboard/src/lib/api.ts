@@ -484,6 +484,24 @@ export interface BehavioralPatterns {
   mood_trend: MoodTrend | null;
 }
 
+// ─── Goal Momentum Types (F3) ─────────────────────────────────────────────────
+
+export interface GoalMomentumItem {
+  id: number;
+  title: string;
+  category: string | null;
+  momentum: number;
+  tasks_done_14d: number;
+  days_since_last_task: number;
+  level: "high" | "medium" | "low";
+}
+
+export interface GoalMomentumResponse {
+  objectives: GoalMomentumItem[];
+  portfolio_momentum: number;
+  portfolio_level: "high" | "medium" | "low";
+}
+
 // ─── Confidence Scoring Types (E5) ────────────────────────────────────────────
 
 export interface ConfidenceEscalation {
@@ -659,6 +677,7 @@ export const api = {
   recentAchievements: (limit = 5) => apiFetch<{ recent: RecentAchievement[] }>(`/api/achievements/recent?limit=${limit}`),
   checkAchievements: () => apiPost<{ ok: boolean; newly_unlocked: { key: string; title: string; emoji: string; xp_reward: number }[]; count: number }>("/api/achievements/check", {}),
   xpHistory: (days = 30) => apiFetch<{ history: { date: string; xp: number }[]; days: number; total_xp: number }>(`/api/gamification/xp-history?days=${days}`),
+  goalMomentum: () => apiFetch<GoalMomentumResponse>("/api/gamification/momentum"),
   gamificationStats: () => apiFetch<GamificationStats>("/api/gamification/stats"),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),

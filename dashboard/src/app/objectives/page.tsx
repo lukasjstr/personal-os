@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import useSWR from "swr";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -8,7 +9,7 @@ import { ToastContainer, useToast } from "@/components/Toast";
 import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Objective, ObjectiveTask } from "@/lib/api";
+import type { Objective, ObjectiveTask, GoalMomentumResponse } from "@/lib/api";
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -451,8 +452,15 @@ const FILTER_LABELS: Record<string, string> = {
   abandoned: "Aufgegeben",
 };
 
+const MOMENTUM_COLOR: Record<string, string> = {
+  high: "text-emerald-400",
+  medium: "text-yellow-400",
+  low: "text-red-400",
+};
+
 export default function ObjectivesPage() {
   const { data, error, isLoading, mutate } = useObjectives();
+  const { data: momentumData } = useSWR<GoalMomentumResponse>("goal-momentum", api.goalMomentum, { refreshInterval: 300_000 });
   const [filter, setFilter] = useState<string>("all");
   const [creating, setCreating] = useState(false);
   const [editingObj, setEditingObj] = useState<Objective | null>(null);
@@ -568,6 +576,43 @@ export default function ObjectivesPage() {
                 onEdit={setEditingObj}
                 onDelete={setDeletingObj}
               />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Goal Momentum (F3) */}
+      {momentumData && momentumData.objectives.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-white font-semibold text-sm">Momentum</span>
+            <div className="flex items-center gap-1.5">
+              <span className={cn("font-bold text-sm", MOMENTUM_COLOR[momentumData.portfolio_level])}>
+                {momentumData.portfolio_momentum}
+              </span>
+              <span className="text-zinc-600 text-xs">/100 Portfolio</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {momentumData.objectives.slice(0, 4).map((obj) => (
+              <div key={obj.id} className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-zinc-400 text-xs truncate">{obj.title}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="w-20 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full",
+                        obj.level === "high" ? "bg-emerald-500" :
+                        obj.level === "medium" ? "bg-yellow-500" : "bg-red-500"
+                      )}
+                      style={{ width: `${obj.momentum}%` }}
+                    />
+                  </div>
+                  <span className={cn("text-xs w-6 text-right", MOMENTUM_COLOR[obj.level])}>{obj.momentum}</span>
+                </div>
+              </div>
             ))}
           </div>
         </div>

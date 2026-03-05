@@ -811,6 +811,82 @@ async def get_gamification_stats(
     }
 
 
+@router.get("/gamification/momentum")
+async def get_goal_momentum(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Calculate momentum score per active objective.
+
+    Momentum = (tasks_done_14d * 10) + (has_recent_log * 20) - (days_since_last_activity * 2)
+    Capped 0–100. Also returns overall portfolio momentum.
+    """
+    today = date.today()
+    fourteen_ago = datetime.combine(today - timedelta(days=14), datetime.min.time())
+    thirty_ago = datetime.combine(today - timedelta(days=30), datetime.min.time())
+
+    obj_res = await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user.id,
+            Objective.status == "active",
+        ))
+    )
+    objectives = obj_res.scalars().all()
+
+    momentum_list = []
+    for obj in objectives:
+        # Tasks done in last 14 days
+        tasks_res = await session.execute(
+            select(func.count()).select_from(Task).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.completed_at >= fourteen_ago,
+            ))
+        )
+        tasks_done_14d = tasks_res.scalar() or 0
+
+        # Most recent task completion date
+        last_task_res = await session.execute(
+            select(Task.completed_at).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.completed_at >= thirty_ago,
+            ))
+            .order_by(Task.completed_at.desc())
+            .limit(1)
+        )
+        last_row = last_task_res.scalar_one_or_none()
+        if last_row:
+            days_since = (today - last_row.date()).days
+        else:
+            days_since = 30
+
+        score = min(100, max(0,
+            tasks_done_14d * 10
+            - days_since * 2
+            + (10 if tasks_done_14d > 0 else 0)
+        ))
+
+        momentum_list.append({
+            "id": obj.id,
+            "title": obj.title,
+            "category": obj.category,
+            "momentum": score,
+            "tasks_done_14d": tasks_done_14d,
+            "days_since_last_task": days_since,
+            "level": "high" if score >= 60 else "medium" if score >= 30 else "low",
+        })
+
+    momentum_list.sort(key=lambda x: x["momentum"], reverse=True)
+    portfolio_avg = int(sum(m["momentum"] for m in momentum_list) / len(momentum_list)) if momentum_list else 0
+
+    return {
+        "objectives": momentum_list,
+        "portfolio_momentum": portfolio_avg,
+        "portfolio_level": "high" if portfolio_avg >= 60 else "medium" if portfolio_avg >= 30 else "low",
+    }
+
+
 @router.get("/gamification/xp-history")
 async def get_xp_history(
     days: int = Query(30, ge=7, le=90),
