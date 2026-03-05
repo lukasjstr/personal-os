@@ -177,14 +177,14 @@ export default function FitnessScreen() {
     loading: splitsLoading,
     error: splitsError,
     refetch: refetchSplits,
-  } = useApi<SplitsResponse>('/fitness/splits');
+  } = useApi<SplitsResponse>('/api/fitness/splits');
 
   const {
     data: summaryData,
     loading: summaryLoading,
     error: summaryError,
     refetch: refetchSummary,
-  } = useApi<SummaryResponse>('/fitness/summary');
+  } = useApi<SummaryResponse>('/api/fitness/summary');
 
   const [actionLoading, setActionLoading] = useState(false);
   const [actionDone, setActionDone] = useState<'done' | 'skipped' | null>(null);
@@ -205,7 +205,7 @@ export default function FitnessScreen() {
     if (!nextSplit) return;
     setActionLoading(true);
     try {
-      await apiRequest('/logs', {
+      await apiRequest('/api/logs', {
         method: 'POST',
         body: JSON.stringify({
           log_type: 'workout',
@@ -228,7 +228,7 @@ export default function FitnessScreen() {
     if (!nextSplit) return;
     setActionLoading(true);
     try {
-      await apiRequest('/logs', {
+      await apiRequest('/api/logs', {
         method: 'POST',
         body: JSON.stringify({
           log_type: 'workout',
