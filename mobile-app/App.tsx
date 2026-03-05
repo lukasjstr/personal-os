@@ -4,13 +4,17 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { OnboardingProvider, useOnboarding } from './src/context/OnboardingContext';
 import TabNavigator from './src/navigation/TabNavigator';
 import AuthScreen from './src/screens/AuthScreen';
+import OnboardingWizard from './src/screens/OnboardingWizard';
 
 function AppContent() {
-  const { state } = useAuth();
+  const { state: authState } = useAuth();
+  const { state: onboardingState } = useOnboarding();
 
-  if (state === 'loading') {
+  // Still resolving auth or (authenticated and still checking onboarding)
+  if (authState === 'loading' || (authState === 'authenticated' && onboardingState === 'loading')) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#6366f1" />
@@ -18,8 +22,13 @@ function AppContent() {
     );
   }
 
-  if (state === 'unauthenticated') {
+  if (authState === 'unauthenticated') {
     return <AuthScreen />;
+  }
+
+  // Authenticated — route based on onboarding
+  if (onboardingState === 'needed') {
+    return <OnboardingWizard />;
   }
 
   return (
@@ -33,8 +42,10 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <AppContent />
-        <StatusBar style="light" />
+        <OnboardingProvider>
+          <AppContent />
+          <StatusBar style="light" />
+        </OnboardingProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );
