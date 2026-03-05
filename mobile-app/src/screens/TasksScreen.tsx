@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,6 +13,7 @@ import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
+import { apiRequest } from '../lib/apiClient';
 import type { TabParamList } from '../navigation/TabNavigator';
 import { ErrorState } from '../components/ErrorState';
 
@@ -35,6 +36,21 @@ interface Task {
 
 interface TasksResponse {
   tasks: Task[];
+}
+
+interface TaskSuggestion {
+  id: number;
+  objective_id: number;
+  objective_title: string | null;
+  title: string;
+  priority: number;
+  reason: string | null;
+  status: string;
+}
+
+interface SuggestionsResponse {
+  suggestions: TaskSuggestion[];
+  pending_count: number;
 }
 
 type FilterKey = 'all' | 'unblocked' | 'blocked' | 'overdue';
@@ -179,11 +195,103 @@ type ListRow =
   | { type: 'header'; group: string }
   | { type: 'task'; task: Task; isSubtask: boolean; blocked: boolean };
 
+function PendingSuggestionsSection({
+  onAccepted,
+}: {
+  onAccepted: () => void;
+}) {
+  const { data, loading, refetch } = useApi<SuggestionsResponse>('/api/task-suggestions?status=pending');
+  const [actioning, setActioning] = useState<number | null>(null);
+
+  const suggestions = data?.suggestions ?? [];
+
+  const handleAccept = useCallback(
+    async (id: number) => {
+      setActioning(id);
+      try {
+        await apiRequest(`/api/task-suggestions/${id}/accept`, { method: 'POST' });
+        refetch();
+        onAccepted();
+      } catch {
+        // silently ignore; list will refresh
+      } finally {
+        setActioning(null);
+      }
+    },
+    [refetch, onAccepted],
+  );
+
+  const handleReject = useCallback(
+    async (id: number) => {
+      setActioning(id);
+      try {
+        await apiRequest(`/api/task-suggestions/${id}/reject`, { method: 'POST' });
+        refetch();
+      } catch {
+        // silently ignore
+      } finally {
+        setActioning(null);
+      }
+    },
+    [refetch],
+  );
+
+  if (loading || suggestions.length === 0) return null;
+
+  return (
+    <View style={suggStyles.container}>
+      <Text style={suggStyles.header}>
+        Suggested Tasks — Review &amp; Accept
+      </Text>
+      {suggestions.map(s => (
+        <View key={s.id} style={suggStyles.card}>
+          <View style={suggStyles.cardBody}>
+            {s.objective_title ? (
+              <Text style={suggStyles.objectiveLabel} numberOfLines={1}>
+                {s.objective_title}
+              </Text>
+            ) : null}
+            <Text style={suggStyles.title} numberOfLines={2}>
+              {s.title}
+            </Text>
+            {s.reason ? (
+              <Text style={suggStyles.reason} numberOfLines={2}>
+                {s.reason}
+              </Text>
+            ) : null}
+          </View>
+          <View style={suggStyles.actions}>
+            <TouchableOpacity
+              style={[suggStyles.btn, suggStyles.btnReject]}
+              onPress={() => handleReject(s.id)}
+              disabled={actioning === s.id}
+            >
+              <Text style={suggStyles.btnTextReject}>Reject</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[suggStyles.btn, suggStyles.btnAccept]}
+              onPress={() => handleAccept(s.id)}
+              disabled={actioning === s.id}
+            >
+              {actioning === s.id ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={suggStyles.btnTextAccept}>Accept</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function TasksScreen() {
   const route = useRoute<RouteProp<TabParamList, 'Tasks'>>();
   const highlightTaskId = route.params?.highlightTaskId ?? null;
   const { data, loading, error, refetch } = useApi<TasksResponse>('/api/tasks');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const handleSuggestionAccepted = useCallback(() => refetch(), [refetch]);
 
   const allTasks: Task[] = data?.tasks ?? [];
   const highlightTask = highlightTaskId != null
@@ -348,11 +456,14 @@ export default function TasksScreen() {
           />
         }
         ListHeaderComponent={
-          highlightTask ? (
-            <TaskDoNowBanner task={highlightTask} />
-          ) : nextUnblocked && filter === 'all' ? (
-            <NextUnblockedBanner task={nextUnblocked} />
-          ) : null
+          <>
+            <PendingSuggestionsSection onAccepted={handleSuggestionAccepted} />
+            {highlightTask ? (
+              <TaskDoNowBanner task={highlightTask} />
+            ) : nextUnblocked && filter === 'all' ? (
+              <NextUnblockedBanner task={nextUnblocked} />
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           <View style={styles.center}>
@@ -509,4 +620,55 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 12, color: '#9ca3af' },
   overdueText: { color: '#f87171' },
   emptyText: { color: '#6b7280', fontSize: 14 },
+});
+
+const suggStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#312e81',
+  },
+  header: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#818cf8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 10,
+  },
+  card: {
+    backgroundColor: '#1e1b4b',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  cardBody: { flex: 1 },
+  objectiveLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#6366f1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  title: { fontSize: 14, fontWeight: '600', color: '#f9fafb', lineHeight: 20 },
+  reason: { fontSize: 12, color: '#9ca3af', marginTop: 4, lineHeight: 16 },
+  actions: { flexDirection: 'column', gap: 6 },
+  btn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+    minWidth: 64,
+  },
+  btnAccept: { backgroundColor: '#4f46e5' },
+  btnReject: { backgroundColor: '#374151' },
+  btnTextAccept: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  btnTextReject: { fontSize: 12, fontWeight: '600', color: '#9ca3af' },
 });

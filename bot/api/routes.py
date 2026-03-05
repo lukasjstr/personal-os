@@ -20,8 +20,8 @@ from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
-    FitnessSplit, KeyResult, Log, Objective, Routine, RoutineCompletion, ShoppingDefault,
-    Task, User, UserAchievement, WeeklyReflection,
+    FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, Routine, RoutineCompletion,
+    ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
@@ -2573,3 +2573,354 @@ async def update_action_queue_state(
 
     await session.flush()
     return {"ok": True, "item": _queue_item_dict(item), "changed": True}
+
+
+# ─── Objective Task Suggestions (B3) ───────────────────────────────────────────
+
+# Deterministic fallback task templates per objective category
+_CATEGORY_TASK_TEMPLATES: dict[str, list[dict]] = {
+    "health": [
+        {"title": "Schedule a health check-up", "priority": 2, "reason": "Preventive health baseline"},
+        {"title": "Research and choose a health metric to track weekly", "priority": 3, "reason": "Measure progress"},
+        {"title": "Build a 4-week habit plan for this goal", "priority": 2, "reason": "Structure drives results"},
+        {"title": "Log baseline measurement for this objective", "priority": 3, "reason": "Track from day 1"},
+    ],
+    "fitness": [
+        {"title": "Define weekly training schedule", "priority": 2, "reason": "Consistency requires a plan"},
+        {"title": "Set a measurable performance baseline", "priority": 2, "reason": "Benchmark for progress"},
+        {"title": "Schedule first session this week", "priority": 1, "reason": "Start immediately"},
+        {"title": "Research best approach for this fitness goal", "priority": 3, "reason": "Informed execution"},
+    ],
+    "business": [
+        {"title": "Define the first milestone and deadline", "priority": 1, "reason": "Clear short-term target"},
+        {"title": "Identify top 3 blockers for this objective", "priority": 2, "reason": "Remove friction early"},
+        {"title": "Draft action plan with weekly checkpoints", "priority": 2, "reason": "Structured execution"},
+        {"title": "Review resources and capacity needed", "priority": 3, "reason": "Avoid surprises"},
+    ],
+    "finance": [
+        {"title": "Review current financial baseline for this goal", "priority": 1, "reason": "Know your starting point"},
+        {"title": "Set monthly savings or progress target", "priority": 2, "reason": "Incremental progress"},
+        {"title": "Identify one recurring expense to reduce", "priority": 3, "reason": "Free up resources"},
+        {"title": "Set up tracking system for this objective", "priority": 2, "reason": "What gets measured gets done"},
+    ],
+    "learning": [
+        {"title": "Find the best resource (book/course) for this topic", "priority": 2, "reason": "Start with the right input"},
+        {"title": "Block 30 minutes daily for focused learning", "priority": 1, "reason": "Consistency compounds"},
+        {"title": "Define what 'done' looks like for this learning goal", "priority": 2, "reason": "Clear success criteria"},
+        {"title": "Share or apply one thing learned each week", "priority": 3, "reason": "Learning by doing"},
+    ],
+    "personal": [
+        {"title": "Write down why this goal matters to you", "priority": 3, "reason": "Motivation anchor"},
+        {"title": "Break objective into 3 concrete milestones", "priority": 1, "reason": "Clarity drives action"},
+        {"title": "Schedule weekly 15-minute review for this objective", "priority": 2, "reason": "Stay on track"},
+        {"title": "Identify one person who can support or hold you accountable", "priority": 3, "reason": "Social commitment"},
+    ],
+}
+_DEFAULT_TEMPLATES = [
+    {"title": "Define the first concrete action step", "priority": 1, "reason": "Start with clarity"},
+    {"title": "Set a measurable milestone for this objective", "priority": 2, "reason": "Track progress"},
+    {"title": "Review progress weekly and adjust plan", "priority": 3, "reason": "Consistent reflection"},
+]
+
+
+def _suggestion_dict(s: ObjectiveTaskSuggestion) -> dict:
+    return {
+        "id": s.id,
+        "objective_id": s.objective_id,
+        "title": s.title,
+        "description": s.description,
+        "priority": s.priority,
+        "reason": s.reason,
+        "status": s.status,
+        "accepted_task_id": s.accepted_task_id,
+        "created_at": s.created_at.isoformat(),
+    }
+
+
+@router.post("/objectives/{objective_id}/generate-tasks")
+async def generate_objective_tasks(
+    objective_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Generate suggested tasks for an objective via AI (GPT-4o) with deterministic fallback.
+
+    Suggestions are saved with status='pending' and do NOT become active tasks until accepted.
+    Existing pending suggestions are replaced to avoid duplicates.
+    """
+    import asyncio as _asyncio
+    import json as _json
+    import logging as _log
+
+    _logger = _log.getLogger(__name__)
+
+    # Fetch objective (must belong to user)
+    obj_result = await session.execute(
+        select(Objective)
+        .options(selectinload(Objective.key_results))
+        .where(and_(Objective.id == objective_id, Objective.user_id == user.id))
+    )
+    obj = obj_result.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Objective not found")
+
+    # Delete existing pending suggestions to start fresh
+    existing_result = await session.execute(
+        select(ObjectiveTaskSuggestion).where(
+            and_(
+                ObjectiveTaskSuggestion.objective_id == objective_id,
+                ObjectiveTaskSuggestion.user_id == user.id,
+                ObjectiveTaskSuggestion.status == "pending",
+            )
+        )
+    )
+    for old in existing_result.scalars().all():
+        await session.delete(old)
+    await session.flush()
+
+    # Build key result context for AI
+    kr_text = "; ".join(kr.title for kr in obj.key_results if kr.status == "active") or "none"
+    desc_text = obj.description or ""
+
+    raw_suggestions: list[dict] = []
+    generated_by = "deterministic"
+
+    # Try AI generation first
+    try:
+        from bot.ai.client import openai_client as _oai
+
+        prompt = (
+            f"You are a personal productivity coach. Generate exactly 4 concrete, actionable tasks "
+            f"for the following objective.\n\n"
+            f"Objective: {obj.title}\n"
+            f"Category: {obj.category}\n"
+            f"Description: {desc_text or '(none)'}\n"
+            f"Key Results: {kr_text}\n\n"
+            "Return a JSON array (no other text) with exactly 4 items, each with:\n"
+            '  "title": string (max 80 chars, action verb start),\n'
+            '  "priority": integer 1-3 (1=highest),\n'
+            '  "reason": string (one sentence why this task matters for the objective)\n\n'
+            "Make tasks specific, measurable, and immediately actionable. No fluff."
+        )
+
+        ai_response = await _asyncio.wait_for(
+            _oai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=600,
+                temperature=0.4,
+            ),
+            timeout=12.0,
+        )
+        raw = (ai_response.choices[0].message.content or "").strip()
+        # Extract JSON array robustly
+        import re as _re
+        match = _re.search(r"\[.*\]", raw, _re.DOTALL)
+        if match:
+            parsed = _json.loads(match.group())
+            if isinstance(parsed, list):
+                for item in parsed[:5]:
+                    if isinstance(item, dict) and item.get("title"):
+                        raw_suggestions.append({
+                            "title": str(item["title"])[:500],
+                            "priority": int(item.get("priority", 3)),
+                            "reason": str(item.get("reason", ""))[:500],
+                        })
+                if raw_suggestions:
+                    generated_by = "ai"
+    except Exception as exc:
+        _logger.debug("AI task generation failed, using fallback: %s", exc)
+
+    # Deterministic fallback
+    if not raw_suggestions:
+        templates = _CATEGORY_TASK_TEMPLATES.get(obj.category, _DEFAULT_TEMPLATES)
+        for t in templates:
+            raw_suggestions.append({
+                "title": t["title"],
+                "priority": t["priority"],
+                "reason": t["reason"],
+            })
+
+    # Persist suggestions
+    suggestions = []
+    for item in raw_suggestions:
+        s = ObjectiveTaskSuggestion(
+            user_id=user.id,
+            objective_id=objective_id,
+            title=item["title"],
+            priority=max(1, min(5, item.get("priority", 3))),
+            reason=item.get("reason") or None,
+            status="pending",
+        )
+        session.add(s)
+        suggestions.append(s)
+
+    await session.flush()
+
+    return {
+        "objective_id": objective_id,
+        "generated_by": generated_by,
+        "suggestions": [_suggestion_dict(s) for s in suggestions],
+        "count": len(suggestions),
+    }
+
+
+@router.get("/objectives/{objective_id}/suggestions")
+async def list_objective_suggestions(
+    objective_id: int,
+    status: Optional[str] = Query(None, description="Filter by status: pending, accepted, rejected. Omit for all."),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List task suggestions for a specific objective."""
+    # Verify objective belongs to user
+    obj_result = await session.execute(
+        select(Objective).where(and_(Objective.id == objective_id, Objective.user_id == user.id))
+    )
+    if not obj_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Objective not found")
+
+    conditions = [
+        ObjectiveTaskSuggestion.objective_id == objective_id,
+        ObjectiveTaskSuggestion.user_id == user.id,
+    ]
+    if status in ("pending", "accepted", "rejected"):
+        conditions.append(ObjectiveTaskSuggestion.status == status)
+
+    result = await session.execute(
+        select(ObjectiveTaskSuggestion)
+        .where(and_(*conditions))
+        .order_by(ObjectiveTaskSuggestion.priority.asc(), ObjectiveTaskSuggestion.created_at.asc())
+    )
+    suggestions = result.scalars().all()
+    return {"suggestions": [_suggestion_dict(s) for s in suggestions], "count": len(suggestions)}
+
+
+@router.get("/task-suggestions")
+async def list_all_pending_suggestions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query("pending", description="Filter by status: pending, accepted, rejected, all"),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """List task suggestions across all objectives (primarily for mobile review flow)."""
+    conditions = [ObjectiveTaskSuggestion.user_id == user.id]
+    if status != "all":
+        filter_status = status if status in ("pending", "accepted", "rejected") else "pending"
+        conditions.append(ObjectiveTaskSuggestion.status == filter_status)
+
+    result = await session.execute(
+        select(ObjectiveTaskSuggestion)
+        .options(selectinload(ObjectiveTaskSuggestion.objective))
+        .where(and_(*conditions))
+        .order_by(ObjectiveTaskSuggestion.priority.asc(), ObjectiveTaskSuggestion.created_at.desc())
+        .limit(limit)
+    )
+    suggestions = result.scalars().all()
+
+    return {
+        "suggestions": [
+            {
+                **_suggestion_dict(s),
+                "objective_title": s.objective.title if s.objective else None,
+            }
+            for s in suggestions
+        ],
+        "count": len(suggestions),
+        "pending_count": sum(1 for s in suggestions if s.status == "pending"),
+    }
+
+
+@router.post("/task-suggestions/{suggestion_id}/accept")
+async def accept_task_suggestion(
+    suggestion_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Accept a task suggestion — creates a real Task linked to the objective.
+
+    The suggestion status becomes 'accepted' and accepted_task_id is set.
+    Idempotent: re-accepting returns the already-created task.
+    """
+    result = await session.execute(
+        select(ObjectiveTaskSuggestion).where(
+            and_(
+                ObjectiveTaskSuggestion.id == suggestion_id,
+                ObjectiveTaskSuggestion.user_id == user.id,
+            )
+        )
+    )
+    suggestion = result.scalar_one_or_none()
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    if suggestion.status == "accepted" and suggestion.accepted_task_id:
+        # Idempotent: already accepted
+        task_result = await session.execute(
+            select(Task).where(Task.id == suggestion.accepted_task_id)
+        )
+        task = task_result.scalar_one_or_none()
+        return {
+            "ok": True,
+            "already_accepted": True,
+            "suggestion": _suggestion_dict(suggestion),
+            "task": {"id": task.id, "title": task.title} if task else None,
+        }
+
+    if suggestion.status == "rejected":
+        raise HTTPException(status_code=422, detail="Cannot accept a rejected suggestion. Generate new suggestions.")
+
+    # Create the real task
+    task = Task(
+        user_id=user.id,
+        objective_id=suggestion.objective_id,
+        title=suggestion.title,
+        description=suggestion.description,
+        priority=suggestion.priority,
+        status="todo",
+        category="general",
+    )
+    session.add(task)
+    await session.flush()
+
+    suggestion.status = "accepted"
+    suggestion.accepted_task_id = task.id
+    await session.flush()
+
+    return {
+        "ok": True,
+        "already_accepted": False,
+        "suggestion": _suggestion_dict(suggestion),
+        "task": {"id": task.id, "title": task.title, "objective_id": task.objective_id},
+    }
+
+
+@router.post("/task-suggestions/{suggestion_id}/reject")
+async def reject_task_suggestion(
+    suggestion_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reject a task suggestion — marks it rejected without creating a task.
+
+    Idempotent: re-rejecting is a no-op.
+    """
+    result = await session.execute(
+        select(ObjectiveTaskSuggestion).where(
+            and_(
+                ObjectiveTaskSuggestion.id == suggestion_id,
+                ObjectiveTaskSuggestion.user_id == user.id,
+            )
+        )
+    )
+    suggestion = result.scalar_one_or_none()
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    if suggestion.status == "accepted":
+        raise HTTPException(status_code=422, detail="Cannot reject an already accepted suggestion.")
+
+    suggestion.status = "rejected"
+    await session.flush()
+
+    return {"ok": True, "suggestion": _suggestion_dict(suggestion)}

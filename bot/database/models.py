@@ -594,3 +594,27 @@ class ActionQueueItem(Base):
 
     def __repr__(self) -> str:
         return f"<DailySuggestion user_id={self.user_id} date={self.date}>"
+
+
+# ─── Phase B3 — Objective Task Suggestions ────────────────────────────────────
+
+class ObjectiveTaskSuggestion(Base):
+    __tablename__ = "objective_task_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    objective_id: Mapped[int] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    priority: Mapped[int] = mapped_column(Integer, default=3)  # 1=highest, 5=lowest
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    # pending → accepted | rejected
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    accepted_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    objective: Mapped["Objective"] = relationship("Objective", foreign_keys="[ObjectiveTaskSuggestion.objective_id]")
+
+    def __repr__(self) -> str:
+        return f"<ObjectiveTaskSuggestion id={self.id} status={self.status} title={self.title!r}>"
