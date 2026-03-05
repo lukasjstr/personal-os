@@ -617,6 +617,202 @@ function derivePlanSummary(tasks: Task[], events: CalendarEvent[]): string {
   return parts.join(' · ');
 }
 
+// ── Free-slot / day-planning helpers ──────────────────────────────────────
+
+interface FreeSlot {
+  start: Date;
+  end: Date;
+}
+
+interface SuggestedBlock {
+  slotStart: Date;
+  slotEnd: Date;
+  taskTitle: string;
+}
+
+function formatBlockTime(d: Date): string {
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function deriveFreeSlots(events: CalendarEvent[]): FreeSlot[] {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const dayStart = new Date(`${todayStr}T08:00:00`);
+  const dayEnd = new Date(`${todayStr}T22:00:00`);
+  const MIN_SLOT_MS = 30 * 60000;
+
+  const todayEvents = events
+    .filter(e => {
+      if (!e.start_time || e.all_day) return false;
+      const d = new Date(e.start_time);
+      return !isNaN(d.getTime()) && e.start_time.startsWith(todayStr);
+    })
+    .map(e => ({
+      start: new Date(e.start_time),
+      end: e.end_time
+        ? new Date(e.end_time)
+        : new Date(new Date(e.start_time).getTime() + 60 * 60000),
+    }))
+    .filter(e => e.start < dayEnd && e.end > dayStart)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  const slots: FreeSlot[] = [];
+  let cursor = new Date(Math.max(dayStart.getTime(), now.getTime()));
+
+  for (const ev of todayEvents) {
+    const gapEnd = new Date(Math.min(ev.start.getTime(), dayEnd.getTime()));
+    if (gapEnd.getTime() - cursor.getTime() >= MIN_SLOT_MS) {
+      slots.push({ start: new Date(cursor), end: gapEnd });
+    }
+    cursor = new Date(Math.max(cursor.getTime(), ev.end.getTime()));
+    if (cursor >= dayEnd) break;
+  }
+
+  if (cursor < dayEnd && dayEnd.getTime() - cursor.getTime() >= MIN_SLOT_MS) {
+    slots.push({ start: new Date(cursor), end: dayEnd });
+  }
+
+  return slots;
+}
+
+function buildSuggestedBlocks(
+  slots: FreeSlot[],
+  tasks: Task[],
+  priorities: PriorityItem[] | null,
+): SuggestedBlock[] {
+  const topItems = (priorities ?? deriveTopTasks(tasks)).slice(0, 3);
+  const DURATION_MS = 60 * 60000; // 1 hour blocks
+  const blocks: SuggestedBlock[] = [];
+
+  for (let i = 0; i < Math.min(slots.length, topItems.length); i++) {
+    const slot = slots[i];
+    const slotEnd = new Date(
+      Math.min(slot.start.getTime() + DURATION_MS, slot.end.getTime()),
+    );
+    blocks.push({ slotStart: slot.start, slotEnd, taskTitle: topItems[i].title });
+  }
+
+  return blocks;
+}
+
+// ── FreeSlotsPlanCard ──────────────────────────────────────────────────────
+
+function FreeSlotsPlanCard({
+  tasks,
+  events,
+  priorities,
+  loading,
+}: {
+  tasks: Task[];
+  events: CalendarEvent[];
+  priorities: PriorityItem[] | null;
+  loading: boolean;
+}) {
+  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
+  const [accepted, setAccepted] = useState(false);
+
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Free Slots Today" />
+        <ActivityIndicator size="small" color="#f59e0b" style={{ alignSelf: 'flex-start' }} />
+      </Card>
+    );
+  }
+
+  const freeSlots = deriveFreeSlots(events);
+  const suggestedBlocks = buildSuggestedBlocks(freeSlots, tasks, priorities);
+
+  if (freeSlots.length === 0) {
+    return (
+      <Card>
+        <SectionLabel text="Free Slots Today" />
+        <Text style={styles.emptySubtext}>
+          No free slots detected today — your calendar looks full.
+        </Text>
+      </Card>
+    );
+  }
+
+  if (suggestedBlocks.length === 0) {
+    return (
+      <Card>
+        <SectionLabel text="Free Slots Today" />
+        <Text style={styles.emptySubtext}>
+          {freeSlots.length} free slot{freeSlots.length !== 1 ? 's' : ''} available — add tasks to fill them.
+        </Text>
+      </Card>
+    );
+  }
+
+  if (accepted) {
+    return (
+      <Card>
+        <SectionLabel text="Free Slots Today" />
+        <View style={styles.acceptedBanner}>
+          <Text style={styles.acceptedBannerText}>Plan accepted</Text>
+        </View>
+        {suggestedBlocks.map((b, i) => (
+          <View key={i} style={[styles.acceptedBlock, i > 0 && styles.priorityRowBorder]}>
+            <Text style={styles.acceptedBlockTime}>
+              {formatBlockTime(b.slotStart)}–{formatBlockTime(b.slotEnd)}
+            </Text>
+            <Text style={styles.acceptedBlockTask} numberOfLines={1}>
+              {b.taskTitle}
+            </Text>
+          </View>
+        ))}
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaOpen, { marginTop: 12 }]}
+          onPress={() => setAccepted(false)}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaOpenText}>Edit plan</Text>
+        </TouchableOpacity>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionLabel text="Free Slots Today" />
+      <Text style={styles.freeSlotsHint}>
+        {freeSlots.length} free slot{freeSlots.length !== 1 ? 's' : ''} · Suggested plan:
+      </Text>
+
+      {suggestedBlocks.map((b, i) => (
+        <View key={i} style={[styles.suggestedBlockRow, i > 0 && styles.priorityRowBorder]}>
+          <View style={styles.suggestedBlockTimeBox}>
+            <Text style={styles.suggestedBlockTime}>{formatBlockTime(b.slotStart)}</Text>
+            <Text style={styles.suggestedBlockTimeSep}>–</Text>
+            <Text style={styles.suggestedBlockTime}>{formatBlockTime(b.slotEnd)}</Text>
+          </View>
+          <Text style={styles.suggestedBlockTask} numberOfLines={2}>
+            {b.taskTitle}
+          </Text>
+        </View>
+      ))}
+
+      <View style={[styles.ctaRow, { marginTop: 14 }]}>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaAccept]}
+          onPress={() => setAccepted(true)}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaStartText}>Accept plan</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaOpen]}
+          onPress={() => navigation.navigate('Calendar')}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaOpenText}>Adjust</Text>
+        </TouchableOpacity>
+      </View>
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -752,6 +948,15 @@ export default function HomeScreen() {
           loading={
             reflectionApi.loading && weeklyPlanApi.loading && tasksApi.loading
           }
+        />
+
+        {/* ── Day Planning Section ── */}
+        <Text style={styles.sectionTitle}>Day Planning</Text>
+        <FreeSlotsPlanCard
+          tasks={tasks}
+          events={events}
+          priorities={resolvedPriorities}
+          loading={calendarApi.loading && tasksApi.loading}
         />
 
         {/* ── Autopilot Section ── */}
@@ -989,4 +1194,68 @@ const styles = StyleSheet.create({
   },
   ctaWeeklyApply: { backgroundColor: '#059669' },
   ctaWeeklyApplied: { backgroundColor: '#065f46' },
+
+  // Free Slots / Day Planning card
+  freeSlotsHint: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 10,
+  },
+  suggestedBlockRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  suggestedBlockTimeBox: {
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  suggestedBlockTime: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#f59e0b',
+  },
+  suggestedBlockTimeSep: {
+    fontSize: 10,
+    color: '#4b5563',
+  },
+  suggestedBlockTask: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#f9fafb',
+    flex: 1,
+    marginTop: 2,
+  },
+  ctaAccept: { backgroundColor: '#b45309' },
+  acceptedBanner: {
+    backgroundColor: '#064e3b',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  acceptedBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6ee7b7',
+  },
+  acceptedBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  acceptedBlockTime: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#10b981',
+    minWidth: 100,
+  },
+  acceptedBlockTask: {
+    fontSize: 13,
+    color: '#d1d5db',
+    flex: 1,
+  },
 });
