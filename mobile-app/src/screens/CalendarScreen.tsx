@@ -27,6 +27,8 @@ interface CalendarEvent {
   all_day?: boolean | null;
   event_type?: string | null;
   notes?: string | null;
+  linked_task_id?: number | null;
+  linked_task_title?: string | null;
 }
 
 interface CalendarResponse {
@@ -131,6 +133,13 @@ function EventItem({ item, onPress }: EventItemProps) {
               <Text style={[styles.typePillText, { color: dotColor }]}>{item.event_type}</Text>
             </View>
           ) : null}
+          {item.linked_task_id ? (
+            <View style={styles.taskLinkPill}>
+              <Text style={styles.taskLinkPillText} numberOfLines={1}>
+                {item.linked_task_title ?? 'Linked task'}
+              </Text>
+            </View>
+          ) : null}
         </View>
         {notePreview ? (
           <Text style={styles.notePreview} numberOfLines={1}>
@@ -155,6 +164,7 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
 
   // Reset local state when event changes
   React.useEffect(() => {
@@ -162,6 +172,22 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
     setSaveError(null);
     setSaveSuccess(false);
   }, [event?.id]);
+
+  const handleUnlinkTask = useCallback(async () => {
+    if (!event) return;
+    setUnlinking(true);
+    try {
+      await apiRequest(`/api/calendar/${event.id}/link-task`, {
+        method: 'POST',
+        body: JSON.stringify({ task_id: null }),
+      });
+      onSaved({ ...event, linked_task_id: null, linked_task_title: null });
+    } catch {
+      // ignore — UI still reflects previous state
+    } finally {
+      setUnlinking(false);
+    }
+  }, [event, onSaved]);
 
   const handleSave = useCallback(async () => {
     if (!event) return;
@@ -238,6 +264,27 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
                 <Text style={styles.detailValue}>{event.description}</Text>
               </View>
             ) : null}
+
+            {/* Linked task */}
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Linked Task</Text>
+              {event.linked_task_id ? (
+                <View style={styles.linkedTaskRow}>
+                  <Text style={styles.linkedTaskTitle} numberOfLines={1}>
+                    {event.linked_task_title ?? `Task #${event.linked_task_id}`}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.unlinkBtn}
+                    onPress={handleUnlinkTask}
+                    disabled={unlinking}
+                  >
+                    <Text style={styles.unlinkBtnText}>{unlinking ? '…' : 'Unlink'}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={styles.detailValue}>None</Text>
+              )}
+            </View>
 
             {/* Notes editor */}
             <View style={styles.notesSection}>
@@ -513,4 +560,32 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // Task link pill (event card)
+  taskLinkPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    backgroundColor: '#1e1b4b',
+    borderWidth: 1,
+    borderColor: '#4338ca',
+    maxWidth: 160,
+  },
+  taskLinkPillText: { fontSize: 11, fontWeight: '600', color: '#818cf8' },
+
+  // Linked task row (modal)
+  linkedTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  linkedTaskTitle: { flex: 1, fontSize: 14, color: '#818cf8', fontWeight: '500' },
+  unlinkBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#374151',
+  },
+  unlinkBtnText: { fontSize: 12, fontWeight: '600', color: '#9ca3af' },
 });

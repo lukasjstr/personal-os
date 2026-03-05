@@ -119,18 +119,26 @@ async def list_tasks(
             selectinload(Task.objective),
             selectinload(Task.blocked_by),
             selectinload(Task.sub_tasks),
+            selectinload(Task.calendar_events),
         )
         .where(and_(*conditions))
         .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
     )
     tasks = result.scalars().all()
     today = date.today()
+    now = datetime.utcnow()
 
     def _is_unblocked(t: Task) -> bool:
         if not t.blocked_by_task_id:
             return True
         blocker = t.blocked_by
         return blocker is None or blocker.status in ("done", "cancelled")
+
+    def _next_event(t: Task):
+        upcoming = [ce for ce in t.calendar_events if ce.start_time >= now]
+        if not upcoming:
+            return None
+        return min(upcoming, key=lambda ce: ce.start_time)
 
     return {
         "tasks": [
@@ -157,6 +165,9 @@ async def list_tasks(
                     else (t.key_result.objective.title if t.key_result and t.key_result.objective else None)
                 ),
                 "created_at": t.created_at.isoformat(),
+                "linked_event_id": _next_event(t).id if _next_event(t) else None,
+                "linked_event_title": _next_event(t).title if _next_event(t) else None,
+                "linked_event_start": _next_event(t).start_time.isoformat() if _next_event(t) else None,
             }
             for t in tasks
         ]
@@ -411,7 +422,9 @@ def _event_dict(e: CalendarEvent) -> dict:
         "end_time": e.end_time.isoformat() if e.end_time else None,
         "all_day": e.all_day,
         "event_type": e.event_type,
+        "notes": e.description,
         "linked_task_id": e.linked_task_id,
+        "linked_task_title": e.linked_task.title if e.linked_task else None,
     }
 
 
@@ -428,6 +441,7 @@ async def list_calendar(
     end = now + timedelta(days=days)
     result = await session.execute(
         select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
         .where(and_(
             CalendarEvent.user_id == user.id,
             CalendarEvent.start_time >= start,
@@ -446,6 +460,7 @@ class CalendarEventUpdate(BaseModel):
     end_time: Optional[str] = None
     all_day: Optional[bool] = None
     event_type: Optional[str] = None
+    linked_task_id: Optional[int] = None
 
 
 class CalendarNoteUpdate(BaseModel):
@@ -461,7 +476,9 @@ async def update_calendar_event(
 ) -> dict:
     """Update a calendar event."""
     result = await session.execute(
-        select(CalendarEvent).where(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
+        .where(
             CalendarEvent.id == event_id,
             CalendarEvent.user_id == user.id,
         )
@@ -478,8 +495,15 @@ async def update_calendar_event(
         event.all_day = body.all_day
     if body.event_type is not None:
         event.event_type = body.event_type
+    if body.linked_task_id is not None:
+        # verify task belongs to user
+        task_res = await session.execute(
+            select(Task).where(Task.id == body.linked_task_id, Task.user_id == user.id)
+        )
+        if not task_res.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        event.linked_task_id = body.linked_task_id
     if body.start_time is not None:
-        from bot.core.calendar import create_calendar_event as _ccal  # noqa: F401
         fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"]
         for fmt in fmts:
             try:
@@ -497,6 +521,7 @@ async def update_calendar_event(
                 continue
 
     await session.flush()
+    await session.refresh(event, ["linked_task"])
     return _event_dict(event)
 
 
@@ -509,7 +534,9 @@ async def add_calendar_notes(
 ) -> dict:
     """Add or update notes for a calendar event."""
     result = await session.execute(
-        select(CalendarEvent).where(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
+        .where(
             CalendarEvent.id == event_id,
             CalendarEvent.user_id == user.id,
         )
@@ -520,6 +547,65 @@ async def add_calendar_notes(
 
     event.description = body.notes
     await session.flush()
+    return _event_dict(event)
+
+
+class CalendarLinkTaskBody(BaseModel):
+    task_id: Optional[int] = None  # null to detach
+
+
+@router.post("/calendar/{event_id}/link-task")
+async def link_calendar_task(
+    event_id: int,
+    body: CalendarLinkTaskBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Attach or detach a task from a calendar event. Pass task_id=null to detach."""
+    result = await session.execute(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
+        .where(CalendarEvent.id == event_id, CalendarEvent.user_id == user.id)
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event nicht gefunden")
+
+    if body.task_id is None:
+        event.linked_task_id = None
+    else:
+        task_res = await session.execute(
+            select(Task).where(Task.id == body.task_id, Task.user_id == user.id)
+        )
+        task = task_res.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        event.linked_task_id = body.task_id
+
+    await session.flush()
+    await session.refresh(event, ["linked_task"])
+    return _event_dict(event)
+
+
+@router.delete("/calendar/{event_id}/link-task")
+async def unlink_calendar_task(
+    event_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Remove the task linkage from a calendar event."""
+    result = await session.execute(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
+        .where(CalendarEvent.id == event_id, CalendarEvent.user_id == user.id)
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event nicht gefunden")
+
+    event.linked_task_id = None
+    await session.flush()
+    await session.refresh(event, ["linked_task"])
     return _event_dict(event)
 
 

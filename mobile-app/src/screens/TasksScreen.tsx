@@ -32,6 +32,9 @@ interface Task {
   is_unblocked: boolean;
   subtask_count: number;
   objective_title: string | null;
+  linked_event_id: number | null;
+  linked_event_title: string | null;
+  linked_event_start: string | null;
 }
 
 interface TasksResponse {
@@ -101,6 +104,17 @@ function SubtaskCountBadge({ count }: { count: number }) {
   );
 }
 
+function CalendarBadge({ eventTitle }: { eventTitle?: string | null }) {
+  const label = eventTitle ? eventTitle : 'Scheduled';
+  return (
+    <View style={styles.calendarBadge}>
+      <Text style={styles.calendarBadgeText} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function TaskItem({
   item,
   isSubtask,
@@ -127,6 +141,9 @@ function TaskItem({
             {!isSubtask && subtaskCount > 0 && (
               <SubtaskCountBadge count={subtaskCount} />
             )}
+            {item.linked_event_id ? (
+              <CalendarBadge eventTitle={item.linked_event_title} />
+            ) : null}
             <StatusChip status={item.status} />
           </View>
         </View>
@@ -616,6 +633,16 @@ const styles = StyleSheet.create({
     borderColor: '#374151',
   },
   subtaskCountText: { fontSize: 11, fontWeight: '500', color: '#9ca3af' },
+  calendarBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#0c1a2e',
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    maxWidth: 100,
+  },
+  calendarBadgeText: { fontSize: 11, fontWeight: '500', color: '#60a5fa' },
   taskMeta: { flexDirection: 'row', gap: 12, marginTop: 6 },
   metaText: { fontSize: 12, color: '#9ca3af' },
   overdueText: { color: '#f87171' },
