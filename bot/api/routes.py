@@ -31,8 +31,23 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/health")
-async def api_health() -> dict:
-    return {"status": "ok", "version": "3.0.0"}
+async def api_health(session: AsyncSession = Depends(get_db)) -> dict:
+    from bot.core.monitoring import health_probe
+    probe = await health_probe(session)
+    return {"status": "ok", "version": "8.0.0", **probe}
+
+
+@router.get("/admin/errors")
+async def get_error_log(
+    limit: int = Query(50, ge=1, le=500),
+    level: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    _session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return recent structured error log entries (admin/debug use)."""
+    from bot.core.monitoring import get_recent_errors
+    errors = get_recent_errors(limit=limit, level=level)
+    return {"errors": errors, "count": len(errors)}
 
 
 @router.get("/objectives")
