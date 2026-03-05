@@ -19,18 +19,32 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function normalizeToken(raw: string): string {
+    let t = raw.trim();
+    t = t.replace(/^Bearer\s+/i, '').trim();
+    t = t.replace(/^`+|`+$/g, '').trim();
+    t = t.replace(/^['\"]+|['\"]+$/g, '').trim();
+
+    // If user pasted a full message, try to extract the longest token-like chunk.
+    const candidates = t.match(/[A-Za-z0-9_\-]{20,}/g);
+    if (candidates && candidates.length > 0) {
+      t = candidates.sort((a, b) => b.length - a.length)[0];
+    }
+    return t;
+  }
+
   async function handleConnect() {
-    const trimmed = inputToken.trim();
-    if (!trimmed) {
+    const normalized = normalizeToken(inputToken);
+    if (!normalized) {
       setError('Please enter your API token.');
       return;
     }
     setLoading(true);
     setError(null);
-    const success = await signIn(trimmed);
+    const success = await signIn(normalized);
     setLoading(false);
     if (!success) {
-      setError('Invalid token — please check and try again.');
+      setError('Invalid token (or backend unreachable). Get a fresh /token and try again.');
     }
   }
 

@@ -71,4 +71,4 @@ After starting, Expo CLI prints:
 
 ## Backend URL
 
-The app connects to the Personal OS API. On first launch you can configure the backend URL in **Settings > Tester Info**. Default: `https://95.111.252.176`.
+The app connects to the Personal OS API. On first launch you can configure the backend URL in **Settings > Tester Info**. Default: `http://95.111.252.176:3000`.
