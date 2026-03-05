@@ -525,22 +525,87 @@ async def update_calendar_event(
         if not task_res.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         event.linked_task_id = body.linked_task_id
+    _time_fmts = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"]
+    new_start = event.start_time
+    new_end = event.end_time
     if body.start_time is not None:
-        fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"]
-        for fmt in fmts:
+        for fmt in _time_fmts:
             try:
-                event.start_time = datetime.strptime(body.start_time, fmt)
+                new_start = datetime.strptime(body.start_time, fmt)
                 break
             except ValueError:
                 continue
     if body.end_time is not None:
-        fmts = ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"]
-        for fmt in fmts:
+        for fmt in _time_fmts:
             try:
-                event.end_time = datetime.strptime(body.end_time, fmt)
+                new_end = datetime.strptime(body.end_time, fmt)
                 break
             except ValueError:
                 continue
+    if new_start is not None and new_end is not None and new_end <= new_start:
+        raise HTTPException(status_code=422, detail="end_time must be after start_time")
+    if body.start_time is not None:
+        event.start_time = new_start
+    if body.end_time is not None:
+        event.end_time = new_end
+
+    await session.flush()
+    await session.refresh(event, ["linked_task"])
+    return _event_dict(event)
+
+
+class CalendarRescheduleBody(BaseModel):
+    start_time: str
+    end_time: Optional[str] = None
+
+
+@router.patch("/calendar/{event_id}/reschedule")
+async def reschedule_calendar_event(
+    event_id: int,
+    body: CalendarRescheduleBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reschedule a calendar event: update start/end times with validation."""
+    result = await session.execute(
+        select(CalendarEvent)
+        .options(selectinload(CalendarEvent.linked_task))
+        .where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    _time_fmts = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"]
+    new_start: Optional[datetime] = None
+    for fmt in _time_fmts:
+        try:
+            new_start = datetime.strptime(body.start_time, fmt)
+            break
+        except ValueError:
+            continue
+    if new_start is None:
+        raise HTTPException(status_code=422, detail="Invalid start_time format")
+
+    new_end: Optional[datetime] = None
+    if body.end_time is not None:
+        for fmt in _time_fmts:
+            try:
+                new_end = datetime.strptime(body.end_time, fmt)
+                break
+            except ValueError:
+                continue
+        if new_end is None:
+            raise HTTPException(status_code=422, detail="Invalid end_time format")
+        if new_end <= new_start:
+            raise HTTPException(status_code=422, detail="end_time must be after start_time")
+
+    event.start_time = new_start
+    if new_end is not None:
+        event.end_time = new_end
 
     await session.flush()
     await session.refresh(event, ["linked_task"])

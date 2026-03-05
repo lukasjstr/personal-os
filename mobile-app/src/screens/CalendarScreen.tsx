@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -37,15 +37,16 @@ interface CalendarResponse {
 
 // ── Filter ─────────────────────────────────────────────────────────────────
 
-type FilterKey = 'today' | 'next7' | 'next30';
+type FilterKey = 'today' | 'next7' | 'next30' | 'day';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'today', label: 'Today' },
-  { key: 'next7', label: 'Next 7 Days' },
-  { key: 'next30', label: 'Next 30 Days' },
+  { key: 'next7', label: '7 Days' },
+  { key: 'next30', label: '30 Days' },
+  { key: 'day', label: 'Timeline' },
 ];
 
-function filterEvents(events: CalendarEvent[], filter: FilterKey): CalendarEvent[] {
+function filterEvents(events: CalendarEvent[], filter: FilterKey, dayRef?: Date): CalendarEvent[] {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const todayEnd = new Date(todayStart.getTime() + 86400_000);
@@ -63,9 +64,16 @@ function filterEvents(events: CalendarEvent[], filter: FilterKey): CalendarEvent
       const cutoff = new Date(todayStart.getTime() + 7 * 86400_000);
       return start >= todayStart && start < cutoff;
     }
-    // next30
-    const cutoff = new Date(todayStart.getTime() + 30 * 86400_000);
-    return start >= todayStart && start < cutoff;
+    if (filter === 'next30') {
+      const cutoff = new Date(todayStart.getTime() + 30 * 86400_000);
+      return start >= todayStart && start < cutoff;
+    }
+    if (filter === 'day' && dayRef) {
+      const dayStart = new Date(dayRef.getFullYear(), dayRef.getMonth(), dayRef.getDate());
+      const dayEnd = new Date(dayStart.getTime() + 86400_000);
+      return start >= dayStart && start < dayEnd;
+    }
+    return false;
   });
 }
 
@@ -107,7 +115,18 @@ function typeColor(type: string | null | undefined): string {
   }
 }
 
-// ── Event card ─────────────────────────────────────────────────────────────
+/** Format a Date to local ISO datetime string YYYY-MM-DDTHH:MM */
+function toLocalISO(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Adjust a Date by ±minutes, returning a new Date */
+function shiftMinutes(d: Date, delta: number): Date {
+  return new Date(d.getTime() + delta * 60_000);
+}
+
+// ── Event card (list view) ─────────────────────────────────────────────────
 
 interface EventItemProps {
   item: CalendarEvent;
@@ -151,7 +170,181 @@ function EventItem({ item, onPress }: EventItemProps) {
   );
 }
 
-// ── Event detail modal ─────────────────────────────────────────────────────
+// ── Day Timeline ──────────────────────────────────────────────────────────
+
+const TIMELINE_START_HOUR = 6;   // 6:00 AM
+const TIMELINE_END_HOUR = 23;    // 11:00 PM
+const HOUR_HEIGHT = 64;          // px per hour
+
+function formatDayHeader(d: Date): string {
+  const today = new Date();
+  const isToday =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  const label = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return isToday ? `Today — ${label}` : label;
+}
+
+interface DayTimelineProps {
+  events: CalendarEvent[];
+  day: Date;
+  onDayChange: (d: Date) => void;
+  onEventPress: (ev: CalendarEvent) => void;
+}
+
+function DayTimeline({ events, day, onDayChange, onEventPress }: DayTimelineProps) {
+  const scrollRef = useRef<ScrollView>(null);
+  const totalHours = TIMELINE_END_HOUR - TIMELINE_START_HOUR;
+  const totalHeight = totalHours * HOUR_HEIGHT;
+
+  // Current time indicator
+  const now = new Date();
+  const nowFrac = now.getHours() + now.getMinutes() / 60;
+  const showNowLine =
+    day.toDateString() === now.toDateString() &&
+    nowFrac >= TIMELINE_START_HOUR &&
+    nowFrac < TIMELINE_END_HOUR;
+  const nowTop = (nowFrac - TIMELINE_START_HOUR) * HOUR_HEIGHT;
+
+  // Timed events only
+  const timedEvents = useMemo(
+    () => events.filter(ev => ev.start_time && !ev.all_day),
+    [events],
+  );
+
+  // All-day events
+  const allDayEvents = useMemo(
+    () => events.filter(ev => ev.all_day),
+    [events],
+  );
+
+  return (
+    <View style={styles.timelineWrapper}>
+      {/* Day navigation */}
+      <View style={styles.dayNav}>
+        <TouchableOpacity
+          style={styles.dayNavBtn}
+          onPress={() => onDayChange(new Date(day.getTime() - 86400_000))}
+          hitSlop={8}
+        >
+          <Text style={styles.dayNavArrow}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.dayNavLabel}>{formatDayHeader(day)}</Text>
+        <TouchableOpacity
+          style={styles.dayNavBtn}
+          onPress={() => onDayChange(new Date(day.getTime() + 86400_000))}
+          hitSlop={8}
+        >
+          <Text style={styles.dayNavArrow}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* All-day strip */}
+      {allDayEvents.length > 0 && (
+        <View style={styles.allDayStrip}>
+          <Text style={styles.allDayLabel}>All day</Text>
+          <View style={styles.allDayEvents}>
+            {allDayEvents.map(ev => (
+              <TouchableOpacity
+                key={ev.id}
+                style={[styles.allDayPill, { backgroundColor: typeColor(ev.event_type) + '33', borderColor: typeColor(ev.event_type) }]}
+                onPress={() => onEventPress(ev)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.allDayPillText, { color: typeColor(ev.event_type) }]} numberOfLines={1}>
+                  {ev.title ?? 'All-day event'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Scrollable timeline */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.timelineScroll}
+        showsVerticalScrollIndicator={false}
+        onLayout={() => {
+          // Scroll to 1hr before current time or 8am
+          const scrollTo = Math.max(0, (Math.max(TIMELINE_START_HOUR, nowFrac - 1) - TIMELINE_START_HOUR) * HOUR_HEIGHT);
+          scrollRef.current?.scrollTo({ y: scrollTo, animated: false });
+        }}
+      >
+        <View style={{ height: totalHeight, position: 'relative', marginLeft: 52 }}>
+          {/* Hour grid */}
+          {Array.from({ length: totalHours + 1 }, (_, i) => i).map(i => {
+            const hour = TIMELINE_START_HOUR + i;
+            return (
+              <View key={hour} style={[styles.hourRow, { top: i * HOUR_HEIGHT }]}>
+                <Text style={styles.hourLabel}>
+                  {String(hour).padStart(2, '0')}:00
+                </Text>
+                <View style={styles.hourLine} />
+              </View>
+            );
+          })}
+
+          {/* Current time indicator */}
+          {showNowLine && (
+            <View style={[styles.nowLine, { top: nowTop }]}>
+              <View style={styles.nowDot} />
+              <View style={styles.nowLineBar} />
+            </View>
+          )}
+
+          {/* Event blocks */}
+          {timedEvents.map(ev => {
+            const start = safeDate(ev.start_time);
+            if (!start) return null;
+            const startFrac = start.getHours() + start.getMinutes() / 60;
+            if (startFrac >= TIMELINE_END_HOUR || startFrac < TIMELINE_START_HOUR) return null;
+
+            const end = safeDate(ev.end_time);
+            const durationHrs = end
+              ? (end.getTime() - start.getTime()) / 3_600_000
+              : 1;
+            const clamped = Math.max(0.25, Math.min(durationHrs, TIMELINE_END_HOUR - startFrac));
+
+            const top = (startFrac - TIMELINE_START_HOUR) * HOUR_HEIGHT + 1;
+            const height = Math.max(28, clamped * HOUR_HEIGHT - 4);
+            const color = typeColor(ev.event_type);
+
+            return (
+              <TouchableOpacity
+                key={ev.id}
+                style={[
+                  styles.eventBlock,
+                  {
+                    top,
+                    height,
+                    borderLeftColor: color,
+                    backgroundColor: color + '22',
+                  },
+                ]}
+                onPress={() => onEventPress(ev)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.eventBlockTitle, { color }]} numberOfLines={1}>
+                  {ev.title ?? 'Untitled'}
+                </Text>
+                {height > 40 && (
+                  <Text style={styles.eventBlockTime} numberOfLines={1}>
+                    {start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                    {end ? ` – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+// ── Event detail / reschedule modal ────────────────────────────────────────
 
 interface EventModalProps {
   event: CalendarEvent | null;
@@ -166,12 +359,60 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
 
-  // Reset local state when event changes
+  // Reschedule state
+  const [editStart, setEditStart] = useState<Date | null>(() => safeDate(event?.start_time ?? null));
+  const [editEnd, setEditEnd] = useState<Date | null>(() => safeDate(event?.end_time ?? null));
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [rescheduleSuccess, setRescheduleSuccess] = useState(false);
+
   React.useEffect(() => {
     setNotes(event?.notes ?? '');
     setSaveError(null);
     setSaveSuccess(false);
+    setEditStart(safeDate(event?.start_time ?? null));
+    setEditEnd(safeDate(event?.end_time ?? null));
+    setRescheduleError(null);
+    setRescheduleSuccess(false);
   }, [event?.id]);
+
+  const adjustTime = useCallback((
+    setter: React.Dispatch<React.SetStateAction<Date | null>>,
+    delta: number,
+  ) => {
+    setter(prev => prev ? shiftMinutes(prev, delta) : null);
+    setRescheduleError(null);
+    setRescheduleSuccess(false);
+  }, []);
+
+  const handleReschedule = useCallback(async () => {
+    if (!event || !editStart) return;
+
+    if (editEnd && editEnd <= editStart) {
+      setRescheduleError('End time must be after start time');
+      return;
+    }
+
+    setRescheduling(true);
+    setRescheduleError(null);
+    setRescheduleSuccess(false);
+
+    try {
+      const body: Record<string, string> = { start_time: toLocalISO(editStart) };
+      if (editEnd) body.end_time = toLocalISO(editEnd);
+
+      const updated = await apiRequest<CalendarEvent>(`/api/calendar/${event.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      setRescheduleSuccess(true);
+      onSaved(updated);
+    } catch (err) {
+      setRescheduleError(err instanceof Error ? err.message : 'Failed to reschedule');
+    } finally {
+      setRescheduling(false);
+    }
+  }, [event, editStart, editEnd, onSaved]);
 
   const handleUnlinkTask = useCallback(async () => {
     if (!event) return;
@@ -195,7 +436,6 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
     setSaveError(null);
     setSaveSuccess(false);
 
-    // Try POST /api/calendar/{id}/notes first, fallback to PUT /api/calendar/{id}
     try {
       await apiRequest(`/api/calendar/${event.id}/notes`, {
         method: 'POST',
@@ -224,6 +464,7 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
 
   const timeLabel = formatEventTime(event.start_time, event.end_time, event.all_day);
   const dotColor = typeColor(event.event_type);
+  const showReschedule = !event.all_day && !!editStart;
 
   return (
     <Modal visible={!!event} animationType="slide" transparent onRequestClose={onClose}>
@@ -256,6 +497,78 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
                 <Text style={styles.detailValue}>{timeLabel}</Text>
               </View>
             ) : null}
+
+            {/* ── Quick Reschedule ────────────────────────────────────── */}
+            {showReschedule && (
+              <View style={styles.rescheduleSection}>
+                <Text style={styles.rescheduleSectionTitle}>Quick Reschedule</Text>
+
+                {/* Start time row */}
+                <View style={styles.rescheduleRow}>
+                  <Text style={styles.rescheduleRowLabel}>Start</Text>
+                  <View style={styles.timeAdjustRow}>
+                    <TouchableOpacity
+                      style={styles.timeAdjBtn}
+                      onPress={() => adjustTime(setEditStart, -15)}
+                    >
+                      <Text style={styles.timeAdjBtnText}>−15m</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.timeDisplay}>
+                      {editStart.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.timeAdjBtn}
+                      onPress={() => adjustTime(setEditStart, 15)}
+                    >
+                      <Text style={styles.timeAdjBtnText}>+15m</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* End time row */}
+                {editEnd && (
+                  <View style={styles.rescheduleRow}>
+                    <Text style={styles.rescheduleRowLabel}>End</Text>
+                    <View style={styles.timeAdjustRow}>
+                      <TouchableOpacity
+                        style={styles.timeAdjBtn}
+                        onPress={() => adjustTime(setEditEnd, -15)}
+                      >
+                        <Text style={styles.timeAdjBtnText}>−15m</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.timeDisplay}>
+                        {editEnd.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.timeAdjBtn}
+                        onPress={() => adjustTime(setEditEnd, 15)}
+                      >
+                        <Text style={styles.timeAdjBtnText}>+15m</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {rescheduleSuccess && (
+                  <Text style={styles.successText}>Rescheduled!</Text>
+                )}
+                {rescheduleError && (
+                  <Text style={styles.errorText}>{rescheduleError}</Text>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.rescheduleBtn, rescheduling && styles.saveBtnDisabled]}
+                  onPress={handleReschedule}
+                  disabled={rescheduling}
+                >
+                  {rescheduling ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.rescheduleBtnText}>Save Time</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Description */}
             {event.description ? (
@@ -304,7 +617,6 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
               />
             </View>
 
-            {/* Feedback */}
             {saveSuccess ? (
               <Text style={styles.successText}>Notes saved!</Text>
             ) : null}
@@ -312,7 +624,6 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
               <Text style={styles.errorText}>{saveError}</Text>
             ) : null}
 
-            {/* Save button */}
             <TouchableOpacity
               style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
               onPress={handleSave}
@@ -336,30 +647,32 @@ function EventModal({ event, onClose, onSaved }: EventModalProps) {
 export default function CalendarScreen() {
   const { data, loading, error, refetch } = useApi<CalendarResponse>('/api/calendar');
   const [filter, setFilter] = useState<FilterKey>('next7');
+  const [selectedDay, setSelectedDay] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  // Local overrides for optimistic notes updates
-  const [notesOverrides, setNotesOverrides] = useState<Record<number, string>>({});
+  const [overrides, setOverrides] = useState<Record<number, Partial<CalendarEvent>>>({});
 
   const rawEvents: CalendarEvent[] = data?.events ?? [];
 
-  // Merge notes overrides into events
-  const mergedEvents = rawEvents.map(ev =>
-    notesOverrides[ev.id] !== undefined ? { ...ev, notes: notesOverrides[ev.id] } : ev,
+  // Merge local overrides (notes, reschedule) into events
+  const mergedEvents = useMemo(
+    () => rawEvents.map(ev => overrides[ev.id] ? { ...ev, ...overrides[ev.id] } : ev),
+    [rawEvents, overrides],
   );
 
-  const filteredEvents = filterEvents(mergedEvents, filter);
+  const filteredEvents = useMemo(
+    () => filterEvents(mergedEvents, filter, selectedDay),
+    [mergedEvents, filter, selectedDay],
+  );
 
-  const handleEventPress = useCallback((ev: CalendarEvent) => {
-    setSelectedEvent(ev);
-  }, []);
-
-  const handleModalClose = useCallback(() => {
-    setSelectedEvent(null);
-  }, []);
+  const handleEventPress = useCallback((ev: CalendarEvent) => setSelectedEvent(ev), []);
+  const handleModalClose = useCallback(() => setSelectedEvent(null), []);
 
   const handleSaved = useCallback((updated: CalendarEvent) => {
-    setNotesOverrides(prev => ({ ...prev, [updated.id]: updated.notes ?? '' }));
-    // Update selected event to reflect new notes without closing
+    setOverrides(prev => ({ ...prev, [updated.id]: updated }));
     setSelectedEvent(updated);
   }, []);
 
@@ -398,20 +711,33 @@ export default function CalendarScreen() {
         ))}
       </View>
 
-      <FlatList
-        data={filteredEvents}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => <EventItem item={item} onPress={handleEventPress} />}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={refetch} tintColor="#6366f1" />
-        }
-        ListEmptyComponent={
-          <View style={styles.center}>
-            <Text style={styles.emptyText}>No events for this period.</Text>
-          </View>
-        }
-      />
+      {filter === 'day' ? (
+        <DayTimeline
+          events={filteredEvents}
+          day={selectedDay}
+          onDayChange={d => {
+            const clean = new Date(d);
+            clean.setHours(0, 0, 0, 0);
+            setSelectedDay(clean);
+          }}
+          onEventPress={handleEventPress}
+        />
+      ) : (
+        <FlatList
+          data={filteredEvents}
+          keyExtractor={item => String(item.id)}
+          renderItem={({ item }) => <EventItem item={item} onPress={handleEventPress} />}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={refetch} tintColor="#6366f1" />
+          }
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.emptyText}>No events for this period.</Text>
+            </View>
+          }
+        />
+      )}
 
       <EventModal
         event={selectedEvent}
@@ -504,7 +830,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1f2937',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '85%',
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -534,7 +860,14 @@ const styles = StyleSheet.create({
   modalBody: { padding: 20 },
   metaRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   detailRow: { marginBottom: 14 },
-  detailLabel: { fontSize: 11, color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
+  detailLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
   detailValue: { fontSize: 14, color: '#d1d5db' },
 
   notesSection: { marginBottom: 12 },
@@ -588,4 +921,171 @@ const styles = StyleSheet.create({
     backgroundColor: '#374151',
   },
   unlinkBtnText: { fontSize: 12, fontWeight: '600', color: '#9ca3af' },
+
+  // ── Day Timeline ──────────────────────────────────────────────────────────
+  timelineWrapper: { flex: 1 },
+
+  dayNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  dayNavBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1f2937',
+    borderRadius: 8,
+  },
+  dayNavArrow: { fontSize: 22, color: '#9ca3af', lineHeight: 26 },
+  dayNavLabel: { fontSize: 14, fontWeight: '600', color: '#f9fafb' },
+
+  allDayStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#1f2937',
+    gap: 8,
+  },
+  allDayLabel: { fontSize: 10, color: '#6b7280', fontWeight: '600', width: 40 },
+  allDayEvents: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  allDayPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  allDayPillText: { fontSize: 11, fontWeight: '600' },
+
+  timelineScroll: { flex: 1 },
+
+  hourRow: {
+    position: 'absolute',
+    left: -52,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    height: HOUR_HEIGHT,
+  },
+  hourLabel: {
+    width: 44,
+    fontSize: 10,
+    color: '#4b5563',
+    textAlign: 'right',
+    paddingRight: 8,
+    lineHeight: 14,
+  },
+  hourLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#1f2937',
+    marginTop: 6,
+  },
+
+  nowLine: {
+    position: 'absolute',
+    left: 0,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  nowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    marginLeft: -4,
+  },
+  nowLineBar: {
+    flex: 1,
+    height: 1.5,
+    backgroundColor: '#ef4444',
+  },
+
+  eventBlock: {
+    position: 'absolute',
+    left: 4,
+    right: 8,
+    borderLeftWidth: 3,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
+  eventBlockTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+  },
+  eventBlockTime: {
+    fontSize: 10,
+    color: '#9ca3af',
+    lineHeight: 14,
+  },
+
+  // ── Reschedule section ────────────────────────────────────────────────────
+  rescheduleSection: {
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  rescheduleSectionTitle: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  rescheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  rescheduleRowLabel: {
+    width: 40,
+    fontSize: 12,
+    color: '#9ca3af',
+    fontWeight: '600',
+  },
+  timeAdjustRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timeAdjBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  timeAdjBtnText: { fontSize: 12, color: '#d1d5db', fontWeight: '600' },
+  timeDisplay: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#f9fafb',
+  },
+  rescheduleBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  rescheduleBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });
