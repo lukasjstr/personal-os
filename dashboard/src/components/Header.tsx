@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import React from "react";
 import { Moon, Sun, RefreshCw } from "lucide-react";
 import { mutate } from "swr";
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
+  action?: React.ReactNode;
 }
 
-export default function Header({ title, subtitle }: HeaderProps) {
+export default function Header({ title, subtitle, action }: HeaderProps) {
   const [dark, setDark] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -48,6 +50,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
         {subtitle && <p className="text-zinc-400 text-sm mt-0.5">{subtitle}</p>}
       </div>
       <div className="flex items-center gap-2">
+        {action}
         <button
           onClick={refresh}
           className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"

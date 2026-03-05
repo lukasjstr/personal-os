@@ -1508,6 +1508,29 @@ async def generate_token(
 
 # ─── CRUD: Pydantic request bodies ────────────────────────────────────────────
 
+class CreateObjectiveBody(BaseModel):
+    title: str
+    category: Optional[str] = "personal"
+    description: Optional[str] = None
+    target_date: Optional[str] = None
+
+
+class CreateTaskBody(BaseModel):
+    title: str
+    category: Optional[str] = None
+    priority: Optional[int] = 3
+    due_date: Optional[str] = None
+    objective_id: Optional[int] = None
+    description: Optional[str] = None
+
+
+class CreateRoutineBody(BaseModel):
+    title: str
+    description: Optional[str] = None
+    frequency_human: Optional[str] = "Täglich"
+    time_of_day: Optional[str] = "morning"
+
+
 class UpdateObjectiveBody(BaseModel):
     title: Optional[str] = None
     category: Optional[str] = None
@@ -1539,6 +1562,32 @@ class UpdateBrainDumpBody(BaseModel):
 
 
 # ─── Objectives CRUD ──────────────────────────────────────────────────────────
+
+@router.post("/objectives")
+async def create_objective(
+    body: CreateObjectiveBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new objective."""
+    target = None
+    if body.target_date:
+        try:
+            target = date.fromisoformat(body.target_date)
+        except ValueError:
+            pass
+    obj = Objective(
+        user_id=user.id,
+        title=body.title.strip(),
+        category=body.category or "personal",
+        description=body.description or None,
+        target_date=target,
+        status="active",
+    )
+    session.add(obj)
+    await session.flush()
+    return {"ok": True, "id": obj.id, "title": obj.title}
+
 
 @router.put("/objectives/{objective_id}")
 async def update_objective(
@@ -1609,6 +1658,35 @@ async def delete_objective(
 
 # ─── Tasks CRUD ───────────────────────────────────────────────────────────────
 
+@router.post("/tasks")
+async def create_task(
+    body: CreateTaskBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new task."""
+    due = None
+    if body.due_date:
+        try:
+            due = date.fromisoformat(body.due_date)
+        except ValueError:
+            pass
+    task = Task(
+        user_id=user.id,
+        title=body.title.strip(),
+        description=body.description or None,
+        category=body.category or None,
+        priority=max(1, min(5, body.priority or 3)),
+        due_date=due,
+        objective_id=body.objective_id or None,
+        status="todo",
+    )
+    session.add(task)
+    await session.flush()
+    _, _, leveled_up, _ = await _add_xp(user.id, 5, "task_created", session)
+    return {"ok": True, "id": task.id, "title": task.title, "leveled_up": leveled_up}
+
+
 @router.put("/tasks/{task_id}")
 async def update_task(
     task_id: int,
@@ -1666,6 +1744,27 @@ async def delete_task(
 
 
 # ─── Routines CRUD ────────────────────────────────────────────────────────────
+
+@router.post("/routines")
+async def create_routine(
+    body: CreateRoutineBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new routine."""
+    routine = Routine(
+        user_id=user.id,
+        title=body.title.strip(),
+        description=body.description or None,
+        frequency_human=body.frequency_human or "Täglich",
+        time_of_day=body.time_of_day or "morning",
+        status="active",
+        sort_order=0,
+    )
+    session.add(routine)
+    await session.flush()
+    return {"ok": True, "id": routine.id, "title": routine.title}
+
 
 @router.put("/routines/{routine_id}")
 async def update_routine(

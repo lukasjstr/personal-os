@@ -9,7 +9,7 @@ import { useAllTasks, useObjectives } from "@/hooks/useApi";
 import { CATEGORY_COLORS, PRIORITY_LABEL, formatDate, formatTimeAgo, truncate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Task } from "@/lib/api";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 
 const STATUS_SECTIONS = [
   { key: "todo", label: "Offen", dotColor: "bg-zinc-400" },
@@ -179,6 +179,110 @@ function EditTaskModal({
             className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium"
           >
             {saving ? "Speichern…" : "Speichern"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create Modal ─────────────────────────────────────────────────────────────
+
+function CreateTaskModal({
+  objectives,
+  onSave,
+  onClose,
+  saving,
+}: {
+  objectives: { id: number; title: string }[];
+  onSave: (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({
+    title: "",
+    category: "general",
+    priority: 3,
+    due_date: "",
+    objective_id: 0,
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+        <h3 className="text-white font-semibold text-lg mb-5">Neuer Task</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Titel *</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              placeholder="Task-Titel"
+              autoFocus
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Kategorie</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                {TASK_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Priorität</label>
+              <select
+                value={form.priority}
+                onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={1}>P1 – Höchste</option>
+                <option value={2}>P2 – Hoch</option>
+                <option value={3}>P3 – Mittel</option>
+                <option value={4}>P4 – Niedrig</option>
+                <option value={5}>P5 – Niedrigste</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Fällig am</label>
+            <input
+              type="date"
+              value={form.due_date}
+              onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          {objectives.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Objective</label>
+              <select
+                value={form.objective_id}
+                onChange={(e) => setForm((f) => ({ ...f, objective_id: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={0}>— kein Objective —</option>
+                {objectives.map((o) => <option key={o.id} value={o.id}>{o.title}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 justify-end mt-6">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">
+            Abbrechen
+          </button>
+          <button
+            onClick={() => onSave({ title: form.title.trim(), category: form.category || null, priority: form.priority, due_date: form.due_date || null, objective_id: form.objective_id > 0 ? form.objective_id : null })}
+            disabled={saving || !form.title.trim()}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium"
+          >
+            {saving ? "Erstellen…" : "Task erstellen"}
           </button>
         </div>
       </div>
@@ -377,6 +481,7 @@ export default function TasksPage() {
   const [objectiveFilter, setObjectiveFilter] = useState<string>("");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { toasts, addToast, dismissToast } = useToast();
@@ -384,6 +489,23 @@ export default function TasksPage() {
   const objectives = useMemo(
     () => (objData?.objectives ?? []).map((o) => ({ id: o.id, title: o.title })),
     [objData]
+  );
+
+  const handleCreate = useCallback(
+    async (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null }) => {
+      setSaving(true);
+      try {
+        await api.createTask(data);
+        await mutate();
+        addToast("Task erstellt", "success");
+        setCreating(false);
+      } catch {
+        addToast("Fehler beim Erstellen", "error");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [mutate, addToast]
   );
 
   const handleEdit = useCallback(
@@ -478,6 +600,14 @@ export default function TasksPage() {
       <Header
         title="✅ Tasks"
         subtitle={`${counts.todo} offen · ${counts.in_progress} in Arbeit · ${counts.done} erledigt`}
+        action={
+          <button
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors"
+          >
+            <Plus size={14} /> Neuer Task
+          </button>
+        }
       />
 
       {/* Filters */}
@@ -586,6 +716,16 @@ export default function TasksPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Create Modal */}
+      {creating && (
+        <CreateTaskModal
+          objectives={objectives}
+          onSave={handleCreate}
+          onClose={() => setCreating(false)}
+          saving={saving}
+        />
       )}
 
       {/* Edit Modal */}

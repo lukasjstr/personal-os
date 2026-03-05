@@ -9,7 +9,7 @@ import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Objective, ObjectiveTask } from "@/lib/api";
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Aktiv",
@@ -40,6 +40,55 @@ const CATEGORIES = [
 const OBJECTIVE_STATUSES = ["active", "completed", "paused", "abandoned"];
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
+
+function CreateObjectiveModal({
+  onSave,
+  onClose,
+  saving,
+}: {
+  onSave: (data: { title: string; category: string; description: string | null; target_date: string | null }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({ title: "", category: "personal", description: "", target_date: "" });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+        <h3 className="text-white font-semibold text-lg mb-5">Neues Objective</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Titel *</label>
+            <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Objective-Titel" autoFocus className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Kategorie</label>
+              <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_EMOJI[c] ?? "🎯"} {c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Zieldatum</label>
+              <input type="date" value={form.target_date} onChange={(e) => setForm((f) => ({ ...f, target_date: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Beschreibung</label>
+            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none" />
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end mt-6">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">Abbrechen</button>
+          <button onClick={() => onSave({ title: form.title.trim(), category: form.category, description: form.description.trim() || null, target_date: form.target_date || null })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
+            {saving ? "Erstellen…" : "Objective erstellen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EditObjectiveModal({
   obj,
@@ -405,11 +454,29 @@ const FILTER_LABELS: Record<string, string> = {
 export default function ObjectivesPage() {
   const { data, error, isLoading, mutate } = useObjectives();
   const [filter, setFilter] = useState<string>("all");
+  const [creating, setCreating] = useState(false);
   const [editingObj, setEditingObj] = useState<Objective | null>(null);
   const [deletingObj, setDeletingObj] = useState<Objective | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { toasts, addToast, dismissToast } = useToast();
+
+  const handleCreate = useCallback(
+    async (data: { title: string; category: string; description: string | null; target_date: string | null }) => {
+      setSaving(true);
+      try {
+        await api.createObjective(data);
+        await mutate();
+        addToast("Objective erstellt", "success");
+        setCreating(false);
+      } catch {
+        addToast("Fehler beim Erstellen", "error");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [mutate, addToast]
+  );
 
   const handleEdit = useCallback(
     async (data: {
@@ -480,6 +547,11 @@ export default function ObjectivesPage() {
       <Header
         title="🎯 Objectives"
         subtitle={`${counts.active} aktiv · ${counts.completed} abgeschlossen`}
+        action={
+          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors">
+            <Plus size={14} /> Neues Objective
+          </button>
+        }
       />
 
       {/* Life Areas */}
@@ -533,6 +605,11 @@ export default function ObjectivesPage() {
             />
           ))}
         </div>
+      )}
+
+      {/* Create Modal */}
+      {creating && (
+        <CreateObjectiveModal onSave={handleCreate} onClose={() => setCreating(false)} saving={saving} />
       )}
 
       {/* Edit Modal */}

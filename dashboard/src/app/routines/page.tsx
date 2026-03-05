@@ -10,7 +10,7 @@ import { useRoutines } from "@/hooks/useApi";
 import { api } from "@/lib/api";
 import type { Routine } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Pencil, Trash2, Check } from "lucide-react";
+import { Pencil, Plus, Trash2, Check } from "lucide-react";
 
 // ─── Time-of-day config ───────────────────────────────────────────────────────
 
@@ -22,6 +22,55 @@ const TIME_SECTIONS = [
 ] as const;
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
+
+function CreateRoutineModal({
+  onSave,
+  onClose,
+  saving,
+}: {
+  onSave: (data: { title: string; description: string | null; frequency_human: string; time_of_day: string }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({ title: "", description: "", frequency_human: "Täglich", time_of_day: "morning" });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+        <h3 className="text-white font-semibold text-lg mb-5">Neue Routine</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Titel *</label>
+            <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Routine-Titel" autoFocus className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Tageszeit</label>
+              <select value={form.time_of_day} onChange={(e) => setForm((f) => ({ ...f, time_of_day: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                {TIME_SECTIONS.map(({ key, label, emoji }) => <option key={key} value={key}>{emoji} {label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Frequenz</label>
+              <input type="text" value={form.frequency_human} onChange={(e) => setForm((f) => ({ ...f, frequency_human: e.target.value }))} placeholder="Täglich" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label className="text-zinc-400 text-xs mb-1.5 block">Beschreibung</label>
+            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none" />
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end mt-6">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">Abbrechen</button>
+          <button onClick={() => onSave({ title: form.title.trim(), description: form.description.trim() || null, frequency_human: form.frequency_human.trim() || "Täglich", time_of_day: form.time_of_day })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
+            {saving ? "Erstellen…" : "Routine erstellen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EditRoutineModal({
   routine,
@@ -255,6 +304,7 @@ function RoutineCard({
 
 export default function RoutinesPage() {
   const { data, error, isLoading, mutate } = useRoutines();
+  const [creating, setCreating] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deletingRoutine, setDeletingRoutine] = useState<Routine | null>(null);
   const [saving, setSaving] = useState(false);
@@ -284,6 +334,23 @@ export default function RoutinesPage() {
         addToast("Fehler beim Abhaken", "error");
       } finally {
         setCompleting(null);
+      }
+    },
+    [mutate, addToast]
+  );
+
+  const handleCreate = useCallback(
+    async (data: { title: string; description: string | null; frequency_human: string; time_of_day: string }) => {
+      setSaving(true);
+      try {
+        await api.createRoutine(data);
+        await mutate();
+        addToast("Routine erstellt", "success");
+        setCreating(false);
+      } catch {
+        addToast("Fehler beim Erstellen", "error");
+      } finally {
+        setSaving(false);
       }
     },
     [mutate, addToast]
@@ -350,6 +417,11 @@ export default function RoutinesPage() {
       <Header
         title="🔄 Routinen"
         subtitle={`${doneToday}/${active.length} heute erledigt · ${pct}%`}
+        action={
+          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors">
+            <Plus size={14} /> Neue Routine
+          </button>
+        }
       />
 
       {active.length > 0 && (
@@ -451,6 +523,11 @@ export default function RoutinesPage() {
 
       {routines.length === 0 && (
         <EmptyState emoji="🔄" message="Keine Routinen — per Telegram erstellen!" />
+      )}
+
+      {/* Create Modal */}
+      {creating && (
+        <CreateRoutineModal onSave={handleCreate} onClose={() => setCreating(false)} saving={saving} />
       )}
 
       {/* Edit Modal */}

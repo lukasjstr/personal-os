@@ -586,7 +586,14 @@ export const api = {
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
   completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),
-  // CRUD
+  // CRUD — Create
+  createTask: (body: { title: string; category?: string | null; priority?: number; due_date?: string | null; objective_id?: number | null; description?: string | null }) =>
+    apiPost<{ ok: boolean; id: number; title: string }>("/api/tasks", body),
+  createObjective: (body: { title: string; category?: string; description?: string | null; target_date?: string | null }) =>
+    apiPost<{ ok: boolean; id: number; title: string }>("/api/objectives", body),
+  createRoutine: (body: { title: string; description?: string | null; frequency_human?: string; time_of_day?: string }) =>
+    apiPost<{ ok: boolean; id: number; title: string }>("/api/routines", body),
+  // CRUD — Update / Delete
   updateObjective: (id: number, body: Partial<{ title: string; category: string; description: string | null; target_date: string | null; status: string }>) =>
     apiPut<{ ok: boolean }>(`/api/objectives/${id}`, body),
   deleteObjective: (id: number) => apiDelete<{ ok: boolean }>(`/api/objectives/${id}`),
