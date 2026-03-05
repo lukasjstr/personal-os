@@ -28,7 +28,7 @@ const TAB_ICONS: Record<keyof TabParamList, { focused: IoniconName; default: Ion
   Tasks: { focused: 'checkmark-circle', default: 'checkmark-circle-outline' },
   Calendar: { focused: 'calendar', default: 'calendar-outline' },
   Routines: { focused: 'repeat', default: 'repeat-outline' },
-  Fitness: { focused: 'fitness', default: 'fitness-outline' },
+  Fitness: { focused: 'barbell', default: 'barbell-outline' },
   Shopping: { focused: 'cart', default: 'cart-outline' },
   Notifications: { focused: 'notifications', default: 'notifications-outline' },
   Settings: { focused: 'settings', default: 'settings-outline' },
