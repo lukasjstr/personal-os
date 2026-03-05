@@ -77,6 +77,21 @@ async function apiPut<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
 async function apiDelete<T>(path: string): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_URL}${path}`, {
@@ -430,6 +445,67 @@ export interface DailySuggestionsResponse {
   suggestions: DailySuggestions | null;
 }
 
+// ─── Autopilot Intelligence Types ─────────────────────────────────────────────
+
+export interface AutopilotDailyPlanItem {
+  id: number;
+  type: "task" | "routine" | "event";
+  title: string;
+  reason: string;
+  category?: string | null;
+  completed?: boolean;
+  time_of_day?: string | null;
+}
+
+export interface AutopilotDailyPlanSection {
+  id: string;
+  title: string;
+  items: AutopilotDailyPlanItem[];
+}
+
+export interface AutopilotDailyPlan {
+  date: string;
+  generated_by: "ai" | "deterministic";
+  summary: string;
+  sections: AutopilotDailyPlanSection[];
+}
+
+export interface AutopilotActionQueueCounts {
+  planned: number;
+  suggested: number;
+  accepted: number;
+  completed: number;
+  snoozed: number;
+}
+
+export interface AutopilotActionQueueItem {
+  id: number;
+  state: string;
+  item_type: string;
+  title: string;
+  reason?: string | null;
+  linked_task_id?: number | null;
+}
+
+export interface AutopilotActionQueue {
+  items: AutopilotActionQueueItem[];
+  counts: AutopilotActionQueueCounts;
+  total_active: number;
+}
+
+export interface AutopilotNextAction {
+  task: {
+    id: number;
+    title: string;
+    category?: string | null;
+    objective_title?: string | null;
+    is_blocked?: boolean;
+    blocker_title?: string | null;
+  };
+  reason?: string | null;
+  score?: number | null;
+}
+
 // ─── Reflection Types ─────────────────────────────────────────────────────────
 
 export interface ReflectionAiSummary {
@@ -535,4 +611,10 @@ export const api = {
   reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
   reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),
   todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
+  // Autopilot intelligence
+  autopilotDailyPlan: () => apiFetch<AutopilotDailyPlan>("/api/autopilot/daily-plan"),
+  autopilotActionQueue: () => apiFetch<AutopilotActionQueue>("/api/autopilot/action-queue"),
+  autopilotNextAction: () => apiFetch<AutopilotNextAction>("/api/autopilot/next-action"),
+  autopilotCompleteQueueItem: (id: number) =>
+    apiPatch<{ ok: boolean }>(`/api/autopilot/action-queue/${id}`, { state: "completed" }),
 };

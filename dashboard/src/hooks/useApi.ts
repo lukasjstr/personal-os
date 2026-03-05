@@ -104,3 +104,21 @@ export function useReflection(id?: number) {
 export function useTodaySuggestions() {
   return useSWR("today-suggestions", () => api.todaySuggestions(), { refreshInterval: 300_000 });
 }
+
+export function useAutopilotDailyPlan() {
+  return useSWR("autopilot-daily-plan", () => api.autopilotDailyPlan(), {
+    refreshInterval: 300_000,
+  });
+}
+
+export function useAutopilotActionQueue() {
+  return useSWR("autopilot-action-queue", () => api.autopilotActionQueue(), {
+    refreshInterval: 120_000,
+  });
+}
+
+export function useAutopilotNextAction() {
+  return useSWR("autopilot-next-action", () => api.autopilotNextAction(), {
+    refreshInterval: 60_000,
+  });
+}
