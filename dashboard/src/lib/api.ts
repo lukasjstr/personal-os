@@ -609,8 +609,8 @@ export const api = {
   deleteLog: (id: number) => apiDelete<{ ok: boolean }>(`/api/logs/${id}`),
   // Settings
   getSettings: () => apiFetch<UserSettings>("/api/settings"),
-  updateProfile: (body: { first_name: string }) =>
-    apiPut<{ ok: boolean; first_name: string | null }>("/api/settings/profile", body),
+  updateProfile: (body: { first_name?: string; timezone?: string }) =>
+    apiPut<{ ok: boolean; first_name: string | null; timezone: string | null }>("/api/settings/profile", body),
   updateSettings: (body: SettingsUpdateBody) =>
     apiPut<{ ok: boolean }>("/api/settings", body),
   exportData: () => apiFetch<unknown>("/api/settings/export"),

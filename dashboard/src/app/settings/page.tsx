@@ -124,8 +124,13 @@ export default function SettingsPage() {
 
   // Profile
   const [firstName, setFirstName] = useState("");
+  const [timezone, setTimezone] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+
+  // Token regeneration
+  const [regenerating, setRegenerating] = useState(false);
+  const [newToken, setNewToken] = useState<string | null>(null);
 
   // Toggles
   const [toggles, setToggles] = useState({
@@ -169,6 +174,7 @@ export default function SettingsPage() {
           settings.profile.telegram_username ||
           ""
       );
+      setTimezone(settings.profile.timezone || "");
       setToggles(settings.toggles);
       setTimes(settings.times);
       const w: Record<string, number> = {};
@@ -208,7 +214,7 @@ export default function SettingsPage() {
     setProfileSaving(true);
     setSaveError(null);
     try {
-      await api.updateProfile({ first_name: firstName });
+      await api.updateProfile({ first_name: firstName, timezone: timezone || undefined });
       setProfileSaved(true);
       await mutate(() => true, undefined, { revalidate: true });
       setTimeout(() => setProfileSaved(false), 2000);
@@ -216,6 +222,21 @@ export default function SettingsPage() {
       setSaveError(e instanceof Error ? e.message : "Speichern fehlgeschlagen");
     } finally {
       setProfileSaving(false);
+    }
+  };
+
+  const regenerateToken = async () => {
+    setRegenerating(true);
+    setSaveError(null);
+    try {
+      const res = await api.generateToken();
+      setNewToken(res.token);
+      setToken(res.token);
+      setTokenInput(res.token);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Token-Generierung fehlgeschlagen");
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -358,19 +379,18 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {settings?.profile.timezone && (
-              <div>
-                <label className="text-zinc-400 text-xs mb-1.5 block">
-                  Zeitzone
-                </label>
-                <div className="flex items-center gap-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2">
-                  <span className="text-zinc-300 text-sm">
-                    {settings.profile.timezone}
-                  </span>
-                  <span className="ml-auto text-zinc-600 text-xs">read-only</span>
-                </div>
-              </div>
-            )}
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">
+                Zeitzone
+              </label>
+              <input
+                type="text"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                placeholder="z.B. Europe/Berlin"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
           </div>
         </Section>
 
@@ -519,7 +539,7 @@ export default function SettingsPage() {
             Bearer Token für die API-Authentifizierung. Aus dem Telegram Bot via{" "}
             <code className="bg-zinc-800 px-1 py-0.5 rounded text-xs">/token</code>.
           </p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-3">
             <input
               type="password"
               value={token}
@@ -538,6 +558,22 @@ export default function SettingsPage() {
             >
               {tokenSaved ? "✓ Gespeichert" : "Speichern"}
             </button>
+          </div>
+          <div className="border-t border-zinc-800 pt-3">
+            <p className="text-zinc-500 text-xs mb-2">Neuen Token generieren (invalidiert den alten):</p>
+            <button
+              onClick={regenerateToken}
+              disabled={regenerating}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {regenerating ? "Generiere..." : "🔄 Token regenerieren"}
+            </button>
+            {newToken && (
+              <div className="mt-3 p-3 bg-green-950/40 border border-green-800/50 rounded-lg">
+                <p className="text-green-400 text-xs mb-1.5">Neuer Token (bereits gespeichert):</p>
+                <code className="text-green-300 text-xs break-all">{newToken}</code>
+              </div>
+            )}
           </div>
         </Section>
 
@@ -583,7 +619,7 @@ export default function SettingsPage() {
           <div className="space-y-1 text-sm text-zinc-400">
             <div className="flex justify-between">
               <span>Version</span>
-              <span className="text-zinc-300">3.0.0 (Phase 6)</span>
+              <span className="text-zinc-300">8.0.0 (Phase 8 — Autopilot)</span>
             </div>
             <div className="flex justify-between">
               <span>Stack</span>

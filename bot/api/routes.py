@@ -1885,6 +1885,7 @@ async def delete_log(
 
 class UpdateProfileBody(BaseModel):
     first_name: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 class UpdateSettingsBody(BaseModel):
@@ -1933,13 +1934,17 @@ async def update_profile(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Update user profile (name)."""
+    """Update user profile (name, timezone)."""
     if body.first_name is not None:
         stripped = body.first_name.strip()
         if stripped:
             user.first_name = stripped
+    if body.timezone is not None:
+        tz = body.timezone.strip()
+        if tz:
+            user.timezone = tz
     await session.flush()
-    return {"ok": True, "first_name": user.first_name}
+    return {"ok": True, "first_name": user.first_name, "timezone": user.timezone}
 
 
 @router.put("/settings")
