@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
+import type { TabParamList } from '../navigation/TabNavigator';
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -44,14 +48,28 @@ interface HealthResponse {
 
 // ── Autopilot ──────────────────────────────────────────────────────────────
 
+interface NextActionTask {
+  id: number;
+  title: string;
+  category?: string | null;
+  priority?: number;
+  score?: number | null;
+  objective_title?: string | null;
+  is_blocked?: boolean;
+  blocker_title?: string | null;
+}
+
+interface NextUnblocked {
+  id: number;
+  title: string;
+  category?: string | null;
+}
+
 interface NextActionResponse {
-  task: {
-    id: number;
-    title: string;
-    category?: string | null;
-    priority?: number;
-  };
+  task: NextActionTask;
   reason?: string | null;
+  score?: number | null;
+  next_unblocked?: NextUnblocked | null;
 }
 
 interface PriorityItem {
@@ -134,6 +152,9 @@ function NextActionCard({
   tasks: Task[];
   loading: boolean;
 }) {
+  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
+  const [started, setStarted] = useState(false);
+
   if (loading) {
     return (
       <Card>
@@ -143,9 +164,14 @@ function NextActionCard({
     );
   }
 
-  // Use autopilot data if available
+  // Prefer autopilot payload, fall back to derived
   const task = nextAction?.task ?? deriveNextTask(tasks);
   const reason = nextAction?.reason ?? null;
+  const score = nextAction?.score ?? nextAction?.task?.score ?? null;
+  const objectiveTitle = nextAction?.task?.objective_title ?? null;
+  const isBlocked = nextAction?.task?.is_blocked === true;
+  const blockerTitle = nextAction?.task?.blocker_title ?? null;
+  const nextUnblocked = nextAction?.next_unblocked ?? null;
 
   if (!task) {
     return (
@@ -156,18 +182,73 @@ function NextActionCard({
     );
   }
 
+  // "Why this now?" — use API fields first, then heuristic
+  let whyText: string;
+  if (reason && reason.length > 0) {
+    whyText = reason;
+  } else if (score != null) {
+    whyText = `Priority score: ${score}`;
+  } else if ('is_overdue' in task && task.is_overdue) {
+    whyText = 'This task is overdue';
+  } else if ((task.priority ?? 0) >= 3) {
+    whyText = 'High-priority unblocked task';
+  } else {
+    whyText = 'Top unblocked task right now';
+  }
+
   return (
     <Card>
       <SectionLabel text="Next Action" />
+
+      {/* Objective context */}
+      {objectiveTitle != null && (
+        <Text style={styles.objectiveContext}>{objectiveTitle}</Text>
+      )}
+
       <Text style={styles.nextActionTitle} numberOfLines={3}>
         {task.title}
       </Text>
       {task.category != null && (
         <Text style={styles.metaText}>{task.category}</Text>
       )}
-      {reason != null && reason.length > 0 && (
-        <Text style={styles.reasonText}>{reason}</Text>
+
+      {/* Blocker hint */}
+      {isBlocked && (
+        <View style={styles.blockerBox}>
+          <Text style={styles.blockerLabel}>
+            Blocked{blockerTitle ? ` by: ${blockerTitle}` : ''}
+          </Text>
+          {nextUnblocked != null && (
+            <Text style={styles.nextUnblockedText}>
+              Next unblocked: {nextUnblocked.title}
+            </Text>
+          )}
+        </View>
       )}
+
+      {/* Why this now? */}
+      <View style={styles.whyRow}>
+        <Text style={styles.whyLabel}>Why this now?</Text>
+        <Text style={styles.whyText}>{whyText}</Text>
+      </View>
+
+      {/* CTAs */}
+      <View style={styles.ctaRow}>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaStart, started && styles.ctaStarted]}
+          onPress={() => setStarted(s => !s)}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaStartText}>{started ? 'In progress' : 'Start now'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaOpen]}
+          onPress={() => navigation.navigate('Tasks')}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaOpenText}>Open in Tasks</Text>
+        </TouchableOpacity>
+      </View>
     </Card>
   );
 }
@@ -257,7 +338,7 @@ function TodayPlanCard({
 
 // ── Fallback derivation helpers ────────────────────────────────────────────
 
-function deriveNextTask(tasks: Task[]): { id: number; title: string; category: string | null } | null {
+function deriveNextTask(tasks: Task[]): (NextActionTask & { is_overdue?: boolean }) | null {
   const open = tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
   if (open.length === 0) return null;
   // Prefer overdue first, then by priority desc
@@ -530,13 +611,57 @@ const styles = StyleSheet.create({
   },
   nextActionTitle: { fontSize: 17, fontWeight: '700', color: '#f9fafb', marginBottom: 6 },
   metaText: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  reasonText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontStyle: 'italic',
-    marginTop: 6,
-  },
   emptySubtext: { fontSize: 13, color: '#6b7280' },
+
+  objectiveContext: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#818cf8',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  blockerBox: {
+    backgroundColor: '#1c1917',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f97316',
+  },
+  blockerLabel: { fontSize: 12, fontWeight: '700', color: '#f97316' },
+  nextUnblockedText: { fontSize: 12, color: '#d1d5db', marginTop: 4 },
+  whyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+  },
+  whyLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4b5563',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 1,
+  },
+  whyText: { fontSize: 12, color: '#6b7280', fontStyle: 'italic', flex: 1 },
+  ctaRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  ctaButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  ctaStart: { backgroundColor: '#4f46e5' },
+  ctaStarted: { backgroundColor: '#15803d' },
+  ctaOpen: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  ctaStartText: { fontSize: 13, fontWeight: '700', color: '#ffffff' },
+  ctaOpenText: { fontSize: 13, fontWeight: '600', color: '#9ca3af' },
 
   priorityRow: {
     flexDirection: 'row',
