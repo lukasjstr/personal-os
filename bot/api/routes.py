@@ -19,9 +19,9 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    Achievement, BrainDump, CalendarEvent, DailySuggestion, FitnessSplit, KeyResult, Log,
-    Objective, Routine, RoutineCompletion, ShoppingDefault, Task, User, UserAchievement,
-    WeeklyReflection,
+    Achievement, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
+    FitnessSplit, KeyResult, Log, Objective, Routine, RoutineCompletion, ShoppingDefault,
+    Task, User, UserAchievement, WeeklyReflection,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
@@ -2006,3 +2006,123 @@ async def get_todays_suggestions(
     if suggestions is None:
         return {"date": today.isoformat(), "suggestions": None}
     return {"date": today.isoformat(), "suggestions": suggestions}
+
+
+# ─── Autopilot Notification Endpoints (A1) ─────────────────────────────────────
+
+def _notification_dict(n: AutopilotNotification) -> dict:
+    return {
+        "id": n.id,
+        "notification_type": n.notification_type,
+        "title": n.title,
+        "body": n.body,
+        "status": n.status,
+        "snoozed_until": n.snoozed_until.isoformat() if n.snoozed_until else None,
+        "source": n.source,
+        "linked_task_id": n.linked_task_id,
+        "created_at": n.created_at.isoformat(),
+    }
+
+
+@router.get("/notifications")
+async def list_notifications(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query(None, description="Filter by status: pending, acknowledged, snoozed"),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    """List autopilot notifications for the current user.
+
+    Returns pending nudges by default (status=pending).
+    Pass status=all to get every notification.
+    """
+    from datetime import timezone as _tz
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+
+    filter_status = status or "pending"
+    if filter_status == "all":
+        where_clause = AutopilotNotification.user_id == user.id
+    else:
+        where_clause = and_(
+            AutopilotNotification.user_id == user.id,
+            AutopilotNotification.status == filter_status,
+        )
+
+    result = await session.execute(
+        select(AutopilotNotification)
+        .where(where_clause)
+        .order_by(AutopilotNotification.created_at.desc())
+        .limit(limit)
+    )
+    notifications = result.scalars().all()
+
+    # Auto-expire snoozed notifications whose snooze window has passed
+    for n in notifications:
+        if n.status == "snoozed" and n.snoozed_until and n.snoozed_until <= now:
+            n.status = "pending"
+    await session.flush()
+
+    pending = [n for n in notifications if n.status == "pending"]
+    return {
+        "notifications": [_notification_dict(n) for n in notifications],
+        "pending_count": len(pending),
+        "latest": _notification_dict(pending[0]) if pending else None,
+    }
+
+
+class SnoozeRequest(BaseModel):
+    minutes: int = 60  # default snooze 60 minutes
+
+
+@router.post("/notifications/{notification_id}/acknowledge")
+async def acknowledge_notification(
+    notification_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Mark a notification as acknowledged (dismissed)."""
+    result = await session.execute(
+        select(AutopilotNotification).where(
+            and_(
+                AutopilotNotification.id == notification_id,
+                AutopilotNotification.user_id == user.id,
+            )
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notification.status = "acknowledged"
+    await session.flush()
+    return {"ok": True, "notification": _notification_dict(notification)}
+
+
+@router.post("/notifications/{notification_id}/snooze")
+async def snooze_notification(
+    notification_id: int,
+    body: SnoozeRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Snooze a notification for N minutes (default 60)."""
+    from datetime import timezone as _tz
+    if body.minutes < 1 or body.minutes > 10080:  # max 1 week
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 10080")
+
+    result = await session.execute(
+        select(AutopilotNotification).where(
+            and_(
+                AutopilotNotification.id == notification_id,
+                AutopilotNotification.user_id == user.id,
+            )
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+    notification.status = "snoozed"
+    notification.snoozed_until = now + timedelta(minutes=body.minutes)
+    await session.flush()
+    return {"ok": True, "notification": _notification_dict(notification)}

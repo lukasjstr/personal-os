@@ -11,6 +11,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
+import { apiRequest } from '../lib/apiClient';
 import type { TabParamList } from '../navigation/TabNavigator';
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -128,6 +129,26 @@ interface WeeklyPlanResponse {
   suggested_tasks?: WeeklyPlanSuggestedTask[] | null;
   time_blocks?: WeeklyTimeBlock[] | null;
   summary?: string | null;
+}
+
+// ── Autopilot Notifications (A1) ──────────────────────────────────────────
+
+interface AutopilotNudge {
+  id: number;
+  notification_type: string;
+  title: string;
+  body?: string | null;
+  status: string;
+  snoozed_until?: string | null;
+  source: string;
+  linked_task_id?: number | null;
+  created_at: string;
+}
+
+interface NotificationsResponse {
+  notifications: AutopilotNudge[];
+  pending_count: number;
+  latest: AutopilotNudge | null;
 }
 
 // ── Shared task / calendar types (for fallback) ────────────────────────────
@@ -980,6 +1001,80 @@ function ExecutionPulseCard({
   );
 }
 
+// ── AutopilotNudgesCard ────────────────────────────────────────────────────
+
+function AutopilotNudgesCard({
+  data,
+  loading,
+  onAcknowledge,
+  onSnooze,
+}: {
+  data: NotificationsResponse | null;
+  loading: boolean;
+  onAcknowledge: (id: number) => void;
+  onSnooze: (id: number) => void;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Nudges" />
+        <SkeletonLine width="40%" height={11} style={{ marginBottom: 8 }} />
+        <SkeletonLine height={16} style={{ marginBottom: 4 }} />
+        <SkeletonLine width="70%" height={12} />
+      </Card>
+    );
+  }
+
+  // Gracefully handle missing endpoint or zero nudges
+  if (!data || data.pending_count === 0) {
+    return (
+      <Card>
+        <SectionLabel text="Nudges" />
+        <Text style={styles.emptySubtext}>No pending nudges — all clear!</Text>
+      </Card>
+    );
+  }
+
+  const latest = data.latest;
+
+  return (
+    <Card>
+      <View style={styles.nudgesHeader}>
+        <SectionLabel text="Nudges" />
+        <View style={styles.nudgesBadge}>
+          <Text style={styles.nudgesBadgeText}>{data.pending_count}</Text>
+        </View>
+      </View>
+
+      {latest && (
+        <>
+          <Text style={styles.nudgesType}>{latest.notification_type.replace(/_/g, ' ')}</Text>
+          <Text style={styles.nudgesTitle} numberOfLines={2}>{latest.title}</Text>
+          {latest.body ? (
+            <Text style={styles.nudgesBody} numberOfLines={2}>{latest.body}</Text>
+          ) : null}
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              style={[styles.ctaButton, styles.ctaNudgeAck]}
+              onPress={() => onAcknowledge(latest.id)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.ctaStartText}>Done</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.ctaButton, styles.ctaOpen]}
+              onPress={() => onSnooze(latest.id)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.ctaOpenText}>Snooze 1h</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -1004,6 +1099,9 @@ export default function HomeScreen() {
   // Weekly Focus data sources (may 404 on older backends)
   const reflectionApi = useApi<LatestReflectionResponse>('/api/reflections/latest');
   const weeklyPlanApi = useApi<WeeklyPlanResponse>('/api/autopilot/weekly-plan');
+
+  // Autopilot notifications (A1) — safe fallback when endpoint unavailable
+  const notificationsApi = useApi<NotificationsResponse>('/api/notifications');
 
   const isDashboardLoading = health.loading || dashboard.loading;
   const isAutopilotLoading = nextAction.loading || prioritiesApi.loading || planApi.loading;
@@ -1044,6 +1142,28 @@ export default function HomeScreen() {
     calendarApi.refetch();
     reflectionApi.refetch();
     weeklyPlanApi.refetch();
+    notificationsApi.refetch();
+  }
+
+  async function handleAcknowledgeNudge(id: number) {
+    try {
+      await apiRequest(`/api/notifications/${id}/acknowledge`, { method: 'POST' });
+    } catch {
+      // best-effort — silent fail, will re-sync on next refresh
+    }
+    notificationsApi.refetch();
+  }
+
+  async function handleSnoozeNudge(id: number) {
+    try {
+      await apiRequest(`/api/notifications/${id}/snooze`, {
+        method: 'POST',
+        body: JSON.stringify({ minutes: 60 }),
+      });
+    } catch {
+      // best-effort — silent fail
+    }
+    notificationsApi.refetch();
   }
 
   useEffect(() => {
@@ -1185,6 +1305,13 @@ export default function HomeScreen() {
 
         {/* ── Autopilot Section ── */}
         <Text style={styles.sectionTitle}>Autopilot</Text>
+
+        <AutopilotNudgesCard
+          data={notificationsApi.error ? null : (notificationsApi.data ?? null)}
+          loading={notificationsApi.loading}
+          onAcknowledge={handleAcknowledgeNudge}
+          onSnooze={handleSnoozeNudge}
+        />
 
         <NextActionCard
           nextAction={resolvedNextAction}
@@ -1519,4 +1646,45 @@ const styles = StyleSheet.create({
     color: '#d1d5db',
     flex: 1,
   },
+
+  // Autopilot Nudges card
+  nudgesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  nudgesBadge: {
+    backgroundColor: '#6366f1',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginBottom: 8,
+  },
+  nudgesBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  nudgesType: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6366f1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  nudgesTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#f9fafb',
+    marginBottom: 4,
+  },
+  nudgesBody: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  ctaNudgeAck: { backgroundColor: '#166534' },
 });

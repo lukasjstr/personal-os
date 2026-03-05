@@ -61,6 +61,7 @@ class User(Base):
     fitness_splits: Mapped[list["FitnessSplit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     shopping_defaults: Mapped[list["ShoppingDefault"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_suggestions: Mapped[list["DailySuggestion"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    autopilot_notifications: Mapped[list["AutopilotNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -536,6 +537,32 @@ class DailySuggestion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="daily_suggestions")
+
+
+# ─── Phase A1 — Autopilot Notifications ──────────────────────────────────────
+
+class AutopilotNotification(Base):
+    __tablename__ = "autopilot_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Types: task_nudge, plan_reminder, streak_warning, reflection_prompt, generic
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False, default="generic")
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text)
+    # pending, acknowledged, snoozed, expired
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="autopilot")
+    # optional reference to a linked object
+    linked_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="autopilot_notifications")
+
+    def __repr__(self) -> str:
+        return f"<AutopilotNotification id={self.id} type={self.notification_type} status={self.status}>"
 
     def __repr__(self) -> str:
         return f"<DailySuggestion user_id={self.user_id} date={self.date}>"
