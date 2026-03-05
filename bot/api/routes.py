@@ -2097,6 +2097,230 @@ async def acknowledge_notification(
     return {"ok": True, "notification": _notification_dict(notification)}
 
 
+# ─── Daily Plan Orchestrator (A2) ──────────────────────────────────────────────
+
+def _build_deterministic_daily_plan(
+    tasks: list,
+    routines: list,
+    completed_routine_ids: set,
+    events: list,
+    today: date,
+) -> dict:
+    """Build a fully deterministic plan — no AI required."""
+    # Score tasks
+    scored: list[tuple[int, object]] = []
+    for t in tasks:
+        score = (6 - t.priority) * 10
+        if t.due_date:
+            if t.due_date < today:
+                score += 40
+            elif t.due_date == today:
+                score += 30
+            elif t.due_date <= today + timedelta(days=2):
+                score += 20
+            elif t.due_date <= today + timedelta(days=7):
+                score += 10
+        scored.append((score, t))
+    scored.sort(key=lambda x: -x[0])
+
+    today_str = today.isoformat()
+
+    # Sections
+    sections: list[dict] = []
+
+    # 1. Top tasks
+    task_items = []
+    for sc, t in scored[:5]:
+        if t.due_date and t.due_date < today:
+            reason = "Overdue"
+        elif t.due_date and t.due_date == today:
+            reason = "Due today"
+        elif t.due_date and t.due_date <= today + timedelta(days=2):
+            reason = "Due soon"
+        else:
+            reason = "High priority" if t.priority <= 2 else "Open task"
+        task_items.append({
+            "id": t.id,
+            "type": "task",
+            "title": t.title,
+            "reason": reason,
+            "category": t.category,
+            "priority": t.priority,
+            "is_overdue": bool(t.due_date and t.due_date < today),
+        })
+    if task_items:
+        sections.append({"id": "top_tasks", "title": "Top Priorities", "items": task_items})
+
+    # 2. Routines
+    routine_items = []
+    for r in routines:
+        done = r.id in completed_routine_ids
+        routine_items.append({
+            "id": r.id,
+            "type": "routine",
+            "title": r.title,
+            "reason": "Completed" if done else "Pending",
+            "completed": done,
+            "time_of_day": r.time_of_day,
+        })
+    if routine_items:
+        sections.append({"id": "routines", "title": "Routines Today", "items": routine_items})
+
+    # 3. Today's calendar events
+    event_items = []
+    for e in events:
+        event_items.append({
+            "id": e.id,
+            "type": "event",
+            "title": e.title,
+            "reason": e.start_time.strftime("%H:%M") if not e.all_day else "All day",
+            "start_time": e.start_time.isoformat(),
+            "end_time": e.end_time.isoformat() if e.end_time else None,
+            "all_day": e.all_day,
+        })
+    if event_items:
+        sections.append({"id": "events", "title": "Events Today", "items": event_items})
+
+    # Suggested blocks: 1-hour task blocks in free time (08:00–21:00)
+    occupied: set[int] = set()
+    for e in events:
+        if not e.all_day:
+            h_start = e.start_time.hour
+            h_end = e.end_time.hour if e.end_time else h_start + 1
+            for hh in range(h_start, min(h_end + 1, 22)):
+                occupied.add(hh)
+
+    suggested_blocks: list[dict] = []
+    cursor = 9
+    for sc, t in scored[:3]:
+        while cursor in occupied and cursor < 21:
+            cursor += 1
+        if cursor >= 21:
+            break
+        if t.due_date and t.due_date < today:
+            reason = "Overdue — tackle first"
+        elif t.due_date and t.due_date == today:
+            reason = "Due today"
+        else:
+            reason = "Top priority task"
+        suggested_blocks.append({
+            "start_time": f"{cursor:02d}:00",
+            "end_time": f"{cursor + 1:02d}:00",
+            "title": t.title,
+            "reason": reason,
+            "linked_task_id": t.id,
+        })
+        occupied.add(cursor)
+        cursor += 1
+
+    # Summary sentence
+    open_count = len(scored)
+    overdue_count = sum(1 for sc, t in scored if t.due_date and t.due_date < today)
+    pending_routines = sum(1 for r in routines if r.id not in completed_routine_ids)
+    parts: list[str] = []
+    if open_count:
+        parts.append(f"{open_count} open task{'s' if open_count != 1 else ''}")
+    if overdue_count:
+        parts.append(f"{overdue_count} overdue")
+    if pending_routines:
+        parts.append(f"{pending_routines} routine{'s' if pending_routines != 1 else ''} pending")
+    if event_items:
+        parts.append(f"{len(event_items)} event{'s' if len(event_items) != 1 else ''} today")
+    summary = " · ".join(parts) if parts else "Nothing scheduled — enjoy the free time!"
+
+    return {"summary": summary, "sections": sections, "suggested_blocks": suggested_blocks}
+
+
+@router.get("/autopilot/daily-plan")
+async def get_daily_plan(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Compose today's plan from tasks + routines + calendar + priorities.
+
+    Returns structured sections + suggested blocks for mobile consumption.
+    Tries an AI summary; falls back to deterministic output if AI unavailable.
+    """
+    import asyncio as _asyncio
+    import logging as _log
+    from bot.core.calendar import get_todays_events as _get_events
+    from bot.core.routines import get_todays_completions as _get_completions
+
+    _logger = _log.getLogger(__name__)
+    today = date.today()
+
+    # Fetch data in parallel
+    tasks_result, routines_result, completed_ids, events = await _asyncio.gather(
+        session.execute(
+            select(Task)
+            .options(
+                selectinload(Task.key_result).selectinload(KeyResult.objective),
+                selectinload(Task.objective),
+            )
+            .where(and_(
+                Task.user_id == user.id,
+                Task.status.in_(["todo", "in_progress"]),
+                Task.category != "shopping",
+            ))
+            .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
+        ),
+        session.execute(
+            select(Routine)
+            .where(and_(Routine.user_id == user.id, Routine.status == "active"))
+            .order_by(Routine.sort_order, Routine.id)
+        ),
+        _get_completions(session, user.id),
+        _get_events(session, user.id),
+    )
+
+    tasks = list(tasks_result.scalars().all())
+    routines = list(routines_result.scalars().all())
+    completed_routine_ids: set[int] = set(completed_ids) if completed_ids else set()
+
+    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids, events, today)
+    generated_by = "deterministic"
+
+    # Optional AI summary (non-blocking, 8s timeout)
+    try:
+        from bot.ai.client import openai_client as _oai
+        top_tasks_text = "\n".join(
+            f"- [P{t.priority}] {t.title}" + (f" (due {t.due_date})" if t.due_date else "")
+            for t in sorted(tasks, key=lambda t: t.priority)[:6]
+        ) or "None"
+        routines_text = "\n".join(
+            f"- {r.title}" + (" (done)" if r.id in completed_routine_ids else "")
+            for r in routines[:5]
+        ) or "None"
+        events_text = "\n".join(
+            f"- {e.start_time.strftime('%H:%M')} {e.title}" for e in events[:5]
+        ) or "None"
+        prompt = (
+            f"Today is {today}. Write one crisp sentence (max 20 words) summarising the day ahead "
+            f"based on: tasks: {top_tasks_text} | routines: {routines_text} | events: {events_text}."
+        )
+        ai_resp = await _asyncio.wait_for(
+            _oai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=60,
+                temperature=0.4,
+            ),
+            timeout=8.0,
+        )
+        ai_text = (ai_resp.choices[0].message.content or "").strip()
+        if ai_text:
+            plan["summary"] = ai_text
+            generated_by = "ai"
+    except Exception as exc:
+        _logger.debug("daily-plan AI summary skipped: %s", exc)
+
+    return {
+        "date": today.isoformat(),
+        "generated_by": generated_by,
+        **plan,
+    }
+
+
 @router.post("/notifications/{notification_id}/snooze")
 async def snooze_notification(
     notification_id: int,

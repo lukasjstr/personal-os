@@ -152,6 +152,45 @@ interface NotificationsResponse {
   latest: AutopilotNudge | null;
 }
 
+// ── Daily Plan Orchestrator (A2) ──────────────────────────────────────────
+
+interface DailyPlanItem {
+  id: number;
+  type: 'task' | 'routine' | 'event';
+  title: string;
+  reason: string;
+  category?: string | null;
+  priority?: number | null;
+  is_overdue?: boolean;
+  completed?: boolean;
+  time_of_day?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  all_day?: boolean;
+}
+
+interface DailyPlanSection {
+  id: string;
+  title: string;
+  items: DailyPlanItem[];
+}
+
+interface DailyPlanSuggestedBlock {
+  start_time: string;
+  end_time: string;
+  title: string;
+  reason: string;
+  linked_task_id?: number | null;
+}
+
+interface DailyPlanResponse {
+  date: string;
+  generated_by: 'ai' | 'deterministic';
+  summary: string;
+  sections: DailyPlanSection[];
+  suggested_blocks: DailyPlanSuggestedBlock[];
+}
+
 // ── Shared task / calendar types (for fallback) ────────────────────────────
 
 interface Task {
@@ -1076,6 +1115,89 @@ function AutopilotNudgesCard({
   );
 }
 
+// ── DailyPlanOrchestratorCard ──────────────────────────────────────────────
+
+function DailyPlanOrchestratorCard({
+  data,
+  loading,
+}: {
+  data: DailyPlanResponse | null;
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Today's Orchestrated Plan" />
+        <SkeletonLine height={14} style={{ marginBottom: 6 }} />
+        <SkeletonLine width="85%" height={14} style={{ marginBottom: 10 }} />
+        <SkeletonLine width="50%" height={12} />
+      </Card>
+    );
+  }
+
+  if (!data) return null;
+
+  const aiLabel = data.generated_by === 'ai' ? 'AI' : 'Auto';
+
+  return (
+    <Card>
+      <View style={styles.orchestratorHeader}>
+        <SectionLabel text="Today's Orchestrated Plan" />
+        <View style={styles.orchestratorBadge}>
+          <Text style={styles.orchestratorBadgeText}>{aiLabel}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.orchestratorSummary}>{data.summary}</Text>
+
+      {data.suggested_blocks.length > 0 && (
+        <>
+          <Text style={styles.orchestratorSubheading}>Suggested Blocks</Text>
+          {data.suggested_blocks.map((b, i) => (
+            <View key={i} style={[styles.orchestratorBlockRow, i > 0 && styles.priorityRowBorder]}>
+              <View style={styles.orchestratorBlockTimeBox}>
+                <Text style={styles.orchestratorBlockTime}>{b.start_time}</Text>
+                <Text style={styles.orchestratorBlockSep}>–</Text>
+                <Text style={styles.orchestratorBlockTime}>{b.end_time}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.orchestratorBlockTitle} numberOfLines={2}>{b.title}</Text>
+                <Text style={styles.orchestratorBlockReason} numberOfLines={1}>{b.reason}</Text>
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      {data.sections.length > 0 && (
+        <TouchableOpacity
+          style={styles.orchestratorExpandBtn}
+          onPress={() => setExpanded(v => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.orchestratorExpandText}>
+            {expanded ? 'Hide sections' : `Show ${data.sections.length} section${data.sections.length !== 1 ? 's' : ''}`}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {expanded && data.sections.map(section => (
+        <View key={section.id} style={styles.orchestratorSection}>
+          <Text style={styles.orchestratorSectionTitle}>{section.title}</Text>
+          {section.items.slice(0, 4).map((item, i) => (
+            <View key={item.id} style={[styles.orchestratorItemRow, i > 0 && styles.priorityRowBorder]}>
+              <Text style={styles.orchestratorItemTitle} numberOfLines={2}>{item.title}</Text>
+              <Text style={styles.orchestratorItemReason} numberOfLines={1}>{item.reason}</Text>
+            </View>
+          ))}
+        </View>
+      ))}
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -1103,6 +1225,9 @@ export default function HomeScreen() {
 
   // Autopilot notifications (A1) — safe fallback when endpoint unavailable
   const notificationsApi = useApi<NotificationsResponse>('/api/notifications');
+
+  // Daily Plan Orchestrator (A2) — graceful fallback when unavailable
+  const dailyPlanApi = useApi<DailyPlanResponse>('/api/autopilot/daily-plan');
 
   const isDashboardLoading = health.loading || dashboard.loading;
   const isAutopilotLoading = nextAction.loading || prioritiesApi.loading || planApi.loading;
@@ -1144,6 +1269,7 @@ export default function HomeScreen() {
     reflectionApi.refetch();
     weeklyPlanApi.refetch();
     notificationsApi.refetch();
+    dailyPlanApi.refetch();
   }
 
   async function handleAcknowledgeNudge(id: number) {
@@ -1344,6 +1470,11 @@ export default function HomeScreen() {
             tasksApi.loading &&
             calendarApi.loading
           }
+        />
+
+        <DailyPlanOrchestratorCard
+          data={dailyPlanApi.error ? null : (dailyPlanApi.data ?? null)}
+          loading={dailyPlanApi.loading && tasksApi.loading}
         />
       </ScrollView>
     </SafeAreaView>
@@ -1696,4 +1827,43 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   ctaNudgeAck: { backgroundColor: '#166534' },
+
+  // Daily Plan Orchestrator card
+  orchestratorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  orchestratorBadge: {
+    backgroundColor: '#1e3a5f',
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  orchestratorBadgeText: { fontSize: 10, fontWeight: '700', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: 0.4 },
+  orchestratorSummary: { fontSize: 14, color: '#d1d5db', lineHeight: 20, marginBottom: 10 },
+  orchestratorSubheading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  orchestratorBlockRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8 },
+  orchestratorBlockTimeBox: { alignItems: 'center', minWidth: 60 },
+  orchestratorBlockTime: { fontSize: 11, fontWeight: '700', color: '#34d399' },
+  orchestratorBlockSep: { fontSize: 10, color: '#4b5563' },
+  orchestratorBlockTitle: { fontSize: 13, fontWeight: '600', color: '#f9fafb' },
+  orchestratorBlockReason: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  orchestratorExpandBtn: { marginTop: 12, alignSelf: 'flex-start' },
+  orchestratorExpandText: { fontSize: 12, color: '#6366f1', fontWeight: '600' },
+  orchestratorSection: { marginTop: 12 },
+  orchestratorSectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  orchestratorItemRow: { paddingVertical: 6 },
+  orchestratorItemTitle: { fontSize: 13, color: '#f9fafb', fontWeight: '500' },
+  orchestratorItemReason: { fontSize: 11, color: '#6b7280', marginTop: 1 },
 });
