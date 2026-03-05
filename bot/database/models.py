@@ -103,6 +103,7 @@ class Objective(Base):
         foreign_keys="[Task.objective_id]",
         back_populates="objective",
     )
+    routine_impacts: Mapped[list["RoutineObjectiveImpact"]] = relationship(back_populates="objective", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Objective id={self.id} title={self.title!r}>"
@@ -230,6 +231,7 @@ class Routine(Base):
     completions: Mapped[list["RoutineCompletion"]] = relationship(back_populates="routine", cascade="all, delete-orphan")
     calendar_events: Mapped[list["CalendarEvent"]] = relationship(back_populates="linked_routine")
     scheduled_reminders: Mapped[list["ScheduledReminder"]] = relationship(back_populates="linked_routine")
+    objective_impacts: Mapped[list["RoutineObjectiveImpact"]] = relationship(back_populates="routine", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Routine id={self.id} title={self.title!r}>"
@@ -594,6 +596,28 @@ class ActionQueueItem(Base):
 
     def __repr__(self) -> str:
         return f"<DailySuggestion user_id={self.user_id} date={self.date}>"
+
+
+# ─── Phase B5 — Routine-Objective Impact Scoring ──────────────────────────────
+
+class RoutineObjectiveImpact(Base):
+    __tablename__ = "routine_objective_impacts"
+    __table_args__ = (UniqueConstraint("routine_id", "objective_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    routine_id: Mapped[int] = mapped_column(Integer, ForeignKey("routines.id", ondelete="CASCADE"), nullable=False, index=True)
+    objective_id: Mapped[int] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False, index=True)
+    impact_score: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # 1 (low) – 5 (high)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    routine: Mapped["Routine"] = relationship("Routine", back_populates="objective_impacts")
+    objective: Mapped["Objective"] = relationship("Objective", back_populates="routine_impacts")
+
+    def __repr__(self) -> str:
+        return f"<RoutineObjectiveImpact routine={self.routine_id} objective={self.objective_id} score={self.impact_score}>"
 
 
 # ─── Phase B3 — Objective Task Suggestions ────────────────────────────────────

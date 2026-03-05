@@ -21,7 +21,7 @@ from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
     FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, Routine, RoutineCompletion,
-    ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
+    RoutineObjectiveImpact, ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
@@ -391,9 +391,30 @@ async def list_routines(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Get routines with today's completion status."""
+    """Get routines with today's completion status and impact summary."""
     routines = await get_active_routines(session, user.id)
     completed_today = await get_todays_completions(session, user.id)
+
+    # Load impact rows with objective titles in one query
+    routine_ids = [r.id for r in routines]
+    impact_map: dict[int, list[dict]] = {r.id: [] for r in routines}
+    if routine_ids:
+        impact_rows = await session.execute(
+            select(RoutineObjectiveImpact, Objective.title)
+            .join(Objective, Objective.id == RoutineObjectiveImpact.objective_id)
+            .where(
+                RoutineObjectiveImpact.user_id == user.id,
+                RoutineObjectiveImpact.routine_id.in_(routine_ids),
+            )
+            .order_by(RoutineObjectiveImpact.impact_score.desc())
+        )
+        for roi, obj_title in impact_rows:
+            impact_map[roi.routine_id].append({
+                "objective_id": roi.objective_id,
+                "objective_title": obj_title,
+                "impact_score": roi.impact_score,
+            })
+
     routines_sorted = sorted(routines, key=lambda r: (r.sort_order, r.id))
     return {
         "routines": [
@@ -407,6 +428,7 @@ async def list_routines(
                 "time_of_day": r.time_of_day or "anytime",
                 "sort_order": r.sort_order or 0,
                 "completed_today": r.id in completed_today,
+                "objective_impacts": impact_map[r.id],
             }
             for r in routines_sorted
         ]
@@ -1926,6 +1948,143 @@ async def export_data(
         headers={"Content-Disposition": f"attachment; filename=personal-os-export.json"},
     )
 
+
+# ─── Phase B5 — Routine-Objective Impact Scoring ──────────────────────────────
+
+class RoutineImpactUpsert(BaseModel):
+    objective_id: int
+    impact_score: int = 3  # 1–5
+    notes: Optional[str] = None
+
+
+@router.get("/routines/{routine_id}/impacts")
+async def get_routine_impacts(
+    routine_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List all objectives this routine impacts, with scores."""
+    rows = await session.execute(
+        select(RoutineObjectiveImpact, Objective.title, Objective.status)
+        .join(Objective, Objective.id == RoutineObjectiveImpact.objective_id)
+        .where(
+            RoutineObjectiveImpact.user_id == user.id,
+            RoutineObjectiveImpact.routine_id == routine_id,
+        )
+        .order_by(RoutineObjectiveImpact.impact_score.desc())
+    )
+    return {
+        "routine_id": routine_id,
+        "impacts": [
+            {
+                "objective_id": roi.objective_id,
+                "objective_title": obj_title,
+                "objective_status": obj_status,
+                "impact_score": roi.impact_score,
+                "notes": roi.notes,
+                "created_at": roi.created_at.isoformat(),
+            }
+            for roi, obj_title, obj_status in rows
+        ],
+    }
+
+
+@router.post("/routines/{routine_id}/impacts")
+async def upsert_routine_impact(
+    routine_id: int,
+    body: RoutineImpactUpsert,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Set or update the impact score for a routine→objective link."""
+    if not (1 <= body.impact_score <= 5):
+        raise HTTPException(status_code=400, detail="impact_score must be 1–5")
+
+    # Verify routine ownership
+    r = await session.get(Routine, routine_id)
+    if not r or r.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    # Verify objective ownership
+    o = await session.get(Objective, body.objective_id)
+    if not o or o.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Objective not found")
+
+    existing = await session.execute(
+        select(RoutineObjectiveImpact).where(
+            RoutineObjectiveImpact.routine_id == routine_id,
+            RoutineObjectiveImpact.objective_id == body.objective_id,
+        )
+    )
+    roi = existing.scalar_one_or_none()
+    if roi:
+        roi.impact_score = body.impact_score
+        roi.notes = body.notes
+    else:
+        roi = RoutineObjectiveImpact(
+            user_id=user.id,
+            routine_id=routine_id,
+            objective_id=body.objective_id,
+            impact_score=body.impact_score,
+            notes=body.notes,
+        )
+        session.add(roi)
+    await session.flush()
+    return {"routine_id": routine_id, "objective_id": body.objective_id, "impact_score": roi.impact_score}
+
+
+@router.delete("/routines/{routine_id}/impacts/{objective_id}")
+async def delete_routine_impact(
+    routine_id: int,
+    objective_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Remove the impact link between a routine and an objective."""
+    result = await session.execute(
+        select(RoutineObjectiveImpact).where(
+            RoutineObjectiveImpact.user_id == user.id,
+            RoutineObjectiveImpact.routine_id == routine_id,
+            RoutineObjectiveImpact.objective_id == objective_id,
+        )
+    )
+    roi = result.scalar_one_or_none()
+    if not roi:
+        raise HTTPException(status_code=404, detail="Impact link not found")
+    await session.delete(roi)
+    return {"deleted": True}
+
+
+@router.get("/objectives/{objective_id}/routine-impacts")
+async def get_objective_routine_impacts(
+    objective_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List all routines that impact an objective, with scores."""
+    rows = await session.execute(
+        select(RoutineObjectiveImpact, Routine.title, Routine.status, Routine.time_of_day)
+        .join(Routine, Routine.id == RoutineObjectiveImpact.routine_id)
+        .where(
+            RoutineObjectiveImpact.user_id == user.id,
+            RoutineObjectiveImpact.objective_id == objective_id,
+        )
+        .order_by(RoutineObjectiveImpact.impact_score.desc())
+    )
+    return {
+        "objective_id": objective_id,
+        "routine_impacts": [
+            {
+                "routine_id": roi.routine_id,
+                "routine_title": r_title,
+                "routine_status": r_status,
+                "routine_time_of_day": r_tod,
+                "impact_score": roi.impact_score,
+                "notes": roi.notes,
+            }
+            for roi, r_title, r_status, r_tod in rows
+        ],
+    }
 
 @router.delete("/settings/account")
 async def delete_account(

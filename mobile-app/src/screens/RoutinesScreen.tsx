@@ -12,6 +12,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../lib/apiClient';
 import { useApi } from '../hooks/useApi';
 
+interface ObjectiveImpact {
+  objective_id: number;
+  objective_title: string;
+  impact_score: number;
+}
+
 interface Routine {
   id: number;
   title: string;
@@ -20,6 +26,7 @@ interface Routine {
   frequency_human: string | null;
   sort_order: number;
   completed_today: boolean;
+  objective_impacts?: ObjectiveImpact[];
 }
 
 interface RoutinesResponse {
@@ -71,6 +78,22 @@ function RoutineRow({
         </Text>
         {routine.frequency_human ? (
           <Text style={styles.rowMeta}>{routine.frequency_human}</Text>
+        ) : null}
+        {routine.objective_impacts && routine.objective_impacts.length > 0 ? (
+          <View style={styles.impactRow}>
+            {routine.objective_impacts.slice(0, 2).map(oi => (
+              <View key={oi.objective_id} style={styles.impactBadge}>
+                <Text style={styles.impactBadgeText} numberOfLines={1}>
+                  {'\u25CF'.repeat(oi.impact_score)} {oi.objective_title}
+                </Text>
+              </View>
+            ))}
+            {routine.objective_impacts.length > 2 ? (
+              <View style={styles.impactBadge}>
+                <Text style={styles.impactBadgeText}>+{routine.objective_impacts.length - 2}</Text>
+              </View>
+            ) : null}
+          </View>
         ) : null}
       </View>
       <TouchableOpacity
@@ -266,4 +289,13 @@ const styles = StyleSheet.create({
   retryText: { color: '#d1d5db', fontSize: 14 },
   emptyText: { fontSize: 16, color: '#9ca3af', marginBottom: 6 },
   emptyHint: { fontSize: 13, color: '#4b5563' },
+  impactRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 5 },
+  impactBadge: {
+    backgroundColor: '#1e3a5f',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    maxWidth: 180,
+  },
+  impactBadgeText: { fontSize: 10, color: '#60a5fa' },
 });
