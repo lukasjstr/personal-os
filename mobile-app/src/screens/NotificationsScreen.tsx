@@ -231,7 +231,7 @@ export default function NotificationsScreen() {
     loading: notifLoading,
     error: notifError,
     refetch: refetchNotifs,
-  } = useApi<NotificationsResponse>(`/notifications?status=${notifStatus}&limit=50`);
+  } = useApi<NotificationsResponse>(`/api/notifications?status=${notifStatus}&limit=50`);
 
   const {
     data: queueData,
@@ -240,10 +240,10 @@ export default function NotificationsScreen() {
     refetch: refetchQueue,
   } = useApi<ActionQueueResponse>(
     filter === 'snoozed'
-      ? '/autopilot/action-queue?state=snoozed'
+      ? '/api/autopilot/action-queue?state=snoozed'
       : filter === 'all'
-        ? '/autopilot/action-queue?state=all'
-        : '/autopilot/action-queue',
+        ? '/api/autopilot/action-queue?state=all'
+        : '/api/autopilot/action-queue',
   );
 
   const refetchAll = useCallback(() => {
@@ -271,12 +271,12 @@ export default function NotificationsScreen() {
 
   const acknowledgeNotif = (id: number) =>
     withBusy(`notif-${id}`, () =>
-      apiRequest(`/notifications/${id}/acknowledge`, { method: 'POST' }),
+      apiRequest(`/api/notifications/${id}/acknowledge`, { method: 'POST' }),
     );
 
   const snoozeNotif = (id: number) =>
     withBusy(`notif-snooze-${id}`, () =>
-      apiRequest(`/notifications/${id}/snooze`, {
+      apiRequest(`/api/notifications/${id}/snooze`, {
         method: 'POST',
         body: JSON.stringify({ minutes: 60 }),
       }),
@@ -284,7 +284,7 @@ export default function NotificationsScreen() {
 
   const updateQueueItem = (id: number, state: string) =>
     withBusy(`queue-${id}`, () =>
-      apiRequest(`/autopilot/action-queue/${id}`, {
+      apiRequest(`/api/autopilot/action-queue/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ state }),
       }),
