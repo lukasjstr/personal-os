@@ -153,3 +153,95 @@ For every ticket:
 - Telegram token auth remains primary
 - No breaking backend changes without migration + rollback path
 - Every automation must be reversible and auditable
+
+---
+
+## 6) URGENT APP ERRORS (2026-03-05, user-reported)
+
+Process rule: fix as small sequential tickets, each with validate + commit + push.
+
+### ERR-1 Notifications screen load error
+- Symptom: `Load error — showing cached data` on Notifications tab
+- Check endpoint parity (`/api/notifications`, `/api/autopilot/action-queue`) and response mapping
+- Ensure retry path + graceful empty state are both correct
+
+### ERR-2 Fitness tab renders raw HTML/doctype
+- Symptom: Fitness screen shows HTML source instead of app UI
+- Likely wrong endpoint/content-type handling fallback into web payload
+- Add strict JSON/content-type guard + safe parser + robust error UI
+
+### ERR-3 Routines screen hard fail
+- Symptom: `Something went wrong. Please try again.`
+- Validate routines endpoint contract and mobile mapping
+- Add deterministic fallback and typed error handling
+
+### ERR-4 Unknown glyph/placeholder icon (`?`)
+- Symptom: question-mark icon appears in FAB/quick-actions context
+- Audit icon package and glyph names; replace unsupported glyphs
+- Add icon fallback mapping for platform compatibility
+
+### ERR-5 Quick Actions visual polish + IA alignment
+- Symptom: quick-actions exist but clarity/discoverability is weak
+- Improve labels/descriptions hierarchy and ordering
+- Ensure actions map to real backend capabilities
+
+---
+
+## 7) EPIC CORE — Goal → Autopilot Pipeline (P0, STRICT SEQUENCE)
+
+North star: **Goal rein → vollständiger Plan raus → automatische Ausführung → Lernschleife**.
+
+Do not parallelize these tickets; each depends on previous output.
+
+### CORE-1 OKR proposal generator (backend, non-destructive)
+- New proposal flow from plain goal text
+- Objective + KRs + tasks + routines + milestones + reminder skeleton + suggested slots
+- Validation and anti-overgeneration limits
+
+### CORE-2 Review/accept/modify/reject flow (conversation + API)
+- Store proposal drafts
+- User approval gate before any DB creation
+- Accept/modify/reject executors
+
+### CORE-3 Auto calendar generation
+- Recurring blocks + milestones + deadlines
+- Conflict detection and alternative slot assignment
+
+### CORE-4 Auto reminder generation
+- Reminder factory by KR type/frequency
+- Smart conditions + anti-spam constraints in config model
+
+### CORE-5 Reminder engine execution loop
+- Due reminder processor, retry, quiet hours, batching
+- Personalized template rendering
+
+### CORE-6 Daily plan integration
+- Morning brief + evening review fully fed by goal pipeline outputs
+- Warning detector + free-slot suggestions
+
+### CORE-7 Next-action completion loop
+- Completion hooks update KR/objective progress
+- Next unblocked action surfaced immediately
+
+### CORE-8 App integration (mobile + web/PWA)
+- Goal proposal/review screens
+- Autopilot status/action cards + reminders overview
+- Parity across mobile and dashboard
+
+---
+
+## 8) Active execution order now
+
+1. ERR-1
+2. ERR-2
+3. ERR-3
+4. ERR-4
+5. ERR-5
+6. CORE-1
+7. CORE-2
+8. CORE-3
+9. CORE-4
+10. CORE-5
+11. CORE-6
+12. CORE-7
+13. CORE-8
