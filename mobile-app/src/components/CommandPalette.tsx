@@ -282,9 +282,9 @@ interface Action {
 }
 
 const ACTIONS: Action[] = [
-  { id: 'plan', icon: '📅', label: 'Plan Day', sublabel: "See today's schedule", color: '#6366f1' },
+  { id: 'focus', icon: '🎯', label: 'Focus Mode', sublabel: 'Start your next task', color: '#f59e0b' },
   { id: 'dump', icon: '🧠', label: 'Brain Dump', sublabel: 'Capture a thought', color: '#10b981' },
-  { id: 'focus', icon: '⚡', label: 'Focus Mode', sublabel: 'Work on your next task', color: '#f59e0b' },
+  { id: 'plan', icon: '📅', label: 'Plan Day', sublabel: "View today's AI plan", color: '#6366f1' },
 ];
 
 const VIEW_TITLES: Record<ActiveView, string> = {
