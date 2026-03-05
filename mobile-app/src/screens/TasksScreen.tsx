@@ -27,6 +27,9 @@ interface Task {
   is_overdue: boolean;
   parent_task_id: number | null;
   blocked_by_task_id: number | null;
+  blocker_title: string | null;
+  is_unblocked: boolean;
+  subtask_count: number;
   objective_title: string | null;
 }
 
@@ -44,6 +47,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 function isBlocked(task: Task, allTasks: Task[]): boolean {
+  // Prefer server-computed field; fall back to client-side derivation for
+  // tasks that pre-date the computed field (backward-compatible).
+  if (task.is_unblocked !== undefined) return !task.is_unblocked;
   if (!task.blocked_by_task_id) return false;
   const blocker = allTasks.find(t => t.id === task.blocked_by_task_id);
   return blocker ? blocker.status !== 'done' : false;
@@ -60,10 +66,21 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-function BlockedBadge() {
+function BlockedBadge({ blockerTitle }: { blockerTitle?: string | null }) {
+  const label = blockerTitle ? `⊘ ${blockerTitle}` : 'Blocked';
   return (
     <View style={styles.blockedBadge}>
-      <Text style={styles.blockedBadgeText}>Blocked</Text>
+      <Text style={styles.blockedBadgeText} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function SubtaskCountBadge({ count }: { count: number }) {
+  return (
+    <View style={styles.subtaskCountBadge}>
+      <Text style={styles.subtaskCountText}>{count} sub</Text>
     </View>
   );
 }
@@ -77,6 +94,7 @@ function TaskItem({
   isSubtask: boolean;
   blocked: boolean;
 }) {
+  const subtaskCount = item.subtask_count ?? 0;
   return (
     <View style={[styles.taskCard, isSubtask && styles.subtaskCard]}>
       {isSubtask && <View style={styles.subtaskIndentLine} />}
@@ -89,7 +107,10 @@ function TaskItem({
             {item.title}
           </Text>
           <View style={styles.badgeRow}>
-            {blocked && <BlockedBadge />}
+            {blocked && <BlockedBadge blockerTitle={item.blocker_title} />}
+            {!isSubtask && subtaskCount > 0 && (
+              <SubtaskCountBadge count={subtaskCount} />
+            )}
             <StatusChip status={item.status} />
           </View>
         </View>
@@ -472,8 +493,18 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     backgroundColor: '#431407',
+    maxWidth: 120,
   },
   blockedBadgeText: { fontSize: 11, fontWeight: '600', color: '#fb923c' },
+  subtaskCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#1c2640',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  subtaskCountText: { fontSize: 11, fontWeight: '500', color: '#9ca3af' },
   taskMeta: { flexDirection: 'row', gap: 12, marginTop: 6 },
   metaText: { fontSize: 12, color: '#9ca3af' },
   overdueText: { color: '#f87171' },

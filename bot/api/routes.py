@@ -117,12 +117,21 @@ async def list_tasks(
         .options(
             selectinload(Task.key_result).selectinload(KeyResult.objective),
             selectinload(Task.objective),
+            selectinload(Task.blocked_by),
+            selectinload(Task.sub_tasks),
         )
         .where(and_(*conditions))
         .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
     )
     tasks = result.scalars().all()
     today = date.today()
+
+    def _is_unblocked(t: Task) -> bool:
+        if not t.blocked_by_task_id:
+            return True
+        blocker = t.blocked_by
+        return blocker is None or blocker.status in ("done", "cancelled")
+
     return {
         "tasks": [
             {
@@ -139,6 +148,9 @@ async def list_tasks(
                 "objective_id": t.objective_id,
                 "parent_task_id": t.parent_task_id,
                 "blocked_by_task_id": t.blocked_by_task_id,
+                "blocker_title": t.blocked_by.title if t.blocked_by else None,
+                "is_unblocked": _is_unblocked(t),
+                "subtask_count": len(t.sub_tasks),
                 "key_result_title": t.key_result.title if t.key_result else None,
                 "objective_title": (
                     t.objective.title if t.objective
@@ -149,6 +161,54 @@ async def list_tasks(
             for t in tasks
         ]
     }
+
+
+@router.get("/tasks/dependency-graph")
+async def task_dependency_graph(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return dependency graph (nodes + edges) for all active tasks."""
+    result = await session.execute(
+        select(Task)
+        .options(selectinload(Task.sub_tasks))
+        .where(
+            Task.user_id == user.id,
+            Task.status.in_(["todo", "in_progress"]),
+        )
+    )
+    tasks = result.scalars().all()
+
+    nodes = [
+        {
+            "id": t.id,
+            "title": t.title,
+            "status": t.status,
+            "priority": t.priority,
+            "is_unblocked": (
+                not t.blocked_by_task_id
+                or not any(t2.id == t.blocked_by_task_id for t2 in tasks)
+            ),
+        }
+        for t in tasks
+    ]
+
+    edges = []
+    for t in tasks:
+        if t.blocked_by_task_id:
+            edges.append({
+                "from": t.blocked_by_task_id,
+                "to": t.id,
+                "type": "blocks",
+            })
+        if t.parent_task_id:
+            edges.append({
+                "from": t.parent_task_id,
+                "to": t.id,
+                "type": "parent",
+            })
+
+    return {"nodes": nodes, "edges": edges}
 
 
 @router.get("/shopping")
