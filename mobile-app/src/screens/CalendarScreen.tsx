@@ -1,68 +1,321 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { apiRequest } from '../lib/apiClient';
 import { useApi } from '../hooks/useApi';
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface CalendarEvent {
   id: number;
-  title: string;
-  description: string | null;
-  start_time: string;
-  end_time: string | null;
-  all_day: boolean;
-  event_type: string | null;
+  title?: string | null;
+  description?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  all_day?: boolean | null;
+  event_type?: string | null;
+  notes?: string | null;
 }
 
 interface CalendarResponse {
-  events: CalendarEvent[];
+  events?: CalendarEvent[];
 }
 
-function formatEventTime(startIso: string, endIso: string | null, allDay: boolean): string {
-  const start = new Date(startIso);
+// ── Filter ─────────────────────────────────────────────────────────────────
+
+type FilterKey = 'today' | 'next7' | 'next30';
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'next7', label: 'Next 7 Days' },
+  { key: 'next30', label: 'Next 30 Days' },
+];
+
+function filterEvents(events: CalendarEvent[], filter: FilterKey): CalendarEvent[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart.getTime() + 86400_000);
+
+  return events.filter(ev => {
+    const raw = ev.start_time;
+    if (!raw) return false;
+    const start = new Date(raw);
+    if (isNaN(start.getTime())) return false;
+
+    if (filter === 'today') {
+      return start >= todayStart && start < todayEnd;
+    }
+    if (filter === 'next7') {
+      const cutoff = new Date(todayStart.getTime() + 7 * 86400_000);
+      return start >= todayStart && start < cutoff;
+    }
+    // next30
+    const cutoff = new Date(todayStart.getTime() + 30 * 86400_000);
+    return start >= todayStart && start < cutoff;
+  });
+}
+
+// ── Formatting helpers ─────────────────────────────────────────────────────
+
+function safeDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatEventTime(
+  startIso: string | null | undefined,
+  endIso: string | null | undefined,
+  allDay: boolean | null | undefined,
+): string {
+  const start = safeDate(startIso);
+  if (!start) return '';
   if (allDay) {
     return start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
   const dateStr = start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const timeStr = start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  if (endIso) {
-    const end = new Date(endIso);
+  const end = safeDate(endIso);
+  if (end) {
     const endTime = end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     return `${dateStr}  ${timeStr} – ${endTime}`;
   }
   return `${dateStr}  ${timeStr}`;
 }
 
-function EventItem({ item }: { item: CalendarEvent }) {
+function typeColor(type: string | null | undefined): string {
+  switch ((type ?? '').toLowerCase()) {
+    case 'work': return '#6366f1';
+    case 'personal': return '#10b981';
+    case 'fitness': return '#f59e0b';
+    case 'health': return '#ef4444';
+    default: return '#6b7280';
+  }
+}
+
+// ── Event card ─────────────────────────────────────────────────────────────
+
+interface EventItemProps {
+  item: CalendarEvent;
+  onPress: (item: CalendarEvent) => void;
+}
+
+function EventItem({ item, onPress }: EventItemProps) {
   const timeLabel = formatEventTime(item.start_time, item.end_time, item.all_day);
+  const dotColor = typeColor(item.event_type);
+  const notePreview = item.notes?.trim();
+
   return (
-    <View style={styles.eventCard}>
-      <View style={styles.eventDot} />
+    <TouchableOpacity style={styles.eventCard} onPress={() => onPress(item)} activeOpacity={0.75}>
+      <View style={[styles.eventDot, { backgroundColor: dotColor }]} />
       <View style={styles.eventBody}>
         <Text style={styles.eventTitle} numberOfLines={2}>
-          {item.title}
+          {item.title ?? 'Untitled event'}
         </Text>
-        <Text style={styles.eventTime}>{timeLabel}</Text>
-        {item.event_type && (
-          <Text style={styles.eventType}>{item.event_type}</Text>
-        )}
+        {timeLabel ? <Text style={styles.eventTime}>{timeLabel}</Text> : null}
+        <View style={styles.eventMeta}>
+          {item.event_type ? (
+            <View style={[styles.typePill, { backgroundColor: dotColor + '33' }]}>
+              <Text style={[styles.typePillText, { color: dotColor }]}>{item.event_type}</Text>
+            </View>
+          ) : null}
+        </View>
+        {notePreview ? (
+          <Text style={styles.notePreview} numberOfLines={1}>
+            {notePreview}
+          </Text>
+        ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
+// ── Event detail modal ─────────────────────────────────────────────────────
+
+interface EventModalProps {
+  event: CalendarEvent | null;
+  onClose: () => void;
+  onSaved: (updated: CalendarEvent) => void;
+}
+
+function EventModal({ event, onClose, onSaved }: EventModalProps) {
+  const [notes, setNotes] = useState(event?.notes ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Reset local state when event changes
+  React.useEffect(() => {
+    setNotes(event?.notes ?? '');
+    setSaveError(null);
+    setSaveSuccess(false);
+  }, [event?.id]);
+
+  const handleSave = useCallback(async () => {
+    if (!event) return;
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
+    // Try POST /api/calendar/{id}/notes first, fallback to PUT /api/calendar/{id}
+    try {
+      await apiRequest(`/api/calendar/${event.id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ notes }),
+      });
+      setSaveSuccess(true);
+      onSaved({ ...event, notes });
+    } catch {
+      try {
+        await apiRequest(`/api/calendar/${event.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ notes }),
+        });
+        setSaveSuccess(true);
+        onSaved({ ...event, notes });
+      } catch (err2: unknown) {
+        const msg = err2 instanceof Error ? err2.message : 'Failed to save notes';
+        setSaveError(msg);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [event, notes, onSaved]);
+
+  if (!event) return null;
+
+  const timeLabel = formatEventTime(event.start_time, event.end_time, event.all_day);
+  const dotColor = typeColor(event.event_type);
+
+  return (
+    <Modal visible={!!event} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} numberOfLines={2}>
+              {event.title ?? 'Untitled event'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
+              <Text style={styles.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+            {/* Meta row */}
+            <View style={styles.metaRow}>
+              {event.event_type ? (
+                <View style={[styles.typePill, { backgroundColor: dotColor + '33' }]}>
+                  <Text style={[styles.typePillText, { color: dotColor }]}>{event.event_type}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Time */}
+            {timeLabel ? (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>When</Text>
+                <Text style={styles.detailValue}>{timeLabel}</Text>
+              </View>
+            ) : null}
+
+            {/* Description */}
+            {event.description ? (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Description</Text>
+                <Text style={styles.detailValue}>{event.description}</Text>
+              </View>
+            ) : null}
+
+            {/* Notes editor */}
+            <View style={styles.notesSection}>
+              <Text style={styles.detailLabel}>Notes</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={notes}
+                onChangeText={val => {
+                  setNotes(val);
+                  setSaveError(null);
+                  setSaveSuccess(false);
+                }}
+                placeholder="Add your notes here…"
+                placeholderTextColor="#4b5563"
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Feedback */}
+            {saveSuccess ? (
+              <Text style={styles.successText}>Notes saved!</Text>
+            ) : null}
+            {saveError ? (
+              <Text style={styles.errorText}>{saveError}</Text>
+            ) : null}
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Notes</Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Main screen ────────────────────────────────────────────────────────────
+
 export default function CalendarScreen() {
   const { data, loading, error, refetch } = useApi<CalendarResponse>('/api/calendar');
-  const events = data?.events ?? [];
+  const [filter, setFilter] = useState<FilterKey>('next7');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  // Local overrides for optimistic notes updates
+  const [notesOverrides, setNotesOverrides] = useState<Record<number, string>>({});
 
-  if (loading && events.length === 0) {
+  const rawEvents: CalendarEvent[] = data?.events ?? [];
+
+  // Merge notes overrides into events
+  const mergedEvents = rawEvents.map(ev =>
+    notesOverrides[ev.id] !== undefined ? { ...ev, notes: notesOverrides[ev.id] } : ev,
+  );
+
+  const filteredEvents = filterEvents(mergedEvents, filter);
+
+  const handleEventPress = useCallback((ev: CalendarEvent) => {
+    setSelectedEvent(ev);
+  }, []);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedEvent(null);
+  }, []);
+
+  const handleSaved = useCallback((updated: CalendarEvent) => {
+    setNotesOverrides(prev => ({ ...prev, [updated.id]: updated.notes ?? '' }));
+    // Update selected event to reflect new notes without closing
+    setSelectedEvent(updated);
+  }, []);
+
+  if (loading && rawEvents.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.center}>
@@ -72,7 +325,7 @@ export default function CalendarScreen() {
     );
   }
 
-  if (error && events.length === 0) {
+  if (error && rawEvents.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.center}>
@@ -87,28 +340,85 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      {/* Segmented filter */}
+      <View style={styles.filterRow}>
+        {FILTERS.map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Text style={[styles.filterBtnText, filter === f.key && styles.filterBtnTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       <FlatList
-        data={events}
+        data={filteredEvents}
         keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => <EventItem item={item} />}
+        renderItem={({ item }) => <EventItem item={item} onPress={handleEventPress} />}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refetch} tintColor="#6366f1" />
         }
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text style={styles.emptyText}>No upcoming events in the next 30 days.</Text>
+            <Text style={styles.emptyText}>No events for this period.</Text>
           </View>
         }
+      />
+
+      <EventModal
+        event={selectedEvent}
+        onClose={handleModalClose}
+        onSaved={handleSaved}
       />
     </SafeAreaView>
   );
 }
 
+// ── Styles ──────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111827' },
+
+  // Filter bar
+  filterRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+  },
+  filterBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  filterBtnActive: {
+    backgroundColor: '#6366f1',
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  filterBtnTextActive: {
+    color: '#f9fafb',
+    fontWeight: '600',
+  },
+
+  // List
   list: { padding: 16, gap: 10, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
+
+  // Event card
   eventCard: {
     flexDirection: 'row',
     backgroundColor: '#1f2937',
@@ -126,9 +436,19 @@ const styles = StyleSheet.create({
   },
   eventBody: { flex: 1 },
   eventTitle: { fontSize: 15, fontWeight: '600', color: '#f9fafb', marginBottom: 4 },
-  eventTime: { fontSize: 12, color: '#9ca3af' },
-  eventType: { fontSize: 11, color: '#6b7280', marginTop: 4, textTransform: 'capitalize' },
+  eventTime: { fontSize: 12, color: '#9ca3af', marginBottom: 6 },
+  eventMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  typePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  typePillText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  notePreview: { fontSize: 12, color: '#6b7280', marginTop: 6, fontStyle: 'italic' },
+
+  // Feedback
   errorText: { color: '#f87171', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  successText: { color: '#10b981', fontSize: 13, marginBottom: 8, textAlign: 'center' },
   emptyText: { color: '#6b7280', fontSize: 14 },
   retryButton: {
     backgroundColor: '#6366f1',
@@ -137,4 +457,71 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryText: { color: '#f9fafb', fontWeight: '600' },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#1f2937',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#374151',
+    gap: 12,
+  },
+  modalTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#f9fafb',
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#374151',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtnText: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
+
+  modalBody: { padding: 20 },
+  metaRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  detailRow: { marginBottom: 14 },
+  detailLabel: { fontSize: 11, color: '#6b7280', fontWeight: '600', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.5 },
+  detailValue: { fontSize: 14, color: '#d1d5db' },
+
+  notesSection: { marginBottom: 12 },
+  notesInput: {
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    padding: 12,
+    color: '#f9fafb',
+    fontSize: 14,
+    minHeight: 110,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+
+  saveBtn: {
+    backgroundColor: '#6366f1',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
