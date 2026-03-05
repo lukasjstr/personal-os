@@ -18,6 +18,7 @@ import {
   Dumbbell,
   Trophy,
   BookOpen,
+  ClipboardList,
   Menu,
   X,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const NAV = [
   { href: "/achievements", label: "Erfolge", icon: Trophy },
   { href: "/reflection", label: "Reflexion", icon: BookOpen },
   { href: "/docs", label: "Dokumente", icon: FileText },
+  { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];
 
