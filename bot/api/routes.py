@@ -19,9 +19,10 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailySuggestion,
-    FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, Routine, RoutineCompletion,
-    RoutineObjectiveImpact, ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
+    Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
+    DailySuggestion, FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, Routine,
+    RoutineCompletion, RoutineObjectiveImpact, ShoppingDefault, Task, User, UserAchievement,
+    WeeklyReflection,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
@@ -3234,3 +3235,110 @@ async def reject_task_suggestion(
     await session.flush()
 
     return {"ok": True, "suggestion": _suggestion_dict(suggestion)}
+
+
+# ── In-app Review Flow (C6) ────────────────────────────────────────────────
+
+class MorningCheckinBody(BaseModel):
+    mood: Optional[int] = None          # 1-10
+    intentions: Optional[list[str]] = None
+
+
+class EveningReviewBody(BaseModel):
+    day_score: Optional[int] = None     # 1-10
+    biggest_win: Optional[str] = None
+    learning: Optional[str] = None
+
+
+@router.post("/autopilot/morning-checkin")
+async def morning_checkin(
+    body: MorningCheckinBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Save morning check-in: mood + top 3 intentions.
+
+    Stores as a Log entry (log_type='morning_checkin') so it appears in
+    the activity timeline. Idempotent — creates at most one entry per day.
+    """
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    existing = await session.execute(
+        select(Log).where(
+            and_(
+                Log.user_id == user.id,
+                Log.log_type == "morning_checkin",
+                Log.logged_at >= today_start,
+            )
+        )
+    )
+    if existing.scalar_one_or_none():
+        return {"ok": True, "already_done": True}
+
+    mood = max(1, min(10, body.mood)) if body.mood is not None else None
+    intentions = [i.strip() for i in (body.intentions or []) if i.strip()]
+
+    log = Log(
+        user_id=user.id,
+        log_type="morning_checkin",
+        data={"mood": mood, "intentions": intentions},
+        source="mobile",
+        raw_input=None,
+    )
+    session.add(log)
+    await session.flush()
+    return {"ok": True, "already_done": False, "log_id": log.id}
+
+
+@router.post("/autopilot/evening-review")
+async def evening_review(
+    body: EveningReviewBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Save evening review: day score, biggest win, key learning.
+
+    Persists day_score to today's DailyBrief row (creates one if missing)
+    and saves a Log entry for the activity timeline.
+    """
+    today = date.today()
+    today_start = datetime.combine(today, datetime.min.time())
+
+    # Upsert DailyBrief
+    brief_result = await session.execute(
+        select(DailyBrief).where(
+            and_(DailyBrief.user_id == user.id, DailyBrief.brief_date == today)
+        )
+    )
+    brief = brief_result.scalar_one_or_none()
+    if brief is None:
+        brief = DailyBrief(user_id=user.id, brief_date=today)
+        session.add(brief)
+    if body.day_score is not None:
+        brief.day_score = max(1, min(10, body.day_score))
+
+    # Log entry (idempotent: one per day)
+    existing_log = await session.execute(
+        select(Log).where(
+            and_(
+                Log.user_id == user.id,
+                Log.log_type == "evening_review",
+                Log.logged_at >= today_start,
+            )
+        )
+    )
+    if not existing_log.scalar_one_or_none():
+        log = Log(
+            user_id=user.id,
+            log_type="evening_review",
+            data={
+                "day_score": body.day_score,
+                "biggest_win": body.biggest_win,
+                "learning": body.learning,
+            },
+            source="mobile",
+            raw_input=None,
+        )
+        session.add(log)
+
+    await session.flush()
+    return {"ok": True, "day_score": brief.day_score}

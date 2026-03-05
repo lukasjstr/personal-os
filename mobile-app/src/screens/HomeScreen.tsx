@@ -14,6 +14,8 @@ import { useApi } from '../hooks/useApi';
 import { apiRequest } from '../lib/apiClient';
 import type { TabParamList } from '../navigation/TabNavigator';
 import { ErrorBanner } from '../components/ErrorState';
+import CommandPalette from '../components/CommandPalette';
+import ReviewFlowBanner from '../components/ReviewFlow';
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -1506,6 +1508,9 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Morning check-in / evening review banner */}
+        <ReviewFlowBanner />
+
         {/* Inline error banner — non-blocking, shown when core data fails */}
         {!isAnyLoading && (tasksApi.error ?? dashboard.error) != null && tasks.length === 0 && !stats && (
           <ErrorBanner
@@ -1655,6 +1660,9 @@ export default function HomeScreen() {
           onComplete={handleCompleteQueueItem}
         />
       </ScrollView>
+
+      {/* Command palette FAB — floats above scroll content */}
+      <CommandPalette />
     </SafeAreaView>
   );
 }
