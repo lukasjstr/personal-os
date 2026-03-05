@@ -50,6 +50,36 @@ async def get_error_log(
     return {"errors": errors, "count": len(errors)}
 
 
+@router.get("/admin/kill-switches")
+async def get_kill_switches(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return current state of all automation kill switches."""
+    from bot.core.kill_switches import status
+    return status()
+
+
+class KillSwitchBody(BaseModel):
+    switch: str
+    enabled: bool
+
+
+@router.post("/admin/kill-switches")
+async def set_kill_switch(
+    body: KillSwitchBody,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Enable or disable an automation kill switch."""
+    from bot.core.kill_switches import enable, disable, status, _DEFAULTS
+    if body.switch not in _DEFAULTS:
+        raise HTTPException(status_code=400, detail=f"Unknown switch '{body.switch}'. Valid: {list(_DEFAULTS)}")
+    if body.enabled:
+        enable(body.switch)
+    else:
+        disable(body.switch)
+    return {"ok": True, **status()}
+
+
 @router.get("/objectives")
 async def list_objectives(
     user: User = Depends(get_current_user),
