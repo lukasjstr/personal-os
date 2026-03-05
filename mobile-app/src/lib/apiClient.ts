@@ -67,7 +67,7 @@ export async function apiRequest<T>(
 export async function validateToken(token: string): Promise<boolean> {
   try {
     const response = await fetchWithTimeout(
-      `${API_BASE_URL}/auth/validate`,
+      `${API_BASE_URL}/api/auth/validate`,
       {
         method: 'GET',
         headers: {
