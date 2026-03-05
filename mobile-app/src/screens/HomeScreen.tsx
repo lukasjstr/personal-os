@@ -1,6 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -180,6 +179,25 @@ function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
+function SkeletonLine({
+  width = '100%',
+  height = 14,
+  style,
+}: {
+  width?: string | number;
+  height?: number;
+  style?: object;
+}) {
+  return <View style={[styles.skeletonLine, { width, height }, style]} />;
+}
+
+function formatRelativeTime(date: Date): string {
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  return `${Math.floor(diffMin / 60)}h ago`;
+}
+
 // ── Autopilot section cards ────────────────────────────────────────────────
 
 function NextActionCard({
@@ -198,7 +216,14 @@ function NextActionCard({
     return (
       <Card>
         <SectionLabel text="Next Action" />
-        <ActivityIndicator size="small" color="#6366f1" style={{ alignSelf: 'flex-start' }} />
+        <SkeletonLine width="55%" height={11} style={{ marginBottom: 8 }} />
+        <SkeletonLine height={18} style={{ marginBottom: 4 }} />
+        <SkeletonLine width="80%" height={18} style={{ marginBottom: 12 }} />
+        <SkeletonLine width="38%" height={12} style={{ marginBottom: 14 }} />
+        <View style={styles.ctaRow}>
+          <SkeletonLine height={38} style={{ flex: 1, borderRadius: 8 }} />
+          <SkeletonLine height={38} style={{ flex: 1, borderRadius: 8 }} />
+        </View>
       </Card>
     );
   }
@@ -305,7 +330,12 @@ function PriorityListCard({
     return (
       <Card>
         <SectionLabel text="Top Priorities" />
-        <ActivityIndicator size="small" color="#6366f1" style={{ alignSelf: 'flex-start' }} />
+        {[0, 1, 2].map(i => (
+          <View key={i} style={[styles.priorityRow, i > 0 && styles.priorityRowBorder]}>
+            <SkeletonLine width={18} height={16} style={{ borderRadius: 4 }} />
+            <SkeletonLine style={{ flex: 1 }} height={16} />
+          </View>
+        ))}
       </Card>
     );
   }
@@ -359,7 +389,9 @@ function TodayPlanCard({
     return (
       <Card>
         <SectionLabel text="Today's Plan" />
-        <ActivityIndicator size="small" color="#6366f1" style={{ alignSelf: 'flex-start' }} />
+        <SkeletonLine height={14} style={{ marginBottom: 6 }} />
+        <SkeletonLine width="90%" height={14} style={{ marginBottom: 6 }} />
+        <SkeletonLine width="65%" height={14} />
       </Card>
     );
   }
@@ -399,7 +431,13 @@ function WeeklyFocusCard({
     return (
       <Card>
         <SectionLabel text="Weekly Focus" />
-        <ActivityIndicator size="small" color="#10b981" style={{ alignSelf: 'flex-start' }} />
+        {[0, 1, 2].map(i => (
+          <View key={i} style={[styles.weeklyPriorityRow, i > 0 && styles.priorityRowBorder]}>
+            <SkeletonLine width={16} height={14} style={{ borderRadius: 4 }} />
+            <SkeletonLine style={{ flex: 1 }} height={14} />
+          </View>
+        ))}
+        <SkeletonLine width="70%" height={12} style={{ marginTop: 14 }} />
       </Card>
     );
   }
@@ -730,7 +768,12 @@ function FreeSlotsPlanCard({
     return (
       <Card>
         <SectionLabel text="Free Slots Today" />
-        <ActivityIndicator size="small" color="#f59e0b" style={{ alignSelf: 'flex-start' }} />
+        {[0, 1, 2].map(i => (
+          <View key={i} style={[styles.suggestedBlockRow, i > 0 && styles.priorityRowBorder]}>
+            <SkeletonLine width={70} height={32} style={{ borderRadius: 6 }} />
+            <SkeletonLine style={{ flex: 1 }} height={14} />
+          </View>
+        ))}
       </Card>
     );
   }
@@ -857,7 +900,15 @@ function ExecutionPulseCard({
     return (
       <Card>
         <SectionLabel text="Execution Pulse" />
-        <ActivityIndicator size="small" color="#f43f5e" style={{ alignSelf: 'flex-start' }} />
+        <View style={styles.pulseMetricsRow}>
+          <SkeletonLine width={72} height={56} style={{ borderRadius: 8 }} />
+          <SkeletonLine width={72} height={56} style={{ borderRadius: 8 }} />
+        </View>
+        <SkeletonLine height={34} style={{ borderRadius: 8, marginBottom: 4 }} />
+        <View style={[styles.ctaRow, { marginTop: 14 }]}>
+          <SkeletonLine height={38} style={{ flex: 1, borderRadius: 8 }} />
+          <SkeletonLine height={38} style={{ flex: 1, borderRadius: 8 }} />
+        </View>
       </Card>
     );
   }
@@ -935,6 +986,8 @@ export default function HomeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const dayPlanningY = useRef(0);
   const [planAccepted, setPlanAccepted] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const prevLoadingRef = useRef(false);
 
   const health = useApi<HealthResponse>('/health');
   const dashboard = useApi<DashboardResponse>('/api/dashboard');
@@ -993,6 +1046,13 @@ export default function HomeScreen() {
     weeklyPlanApi.refetch();
   }
 
+  useEffect(() => {
+    if (prevLoadingRef.current && !isAnyLoading) {
+      setLastUpdated(new Date());
+    }
+    prevLoadingRef.current = isAnyLoading;
+  }, [isAnyLoading]);
+
   const autopilotCardLoading =
     (nextAction.loading && tasksApi.loading) ||
     (prioritiesApi.loading && tasksApi.loading) ||
@@ -1013,9 +1073,16 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>
-            {user ? `Hey, ${user.first_name}` : 'Personal OS'}
-          </Text>
+          <View>
+            <Text style={styles.greeting}>
+              {user ? `Hey, ${user.first_name}` : 'Personal OS'}
+            </Text>
+            {lastUpdated && !isAnyLoading && (
+              <Text style={styles.lastUpdatedText}>
+                updated {formatRelativeTime(lastUpdated)}
+              </Text>
+            )}
+          </View>
           <View style={[styles.statusBadge, apiOnline ? styles.statusOnline : styles.statusOffline]}>
             <Text style={styles.statusText}>{apiOnline ? 'Online' : 'Offline'}</Text>
           </View>
@@ -1023,9 +1090,21 @@ export default function HomeScreen() {
 
         {/* Dashboard skeleton */}
         {isDashboardLoading && !stats && (
-          <View style={styles.skeletonRow}>
-            <ActivityIndicator size="large" color="#6366f1" />
-          </View>
+          <>
+            <View style={styles.levelRow}>
+              <SkeletonLine width="42%" height={16} />
+              <SkeletonLine width="22%" height={12} />
+            </View>
+            <SkeletonLine height={6} style={{ borderRadius: 3, marginBottom: 24 }} />
+            <View style={styles.statsGrid}>
+              {[0, 1, 2, 3, 4, 5].map(i => (
+                <View key={i} style={styles.statCard}>
+                  <SkeletonLine width="55%" height={22} style={{ alignSelf: 'center', marginBottom: 6, borderRadius: 4 }} />
+                  <SkeletonLine width="65%" height={11} style={{ alignSelf: 'center' }} />
+                </View>
+              ))}
+            </View>
+          </>
         )}
 
         {/* Level + XP */}
@@ -1153,7 +1232,15 @@ const styles = StyleSheet.create({
   statusOffline: { backgroundColor: '#7f1d1d' },
   statusText: { fontSize: 12, color: '#f9fafb', fontWeight: '600' },
 
-  skeletonRow: { alignItems: 'center', paddingVertical: 24 },
+  skeletonLine: {
+    backgroundColor: '#374151',
+    borderRadius: 4,
+  },
+  lastUpdatedText: {
+    fontSize: 11,
+    color: '#4b5563',
+    marginTop: 2,
+  },
 
   levelRow: {
     flexDirection: 'row',
