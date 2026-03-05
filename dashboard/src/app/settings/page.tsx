@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { mutate } from "swr";
 import Header from "@/components/Header";
-import { clearToken, setToken, api, UserSettings, SettingsUpdateBody } from "@/lib/api";
+import { clearToken, setToken, api, UserSettings, SettingsUpdateBody, ActiveHoursResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const CATEGORIES = [
@@ -114,6 +114,7 @@ function SaveButton({
 
 export default function SettingsPage() {
   const { data: settings, error: settingsError, isLoading: settingsLoading } = useSWR<UserSettings>("/api/settings", api.getSettings);
+  const { data: activeHours } = useSWR<ActiveHoursResponse>("active-hours", () => api.autopilotActiveHours(30));
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Token
@@ -612,6 +613,38 @@ export default function SettingsPage() {
             {exporting ? "Exportiere..." : "📥 JSON exportieren"}
           </button>
         </Section>
+
+        {/* ── Optimale Aktivzeiten (E4) ────────────────────────── */}
+        {activeHours && activeHours.total_events > 0 && (
+          <Section title="🕐 Optimale Aktivzeiten">
+            <p className="text-zinc-500 text-xs mb-3">
+              Basierend auf {activeHours.total_events} Aktionen der letzten {activeHours.days_analyzed} Tage.
+            </p>
+            {activeHours.peak_hour !== null && (
+              <p className="text-zinc-300 text-sm mb-3">
+                Aktivster Zeitraum:{" "}
+                <span className="text-blue-400 font-medium">
+                  {activeHours.peak_hour}:00 – {(activeHours.peak_hour + 1) % 24}:00 Uhr
+                </span>
+              </p>
+            )}
+            {activeHours.recommended_windows.length > 0 && (
+              <div>
+                <p className="text-zinc-500 text-xs mb-2">Empfohlene Nudge-Fenster:</p>
+                <div className="flex flex-wrap gap-2">
+                  {activeHours.recommended_windows.map((w, i) => (
+                    <span
+                      key={i}
+                      className="text-xs px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-full text-zinc-300"
+                    >
+                      {w.start_hour}:00 – {w.end_hour}:00
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+        )}
 
         {/* ── Über Personal OS ─────────────────────────────────── */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">

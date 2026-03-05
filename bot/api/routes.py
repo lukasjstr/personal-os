@@ -2666,6 +2666,59 @@ async def get_behavioral_patterns(
     }
 
 
+# ─── E4: Adaptive Suggestion Timing ───────────────────────────────────────────
+
+@router.get("/autopilot/active-hours")
+async def get_active_hours(
+    days: int = Query(30, ge=7, le=90),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Analyse log timestamps to detect when the user is most active.
+
+    Returns hour buckets (0–23) with activity counts,
+    peak hour, and recommended nudge windows.
+    """
+    cutoff = datetime.combine(date.today() - timedelta(days=days), datetime.min.time())
+    logs_res = await session.execute(
+        select(Log.logged_at).where(and_(
+            Log.user_id == user.id,
+            Log.logged_at >= cutoff,
+        ))
+    )
+    timestamps = [row[0] for row in logs_res.all()]
+
+    # Count activity per hour (0–23)
+    hour_counts: dict[int, int] = {h: 0 for h in range(24)}
+    for ts in timestamps:
+        hour_counts[ts.hour] += 1
+
+    total = sum(hour_counts.values())
+    if total == 0:
+        return {"hours": hour_counts, "peak_hour": None, "recommended_windows": [], "total_events": 0}
+
+    peak_hour = max(hour_counts, key=lambda h: hour_counts[h])
+
+    # Identify top-3 windows (groups of 2 hours with highest combined activity)
+    window_scores = {}
+    for h in range(24):
+        window_scores[h] = hour_counts[h] + hour_counts[(h + 1) % 24]
+    sorted_windows = sorted(window_scores, key=lambda h: window_scores[h], reverse=True)
+    recommended_windows = [
+        {"start_hour": h, "end_hour": (h + 2) % 24, "activity_score": window_scores[h]}
+        for h in sorted_windows[:3]
+        if window_scores[h] > 0
+    ]
+
+    return {
+        "hours": hour_counts,
+        "peak_hour": peak_hour,
+        "recommended_windows": recommended_windows,
+        "total_events": total,
+        "days_analyzed": days,
+    }
+
+
 # ─── Autopilot Notification Endpoints (A1) ─────────────────────────────────────
 
 def _notification_dict(n: AutopilotNotification) -> dict:

@@ -484,6 +484,22 @@ export interface BehavioralPatterns {
   mood_trend: MoodTrend | null;
 }
 
+// ─── Active Hours Types (E4) ──────────────────────────────────────────────────
+
+export interface ActiveHoursWindow {
+  start_hour: number;
+  end_hour: number;
+  activity_score: number;
+}
+
+export interface ActiveHoursResponse {
+  hours: Record<string, number>;
+  peak_hour: number | null;
+  recommended_windows: ActiveHoursWindow[];
+  total_events: number;
+  days_analyzed: number;
+}
+
 // ─── Autopilot Intelligence Types ─────────────────────────────────────────────
 
 export interface AutopilotDailyPlanItem {
@@ -668,4 +684,5 @@ export const api = {
   autopilotCompleteQueueItem: (id: number) =>
     apiPatch<{ ok: boolean }>(`/api/autopilot/action-queue/${id}`, { state: "completed" }),
   autopilotPatterns: () => apiFetch<BehavioralPatterns>("/api/autopilot/patterns"),
+  autopilotActiveHours: (days = 30) => apiFetch<ActiveHoursResponse>(`/api/autopilot/active-hours?days=${days}`),
 };
