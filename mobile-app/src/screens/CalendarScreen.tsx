@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest } from '../lib/apiClient';
 import { useApi } from '../hooks/useApi';
+import { ErrorState } from '../components/ErrorState';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -328,12 +329,7 @@ export default function CalendarScreen() {
   if (error && rawEvents.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={refetch} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorState error={error} onRetry={refetch} />
       </SafeAreaView>
     );
   }
@@ -447,16 +443,9 @@ const styles = StyleSheet.create({
   notePreview: { fontSize: 12, color: '#6b7280', marginTop: 6, fontStyle: 'italic' },
 
   // Feedback
-  errorText: { color: '#f87171', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  errorText: { color: '#f87171', fontSize: 13, textAlign: 'center', marginBottom: 8 },
   successText: { color: '#10b981', fontSize: 13, marginBottom: 8, textAlign: 'center' },
   emptyText: { color: '#6b7280', fontSize: 14 },
-  retryButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryText: { color: '#f9fafb', fontWeight: '600' },
 
   // Modal
   modalOverlay: {

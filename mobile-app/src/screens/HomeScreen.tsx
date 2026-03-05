@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
 import { apiRequest } from '../lib/apiClient';
 import type { TabParamList } from '../navigation/TabNavigator';
+import { ErrorBanner } from '../components/ErrorState';
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
@@ -1207,6 +1208,14 @@ export default function HomeScreen() {
             <Text style={styles.statusText}>{apiOnline ? 'Online' : 'Offline'}</Text>
           </View>
         </View>
+
+        {/* Inline error banner — non-blocking, shown when core data fails */}
+        {!isAnyLoading && (tasksApi.error ?? dashboard.error) != null && tasks.length === 0 && !stats && (
+          <ErrorBanner
+            error={(tasksApi.error ?? dashboard.error)!}
+            onRetry={handleRefresh}
+          />
+        )}
 
         {/* Dashboard skeleton */}
         {isDashboardLoading && !stats && (

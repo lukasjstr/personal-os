@@ -14,6 +14,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
 import type { TabParamList } from '../navigation/TabNavigator';
+import { ErrorState } from '../components/ErrorState';
 
 interface Task {
   id: number;
@@ -240,12 +241,7 @@ export default function TasksScreen() {
   if (error && allTasks.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={refetch} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorState error={error} onRetry={refetch} />
       </SafeAreaView>
     );
   }
@@ -449,18 +445,5 @@ const styles = StyleSheet.create({
   taskMeta: { flexDirection: 'row', gap: 12, marginTop: 6 },
   metaText: { fontSize: 12, color: '#9ca3af' },
   overdueText: { color: '#f87171' },
-  errorText: {
-    color: '#f87171',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
   emptyText: { color: '#6b7280', fontSize: 14 },
-  retryButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryText: { color: '#f9fafb', fontWeight: '600' },
 });
