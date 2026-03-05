@@ -114,6 +114,16 @@ function TaskItem({
   );
 }
 
+function ObjectiveBadge({ title }: { title: string }) {
+  return (
+    <View style={styles.objectiveBadge}>
+      <Text style={styles.objectiveBadgeText} numberOfLines={1}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
 function NextUnblockedBanner({ task }: { task: Task }) {
   return (
     <View style={styles.nextBanner}>
@@ -121,6 +131,9 @@ function NextUnblockedBanner({ task }: { task: Task }) {
       <Text style={styles.nextTitle} numberOfLines={1}>
         {task.title}
       </Text>
+      {task.objective_title ? (
+        <ObjectiveBadge title={task.objective_title} />
+      ) : null}
     </View>
   );
 }
@@ -132,7 +145,9 @@ function TaskDoNowBanner({ task }: { task: Task }) {
       <Text style={styles.doNowTitle} numberOfLines={2}>
         {task.title}
       </Text>
-      {task.category ? (
+      {task.objective_title ? (
+        <ObjectiveBadge title={task.objective_title} />
+      ) : task.category ? (
         <Text style={styles.doNowMeta}>{task.category}</Text>
       ) : null}
     </View>
@@ -371,6 +386,23 @@ const styles = StyleSheet.create({
   },
   nextLabel: { fontSize: 11, fontWeight: '600', color: '#4ade80', marginBottom: 2 },
   nextTitle: { fontSize: 14, fontWeight: '600', color: '#f9fafb' },
+
+  // Objective badge (shown in banners + task meta)
+  objectiveBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1e1b4b',
+    borderRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginTop: 5,
+    borderWidth: 1,
+    borderColor: '#4338ca',
+  },
+  objectiveBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#818cf8',
+  },
 
   // Do this now banner (from Execution Pulse handoff)
   doNowBanner: {
