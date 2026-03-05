@@ -6,6 +6,7 @@ import FitnessScreen from '../screens/FitnessScreen';
 import HomeScreen from '../screens/HomeScreen';
 import RoutinesScreen from '../screens/RoutinesScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ShoppingScreen from '../screens/ShoppingScreen';
 import TasksScreen from '../screens/TasksScreen';
 
 export type TabParamList = {
@@ -14,6 +15,7 @@ export type TabParamList = {
   Calendar: undefined;
   Routines: undefined;
   Fitness: undefined;
+  Shopping: undefined;
   Settings: undefined;
 };
 
@@ -25,6 +27,7 @@ const TAB_ICONS: Record<keyof TabParamList, { focused: IoniconName; default: Ion
   Calendar: { focused: 'calendar', default: 'calendar-outline' },
   Routines: { focused: 'repeat', default: 'repeat-outline' },
   Fitness: { focused: 'fitness', default: 'fitness-outline' },
+  Shopping: { focused: 'cart', default: 'cart-outline' },
   Settings: { focused: 'settings', default: 'settings-outline' },
 };
 
@@ -69,6 +72,7 @@ export default function TabNavigator() {
       <Tab.Screen name="Calendar" component={CalendarScreen} />
       <Tab.Screen name="Routines" component={RoutinesScreen} />
       <Tab.Screen name="Fitness" component={FitnessScreen} />
+      <Tab.Screen name="Shopping" component={ShoppingScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
