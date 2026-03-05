@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
 import { useAchievements } from "@/hooks/useApi";
+import { mutate } from "swr";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Achievement } from "@/lib/api";
 
@@ -114,6 +117,24 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
 
 export default function AchievementsPage() {
   const { data, error, isLoading } = useAchievements();
+  const [checking, setChecking] = useState(false);
+  const [newlyUnlocked, setNewlyUnlocked] = useState<{ emoji: string; title: string }[]>([]);
+
+  const handleCheck = async () => {
+    setChecking(true);
+    setNewlyUnlocked([]);
+    try {
+      const res = await api.checkAchievements();
+      if (res.count > 0) {
+        setNewlyUnlocked(res.newly_unlocked);
+        await mutate(() => true, undefined, { revalidate: true });
+      }
+    } catch {
+      // fail silently
+    } finally {
+      setChecking(false);
+    }
+  };
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
@@ -137,7 +158,26 @@ export default function AchievementsPage() {
       <Header
         title="🏆 Erfolge"
         subtitle={`${unlockedCount} / ${achievements.length} freigeschaltet · ${totalXP.toLocaleString("de-DE")} XP gesammelt`}
+        action={
+          <button
+            onClick={handleCheck}
+            disabled={checking}
+            className="px-3 py-1.5 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:opacity-50 transition-colors"
+          >
+            {checking ? "Prüfe..." : "🔍 Prüfen"}
+          </button>
+        }
       />
+      {newlyUnlocked.length > 0 && (
+        <div className="bg-yellow-950/40 border border-yellow-500/40 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+          <span className="text-yellow-400 text-sm font-medium">
+            {newlyUnlocked.length} neue Erfolge freigeschaltet!
+          </span>
+          <span className="text-yellow-500/70 text-sm">
+            {newlyUnlocked.map((a) => `${a.emoji} ${a.title}`).join(" · ")}
+          </span>
+        </div>
+      )}
 
       {/* Summary bar */}
       {achievements.length > 0 && (

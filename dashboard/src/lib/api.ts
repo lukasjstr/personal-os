@@ -657,6 +657,7 @@ export const api = {
   weeklySummary: () => apiFetch<WeeklySummary>("/api/weekly-summary"),
   achievements: () => apiFetch<{ achievements: Achievement[] }>("/api/achievements"),
   recentAchievements: (limit = 5) => apiFetch<{ recent: RecentAchievement[] }>(`/api/achievements/recent?limit=${limit}`),
+  checkAchievements: () => apiPost<{ ok: boolean; newly_unlocked: { key: string; title: string; emoji: string; xp_reward: number }[]; count: number }>("/api/achievements/check", {}),
   gamificationStats: () => apiFetch<GamificationStats>("/api/gamification/stats"),
   priorities: () => apiFetch<{ priorities: Priority[] }>("/api/priorities"),
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),

@@ -2407,6 +2407,29 @@ async def recent_achievements(
     }
 
 
+@router.post("/achievements/check")
+async def trigger_achievement_check(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Manually trigger achievement checking + unlock for the current user.
+
+    Useful to call after bulk operations or when syncing from Telegram.
+    Returns list of newly unlocked achievements.
+    """
+    from bot.core.achievements import check_achievements
+
+    newly_unlocked = await check_achievements(session, user.id)
+    return {
+        "ok": True,
+        "newly_unlocked": [
+            {"key": a.key, "title": a.title, "emoji": a.emoji, "xp_reward": a.xp_reward}
+            for a in newly_unlocked
+        ],
+        "count": len(newly_unlocked),
+    }
+
+
 # ─── Reflections Endpoints ─────────────────────────────────────────────────────
 
 def _reflection_dict(r: WeeklyReflection) -> dict:
