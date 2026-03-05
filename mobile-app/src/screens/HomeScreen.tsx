@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -617,6 +617,18 @@ function derivePlanSummary(tasks: Task[], events: CalendarEvent[]): string {
   return parts.join(' · ');
 }
 
+function deriveNextEvent(events: CalendarEvent[]): CalendarEvent | null {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const upcoming = events
+    .filter(e => {
+      if (e.all_day || !e.start_time.startsWith(todayStr)) return false;
+      try { return new Date(e.start_time) > now; } catch { return false; }
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  return upcoming[0] ?? null;
+}
+
 // ── Free-slot / day-planning helpers ──────────────────────────────────────
 
 interface FreeSlot {
@@ -701,15 +713,18 @@ function FreeSlotsPlanCard({
   tasks,
   events,
   priorities,
+  accepted,
+  onSetAccepted,
   loading,
 }: {
   tasks: Task[];
   events: CalendarEvent[];
   priorities: PriorityItem[] | null;
+  accepted: boolean;
+  onSetAccepted: (v: boolean) => void;
   loading: boolean;
 }) {
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
-  const [accepted, setAccepted] = useState(false);
 
   if (loading) {
     return (
@@ -764,7 +779,7 @@ function FreeSlotsPlanCard({
         ))}
         <TouchableOpacity
           style={[styles.ctaButton, styles.ctaOpen, { marginTop: 12 }]}
-          onPress={() => setAccepted(false)}
+          onPress={() => onSetAccepted(false)}
           activeOpacity={0.75}
         >
           <Text style={styles.ctaOpenText}>Edit plan</Text>
@@ -796,7 +811,7 @@ function FreeSlotsPlanCard({
       <View style={[styles.ctaRow, { marginTop: 14 }]}>
         <TouchableOpacity
           style={[styles.ctaButton, styles.ctaAccept]}
-          onPress={() => setAccepted(true)}
+          onPress={() => onSetAccepted(true)}
           activeOpacity={0.75}
         >
           <Text style={styles.ctaStartText}>Accept plan</Text>
@@ -813,9 +828,114 @@ function FreeSlotsPlanCard({
   );
 }
 
+// ── Execution Pulse card ───────────────────────────────────────────────────
+
+function ExecutionPulseCard({
+  tasks,
+  events,
+  planAccepted,
+  planBlockCount,
+  onBackToPlan,
+  loading,
+}: {
+  tasks: Task[];
+  events: CalendarEvent[];
+  planAccepted: boolean;
+  planBlockCount: number;
+  onBackToPlan: () => void;
+  loading: boolean;
+}) {
+  const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
+
+  const topTask = deriveNextTask(tasks);
+
+  function handleDoFirstTask() {
+    navigation.navigate('Tasks', { highlightTaskId: topTask?.id });
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Execution Pulse" />
+        <ActivityIndicator size="small" color="#f43f5e" style={{ alignSelf: 'flex-start' }} />
+      </Card>
+    );
+  }
+
+  const overdueCount = tasks.filter(
+    t => t.is_overdue && t.status !== 'done' && t.status !== 'cancelled',
+  ).length;
+  const nextEvent = deriveNextEvent(events);
+  const hasContent = overdueCount > 0 || planBlockCount > 0 || nextEvent != null || topTask != null;
+
+  if (!hasContent) {
+    return (
+      <Card>
+        <SectionLabel text="Execution Pulse" />
+        <Text style={styles.emptySubtext}>All clear — nothing pending right now.</Text>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionLabel text="Execution Pulse" />
+
+      {/* Metrics row */}
+      {(overdueCount > 0 || planBlockCount > 0) && (
+        <View style={styles.pulseMetricsRow}>
+          {overdueCount > 0 && (
+            <View style={[styles.pulseMetric, styles.pulseMetricOverdue]}>
+              <Text style={styles.pulseMetricValue}>{overdueCount}</Text>
+              <Text style={styles.pulseMetricLabel}>Overdue</Text>
+            </View>
+          )}
+          {planBlockCount > 0 && (
+            <View style={[styles.pulseMetric, planAccepted ? styles.pulseMetricAccepted : styles.pulseMetricSuggested]}>
+              <Text style={styles.pulseMetricValue}>{planBlockCount}</Text>
+              <Text style={styles.pulseMetricLabel}>{planAccepted ? 'Plan blocks' : 'Suggested'}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Next event */}
+      {nextEvent != null && (
+        <View style={styles.pulseEventRow}>
+          <Text style={styles.pulseEventLabel}>Next up</Text>
+          <Text style={styles.pulseEventTime}>{formatBlockTime(new Date(nextEvent.start_time))}</Text>
+          <Text style={styles.pulseEventTitle} numberOfLines={1}>{nextEvent.title}</Text>
+        </View>
+      )}
+
+      {/* CTAs */}
+      <View style={[styles.ctaRow, { marginTop: 14 }]}>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaPulseTask]}
+          onPress={handleDoFirstTask}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaStartText}>Do first task now</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaOpen]}
+          onPress={onBackToPlan}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.ctaOpenText}>Back to plan</Text>
+        </TouchableOpacity>
+      </View>
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
+  const dayPlanningY = useRef(0);
+  const [planAccepted, setPlanAccepted] = useState(false);
+
   const health = useApi<HealthResponse>('/health');
   const dashboard = useApi<DashboardResponse>('/api/dashboard');
 
@@ -851,6 +971,16 @@ export default function HomeScreen() {
   const user = dashboard.data?.user;
   const apiOnline = !health.error && health.data?.status === 'ok';
 
+  const planBlockCount = buildSuggestedBlocks(
+    deriveFreeSlots(events),
+    tasks,
+    resolvedPriorities,
+  ).length;
+
+  function handleBackToPlan() {
+    scrollViewRef.current?.scrollTo({ y: dayPlanningY.current, animated: true });
+  }
+
   function handleRefresh() {
     health.refetch();
     dashboard.refetch();
@@ -871,6 +1001,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
@@ -937,6 +1068,16 @@ export default function HomeScreen() {
           </>
         )}
 
+        {/* ── Execution Pulse Section ── */}
+        <ExecutionPulseCard
+          tasks={tasks}
+          events={events}
+          planAccepted={planAccepted}
+          planBlockCount={planBlockCount}
+          onBackToPlan={handleBackToPlan}
+          loading={tasksApi.loading && calendarApi.loading}
+        />
+
         {/* ── Weekly Focus Section ── */}
         <Text style={styles.sectionTitle}>Weekly Focus</Text>
         <WeeklyFocusCard
@@ -951,11 +1092,15 @@ export default function HomeScreen() {
         />
 
         {/* ── Day Planning Section ── */}
-        <Text style={styles.sectionTitle}>Day Planning</Text>
+        <View onLayout={(e) => { dayPlanningY.current = e.nativeEvent.layout.y; }}>
+          <Text style={styles.sectionTitle}>Day Planning</Text>
+        </View>
         <FreeSlotsPlanCard
           tasks={tasks}
           events={events}
           priorities={resolvedPriorities}
+          accepted={planAccepted}
+          onSetAccepted={setPlanAccepted}
           loading={calendarApi.loading && tasksApi.loading}
         />
 
@@ -1228,6 +1373,35 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   ctaAccept: { backgroundColor: '#b45309' },
+  ctaPulseTask: { backgroundColor: '#be123c' },
+
+  // Execution Pulse card
+  pulseMetricsRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  pulseMetric: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    minWidth: 72,
+  },
+  pulseMetricOverdue: { backgroundColor: '#450a0a' },
+  pulseMetricAccepted: { backgroundColor: '#052e16' },
+  pulseMetricSuggested: { backgroundColor: '#172554' },
+  pulseMetricValue: { fontSize: 20, fontWeight: '700', color: '#f9fafb' },
+  pulseMetricLabel: { fontSize: 10, fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 2 },
+  pulseEventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 4,
+  },
+  pulseEventLabel: { fontSize: 10, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4 },
+  pulseEventTime: { fontSize: 12, fontWeight: '700', color: '#f59e0b' },
+  pulseEventTitle: { fontSize: 13, color: '#d1d5db', flex: 1 },
   acceptedBanner: {
     backgroundColor: '#064e3b',
     borderRadius: 8,

@@ -9,8 +9,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../hooks/useApi';
+import type { TabParamList } from '../navigation/TabNavigator';
 
 interface Task {
   id: number;
@@ -121,15 +124,34 @@ function NextUnblockedBanner({ task }: { task: Task }) {
   );
 }
 
+function TaskDoNowBanner({ task }: { task: Task }) {
+  return (
+    <View style={styles.doNowBanner}>
+      <Text style={styles.doNowLabel}>Do this now</Text>
+      <Text style={styles.doNowTitle} numberOfLines={2}>
+        {task.title}
+      </Text>
+      {task.category ? (
+        <Text style={styles.doNowMeta}>{task.category}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 type ListRow =
   | { type: 'header'; group: string }
   | { type: 'task'; task: Task; isSubtask: boolean; blocked: boolean };
 
 export default function TasksScreen() {
+  const route = useRoute<RouteProp<TabParamList, 'Tasks'>>();
+  const highlightTaskId = route.params?.highlightTaskId ?? null;
   const { data, loading, error, refetch } = useApi<TasksResponse>('/api/tasks');
   const [filter, setFilter] = useState<FilterKey>('all');
 
   const allTasks: Task[] = data?.tasks ?? [];
+  const highlightTask = highlightTaskId != null
+    ? (allTasks.find(t => t.id === highlightTaskId) ?? null)
+    : null;
 
   const filteredTasks = useMemo(() => {
     switch (filter) {
@@ -294,7 +316,9 @@ export default function TasksScreen() {
           />
         }
         ListHeaderComponent={
-          nextUnblocked && filter === 'all' ? (
+          highlightTask ? (
+            <TaskDoNowBanner task={highlightTask} />
+          ) : nextUnblocked && filter === 'all' ? (
             <NextUnblockedBanner task={nextUnblocked} />
           ) : null
         }
@@ -351,6 +375,19 @@ const styles = StyleSheet.create({
   },
   nextLabel: { fontSize: 11, fontWeight: '600', color: '#4ade80', marginBottom: 2 },
   nextTitle: { fontSize: 14, fontWeight: '600', color: '#f9fafb' },
+
+  // Do this now banner (from Execution Pulse handoff)
+  doNowBanner: {
+    backgroundColor: '#1e1b4b',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366f1',
+  },
+  doNowLabel: { fontSize: 11, fontWeight: '700', color: '#818cf8', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  doNowTitle: { fontSize: 15, fontWeight: '700', color: '#f9fafb' },
+  doNowMeta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
 
   // Group header
   groupHeader: { paddingVertical: 6, paddingHorizontal: 2, marginTop: 4 },

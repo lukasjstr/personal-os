@@ -11,7 +11,7 @@ import TasksScreen from '../screens/TasksScreen';
 
 export type TabParamList = {
   Home: undefined;
-  Tasks: undefined;
+  Tasks: { highlightTaskId?: number } | undefined;
   Calendar: undefined;
   Routines: undefined;
   Fitness: undefined;
