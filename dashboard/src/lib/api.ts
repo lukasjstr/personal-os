@@ -445,6 +445,16 @@ export interface DailySuggestionsResponse {
   suggestions: DailySuggestions | null;
 }
 
+export interface DailySuggestionsHistoryEntry {
+  date: string;
+  suggestions: DailySuggestions;
+  created_at: string;
+}
+
+export interface DailySuggestionsHistory {
+  history: DailySuggestionsHistoryEntry[];
+}
+
 // ─── Autopilot Intelligence Types ─────────────────────────────────────────────
 
 export interface AutopilotDailyPlanItem {
@@ -620,6 +630,8 @@ export const api = {
   regenerateReflectionInsights: (id: number) =>
     apiPost<{ ok: boolean; ai_summary: Record<string, unknown> }>(`/api/reflections/${id}/insights`, {}),
   todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
+  suggestionsHistory: (days = 14) => apiFetch<DailySuggestionsHistory>(`/api/suggestions/history?days=${days}`),
+  regenerateSuggestions: () => apiPost<DailySuggestionsResponse>("/api/suggestions/regenerate", {}),
   // Autopilot intelligence
   autopilotDailyPlan: () => apiFetch<AutopilotDailyPlan>("/api/autopilot/daily-plan"),
   autopilotActionQueue: () => apiFetch<AutopilotActionQueue>("/api/autopilot/action-queue"),

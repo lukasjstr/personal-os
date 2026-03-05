@@ -19,6 +19,7 @@ import {
   Trophy,
   BookOpen,
   ClipboardList,
+  Lightbulb,
   Menu,
   X,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const NAV = [
   { href: "/shopping", label: "Einkauf", icon: ShoppingCart, badge: "shopping_items" },
   { href: "/achievements", label: "Erfolge", icon: Trophy },
   { href: "/reflection", label: "Reflexion", icon: BookOpen },
+  { href: "/suggestions", label: "AI Suggestions", icon: Lightbulb },
   { href: "/docs", label: "Dokumente", icon: FileText },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/settings", label: "Einstellungen", icon: Settings },

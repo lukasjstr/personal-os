@@ -2513,6 +2513,56 @@ async def get_todays_suggestions(
     return {"date": today.isoformat(), "suggestions": suggestions}
 
 
+@router.get("/suggestions/history")
+async def get_suggestions_history(
+    days: int = Query(14, ge=1, le=90),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the last N days of daily suggestions for the user."""
+    from datetime import date as _date, timedelta as _timedelta
+    cutoff = _date.today() - _timedelta(days=days)
+    result = await session.execute(
+        select(DailySuggestion)
+        .where(and_(DailySuggestion.user_id == user.id, DailySuggestion.date >= cutoff))
+        .order_by(DailySuggestion.date.desc())
+    )
+    rows = result.scalars().all()
+    return {
+        "history": [
+            {"date": r.date.isoformat(), "suggestions": r.suggestions, "created_at": r.created_at.isoformat()}
+            for r in rows
+        ]
+    }
+
+
+@router.post("/suggestions/regenerate")
+async def regenerate_todays_suggestions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete today's cached suggestions and regenerate them via GPT-4o."""
+    from zoneinfo import ZoneInfo
+    from datetime import date as _date
+    today = _date.today()
+    # Delete existing record so get_or_generate_suggestions creates a fresh one
+    existing = await session.execute(
+        select(DailySuggestion).where(and_(
+            DailySuggestion.user_id == user.id,
+            DailySuggestion.date == today,
+        ))
+    )
+    row = existing.scalar_one_or_none()
+    if row:
+        await session.delete(row)
+        await session.flush()
+    try:
+        new_suggestions = await get_or_generate_suggestions(session, user, today)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+    return {"date": today.isoformat(), "suggestions": new_suggestions}
+
+
 # ─── Autopilot Notification Endpoints (A1) ─────────────────────────────────────
 
 def _notification_dict(n: AutopilotNotification) -> dict:
