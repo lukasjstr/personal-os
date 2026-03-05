@@ -113,7 +113,7 @@ function RoutineRow({
 }
 
 export default function RoutinesScreen() {
-  const { data, loading, error, refetch } = useApi<RoutinesResponse>('/routines');
+  const { data, loading, error, refetch } = useApi<RoutinesResponse>('/api/routines');
   const [toggling, setToggling] = useState<Set<number>>(new Set());
   const [localDone, setLocalDone] = useState<Set<number>>(new Set());
 
@@ -122,7 +122,7 @@ export default function RoutinesScreen() {
       setToggling(prev => new Set(prev).add(id));
       setLocalDone(prev => new Set(prev).add(id));
       try {
-        await apiRequest(`/routines/${id}/complete`, { method: 'POST' });
+        await apiRequest(`/api/routines/${id}/complete`, { method: 'POST' });
         refetch();
       } catch {
         // Optimistic update stays — server may already have it or network is flaky
