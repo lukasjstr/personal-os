@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -20,11 +21,16 @@ interface Task {
   category: string | null;
   due_date: string | null;
   is_overdue: boolean;
+  parent_task_id: number | null;
+  blocked_by_task_id: number | null;
+  objective_title: string | null;
 }
 
 interface TasksResponse {
   tasks: Task[];
 }
+
+type FilterKey = 'all' | 'unblocked' | 'blocked' | 'overdue';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   todo: { bg: '#374151', text: '#d1d5db' },
@@ -32,6 +38,12 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   done: { bg: '#14532d', text: '#4ade80' },
   cancelled: { bg: '#1f2937', text: '#6b7280' },
 };
+
+function isBlocked(task: Task, allTasks: Task[]): boolean {
+  if (!task.blocked_by_task_id) return false;
+  const blocker = allTasks.find(t => t.id === task.blocked_by_task_id);
+  return blocker ? blocker.status !== 'done' : false;
+}
 
 function StatusChip({ status }: { status: string }) {
   const colors = STATUS_COLORS[status] ?? STATUS_COLORS.todo;
@@ -44,34 +56,156 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-function TaskItem({ item }: { item: Task }) {
+function BlockedBadge() {
   return (
-    <View style={styles.taskCard}>
-      <View style={styles.taskHeader}>
-        <Text style={styles.taskTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <StatusChip status={item.status} />
-      </View>
-      <View style={styles.taskMeta}>
-        {item.category && (
-          <Text style={styles.metaText}>{item.category}</Text>
-        )}
-        {item.due_date && (
-          <Text style={[styles.metaText, item.is_overdue && styles.overdueText]}>
-            {item.is_overdue ? 'Overdue · ' : ''}{item.due_date}
+    <View style={styles.blockedBadge}>
+      <Text style={styles.blockedBadgeText}>Blocked</Text>
+    </View>
+  );
+}
+
+function TaskItem({
+  item,
+  isSubtask,
+  blocked,
+}: {
+  item: Task;
+  isSubtask: boolean;
+  blocked: boolean;
+}) {
+  return (
+    <View style={[styles.taskCard, isSubtask && styles.subtaskCard]}>
+      {isSubtask && <View style={styles.subtaskIndentLine} />}
+      <View style={styles.taskInner}>
+        <View style={styles.taskHeader}>
+          <Text
+            style={[styles.taskTitle, isSubtask && styles.subtaskTitle]}
+            numberOfLines={2}
+          >
+            {item.title}
           </Text>
-        )}
+          <View style={styles.badgeRow}>
+            {blocked && <BlockedBadge />}
+            <StatusChip status={item.status} />
+          </View>
+        </View>
+        <View style={styles.taskMeta}>
+          {item.category ? (
+            <Text style={styles.metaText}>{item.category}</Text>
+          ) : null}
+          {item.due_date ? (
+            <Text
+              style={[
+                styles.metaText,
+                (item.is_overdue ?? false) && styles.overdueText,
+              ]}
+            >
+              {item.is_overdue ? 'Overdue · ' : ''}
+              {item.due_date}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </View>
   );
 }
 
+function NextUnblockedBanner({ task }: { task: Task }) {
+  return (
+    <View style={styles.nextBanner}>
+      <Text style={styles.nextLabel}>Next unblocked</Text>
+      <Text style={styles.nextTitle} numberOfLines={1}>
+        {task.title}
+      </Text>
+    </View>
+  );
+}
+
+type ListRow =
+  | { type: 'header'; group: string }
+  | { type: 'task'; task: Task; isSubtask: boolean; blocked: boolean };
+
 export default function TasksScreen() {
   const { data, loading, error, refetch } = useApi<TasksResponse>('/api/tasks');
-  const tasks = data?.tasks ?? [];
+  const [filter, setFilter] = useState<FilterKey>('all');
 
-  if (loading && tasks.length === 0) {
+  const allTasks: Task[] = data?.tasks ?? [];
+
+  const filteredTasks = useMemo(() => {
+    switch (filter) {
+      case 'unblocked':
+        return allTasks.filter(
+          t => t.status !== 'done' && !isBlocked(t, allTasks),
+        );
+      case 'blocked':
+        return allTasks.filter(t => isBlocked(t, allTasks));
+      case 'overdue':
+        return allTasks.filter(t => t.is_overdue ?? false);
+      default:
+        return allTasks;
+    }
+  }, [allTasks, filter]);
+
+  const nextUnblocked = useMemo(() => {
+    const open = allTasks.filter(
+      t => t.status !== 'done' && t.status !== 'cancelled' && !isBlocked(t, allTasks),
+    );
+    if (open.length === 0) return null;
+    // prefer highest priority (lower number = higher priority)
+    return open.reduce((best, t) => (t.priority < best.priority ? t : best));
+  }, [allTasks]);
+
+  const listRows = useMemo((): ListRow[] => {
+    const groups = new Map<string, Task[]>();
+    for (const task of filteredTasks) {
+      const key = task.objective_title ?? 'General';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(task);
+    }
+
+    const rows: ListRow[] = [];
+    for (const [group, tasks] of groups) {
+      rows.push({ type: 'header', group });
+      // put parent tasks first, then subtasks under their parent
+      const parents = tasks.filter(t => !t.parent_task_id);
+      const subtasks = tasks.filter(t => !!t.parent_task_id);
+      for (const parent of parents) {
+        rows.push({
+          type: 'task',
+          task: parent,
+          isSubtask: false,
+          blocked: isBlocked(parent, allTasks),
+        });
+        for (const sub of subtasks.filter(
+          s => s.parent_task_id === parent.id,
+        )) {
+          rows.push({
+            type: 'task',
+            task: sub,
+            isSubtask: true,
+            blocked: isBlocked(sub, allTasks),
+          });
+        }
+      }
+      // orphan subtasks (parent not in this filtered view)
+      const renderedSubIds = new Set(
+        subtasks
+          .filter(s => parents.some(p => p.id === s.parent_task_id))
+          .map(s => s.id),
+      );
+      for (const sub of subtasks.filter(s => !renderedSubIds.has(s.id))) {
+        rows.push({
+          type: 'task',
+          task: sub,
+          isSubtask: true,
+          blocked: isBlocked(sub, allTasks),
+        });
+      }
+    }
+    return rows;
+  }, [filteredTasks, allTasks]);
+
+  if (loading && allTasks.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.center}>
@@ -81,7 +215,7 @@ export default function TasksScreen() {
     );
   }
 
-  if (error && tasks.length === 0) {
+  if (error && allTasks.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.center}>
@@ -94,19 +228,83 @@ export default function TasksScreen() {
     );
   }
 
+  const FILTERS: { key: FilterKey; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'unblocked', label: 'Unblocked' },
+    { key: 'blocked', label: 'Blocked' },
+    { key: 'overdue', label: 'Overdue' },
+  ];
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      {/* Filter bar */}
+      <View style={styles.filterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {FILTERS.map(f => (
+            <TouchableOpacity
+              key={f.key}
+              style={[
+                styles.filterChip,
+                filter === f.key && styles.filterChipActive,
+              ]}
+              onPress={() => setFilter(f.key)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  filter === f.key && styles.filterChipTextActive,
+                ]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       <FlatList
-        data={tasks}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => <TaskItem item={item} />}
+        data={listRows}
+        keyExtractor={(row, i) =>
+          row.type === 'header'
+            ? `header-${row.group}-${i}`
+            : `task-${row.task.id}`
+        }
+        renderItem={({ item: row }) => {
+          if (row.type === 'header') {
+            return (
+              <View style={styles.groupHeader}>
+                <Text style={styles.groupHeaderText}>{row.group}</Text>
+              </View>
+            );
+          }
+          return (
+            <TaskItem
+              item={row.task}
+              isSubtask={row.isSubtask}
+              blocked={row.blocked}
+            />
+          );
+        }}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={refetch} tintColor="#6366f1" />
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={refetch}
+            tintColor="#6366f1"
+          />
+        }
+        ListHeaderComponent={
+          nextUnblocked && filter === 'all' ? (
+            <NextUnblockedBanner task={nextUnblocked} />
+          ) : null
         }
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text style={styles.emptyText}>No open tasks — you're all caught up!</Text>
+            <Text style={styles.emptyText}>
+              {filter === 'all'
+                ? "No open tasks — you're all caught up!"
+                : `No ${filter} tasks.`}
+            </Text>
           </View>
         }
       />
@@ -117,12 +315,73 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111827' },
   list: { padding: 16, gap: 10, flexGrow: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+  },
+
+  // Filter bar
+  filterBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1f2937',
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#1f2937',
+    marginRight: 8,
+  },
+  filterChipActive: { backgroundColor: '#6366f1' },
+  filterChipText: { fontSize: 13, fontWeight: '500', color: '#9ca3af' },
+  filterChipTextActive: { color: '#fff' },
+
+  // Next unblocked banner
+  nextBanner: {
+    backgroundColor: '#1e3a2f',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4ade80',
+  },
+  nextLabel: { fontSize: 11, fontWeight: '600', color: '#4ade80', marginBottom: 2 },
+  nextTitle: { fontSize: 14, fontWeight: '600', color: '#f9fafb' },
+
+  // Group header
+  groupHeader: { paddingVertical: 6, paddingHorizontal: 2, marginTop: 4 },
+  groupHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6366f1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+
+  // Task card
   taskCard: {
     backgroundColor: '#1f2937',
     borderRadius: 10,
     padding: 14,
+    flexDirection: 'row',
   },
+  subtaskCard: {
+    marginLeft: 16,
+    backgroundColor: '#172032',
+    borderRadius: 8,
+    padding: 12,
+  },
+  subtaskIndentLine: {
+    width: 2,
+    backgroundColor: '#374151',
+    borderRadius: 1,
+    marginRight: 10,
+  },
+  taskInner: { flex: 1 },
   taskHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -130,16 +389,35 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   taskTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#f9fafb' },
-  chip: {
-    paddingHorizontal: 8,
+  subtaskTitle: { fontSize: 14, color: '#d1d5db' },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
+  },
+  chip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  chipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  blockedBadge: {
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
+    backgroundColor: '#431407',
   },
-  chipText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  blockedBadgeText: { fontSize: 11, fontWeight: '600', color: '#fb923c' },
   taskMeta: { flexDirection: 'row', gap: 12, marginTop: 6 },
   metaText: { fontSize: 12, color: '#9ca3af' },
   overdueText: { color: '#f87171' },
-  errorText: { color: '#f87171', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  errorText: {
+    color: '#f87171',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   emptyText: { color: '#6b7280', fontSize: 14 },
   retryButton: {
     backgroundColor: '#6366f1',
