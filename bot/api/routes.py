@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, func, or_, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -69,6 +69,11 @@ class OKRDraftRequest(BaseModel):
     source_text: str
     horizon_weeks: int = 4
 
+    @field_validator("source_text", mode="before")
+    @classmethod
+    def _strip_source_text(cls, value: str) -> str:
+        return (value or "").strip()
+
 
 class OKRDraftResponse(BaseModel):
     draft: OKRDraft
@@ -96,12 +101,16 @@ async def generate_objective_okr_draft(
     user: User = Depends(get_current_user),
 ) -> OKRDraftResponse:
     """Generate read-only objective draft payload from free-form text (fallback-only)."""
-    text = (body.source_text or "").strip()
+    text = body.source_text
     if not text:
         raise HTTPException(status_code=400, detail="source_text is required")
+    if len(text) > 4000:
+        raise HTTPException(status_code=400, detail="source_text too long (max 4000 chars)")
 
-    horizon = max(1, min(body.horizon_weeks, 52))
-    draft = generate_okr_draft_fallback(source_text=text, horizon_weeks=horizon)
+    if body.horizon_weeks < 1 or body.horizon_weeks > 52:
+        raise HTTPException(status_code=400, detail="horizon_weeks must be between 1 and 52")
+
+    draft = generate_okr_draft_fallback(source_text=text, horizon_weeks=body.horizon_weeks)
     return OKRDraftResponse(draft=draft)
 
 
