@@ -1895,7 +1895,14 @@ async def complete_task_endpoint(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Mark a task as done from the dashboard."""
+    """Mark a task as done from the dashboard. Updates linked KR/objective progress
+    and returns the next unblocked action (CORE-7)."""
+    from bot.core.completion_hooks import (
+        check_objective_auto_complete,
+        get_next_unblocked_action,
+        update_kr_on_task_complete,
+    )
+
     result = await session.execute(
         select(Task).where(and_(Task.id == task_id, Task.user_id == user.id))
     )
@@ -1909,11 +1916,34 @@ async def complete_task_endpoint(
     task.completed_at = datetime.utcnow()
     await session.flush()
 
+    # CORE-7: update KR progress
+    kr_updated = await update_kr_on_task_complete(session, task)
+
+    # CORE-7: auto-complete objective if all KRs done
+    objective_completed = False
+    if task.objective_id:
+        objective_completed = await check_objective_auto_complete(session, task.objective_id)
+
+    # CORE-7: surface next unblocked action
+    next_action = await get_next_unblocked_action(session, user.id, completed_task=task)
+
     _, new_level, leveled_up, _ = await _add_xp(user.id, 10, "task_complete", session)
     if leveled_up:
         await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
 
-    return {"ok": True, "task_id": task_id, "title": task.title, "xp_gained": 10}
+    response: dict = {"ok": True, "task_id": task_id, "title": task.title, "xp_gained": 10}
+    if kr_updated:
+        response["kr_progress"] = {
+            "id": kr_updated.id,
+            "current_value": kr_updated.current_value,
+            "target_value": kr_updated.target_value,
+            "status": kr_updated.status,
+        }
+    if objective_completed:
+        response["objective_completed"] = task.objective_id
+    if next_action:
+        response["next_action"] = next_action
+    return response
 
 
 @router.post("/routines/{routine_id}/complete")
@@ -1922,7 +1952,10 @@ async def complete_routine_endpoint(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Mark a routine as done for today from the dashboard."""
+    """Mark a routine as done for today from the dashboard. Updates linked KR progress
+    and returns the next pending routine or top task (CORE-7)."""
+    from bot.core.completion_hooks import get_next_unblocked_action, update_kr_on_routine_complete
+
     result = await session.execute(
         select(Routine).where(and_(Routine.id == routine_id, Routine.user_id == user.id))
     )
@@ -1949,11 +1982,56 @@ async def complete_routine_endpoint(
     session.add(completion)
     await session.flush()
 
+    # CORE-7: update linked KR progress (streak/number)
+    kr_updated = await update_kr_on_routine_complete(session, routine)
+
+    # CORE-7: next pending routine (not yet done today) or top unblocked task
+    completed_ids_res = await session.execute(
+        select(RoutineCompletion.routine_id).where(and_(
+            RoutineCompletion.user_id == user.id,
+            RoutineCompletion.completed_at >= today_start,
+        ))
+    )
+    done_ids = set(completed_ids_res.scalars().all())
+    next_routine_res = await session.execute(
+        select(Routine).where(and_(
+            Routine.user_id == user.id,
+            Routine.status == "active",
+            Routine.id.not_in(done_ids) if done_ids else Routine.status == "active",
+        ))
+        .order_by(Routine.sort_order.asc(), Routine.id.asc())
+        .limit(1)
+    )
+    next_routine = next_routine_res.scalar_one_or_none()
+
+    next_action: Optional[dict] = None
+    if next_routine:
+        next_action = {
+            "type": "routine",
+            "id": next_routine.id,
+            "title": next_routine.title,
+            "time_of_day": next_routine.time_of_day,
+        }
+    else:
+        task_next = await get_next_unblocked_action(session, user.id)
+        if task_next:
+            next_action = {"type": "task", **task_next}
+
     _, new_level, leveled_up, _ = await _add_xp(user.id, 5, "routine_complete", session)
     if leveled_up:
         await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
 
-    return {"ok": True, "routine_id": routine_id, "title": routine.title, "xp_gained": 5}
+    response: dict = {"ok": True, "routine_id": routine_id, "title": routine.title, "xp_gained": 5}
+    if kr_updated:
+        response["kr_progress"] = {
+            "id": kr_updated.id,
+            "current_value": kr_updated.current_value,
+            "target_value": kr_updated.target_value,
+            "status": kr_updated.status,
+        }
+    if next_action:
+        response["next_action"] = next_action
+    return response
 
 
 @router.get("/brief/today")
