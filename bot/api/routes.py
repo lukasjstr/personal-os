@@ -1,4 +1,5 @@
 """REST API routes — Phase 1–4 working endpoints + fitness + gamification."""
+import dataclasses
 import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -27,6 +28,7 @@ from bot.database.models import (
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.core.okr_generator import OKRDraft, generate_okr_draft_fallback
 from bot.core.reminder_factory import ReminderConfig, generate_reminder_drafts
+from bot.core.reminder_engine import dry_run_preview
 from bot.core.slot_candidates import derive_slot_candidates
 from bot.core.slot_conflict_detection import detect_conflicts
 from bot.telegram.sender import send_message
@@ -367,6 +369,31 @@ async def preview_proposal_draft_reminder_drafts(
             for d in drafts
         ],
     }
+
+
+@router.get("/reminders/due-preview")
+async def due_reminders_preview(
+    now: Optional[str] = Query(None, description="ISO datetime; defaults to utcnow()"),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Preview what the reminder engine would send *right now* (read-only)."""
+    effective_now = datetime.utcnow() if not now else datetime.fromisoformat(now)
+
+    result = await dry_run_preview(session=session, user_id=user.id, now=effective_now)
+
+    # dataclasses → dict
+    payload = dataclasses.asdict(result)
+    # ensure datetimes are JSON-serializable
+    payload["now"] = result.now.isoformat()
+    payload["would_send"] = [
+        {
+            **{k: v for k, v in dataclasses.asdict(r).items() if k not in {"scheduled_for"}},
+            "scheduled_for": r.scheduled_for.isoformat(),
+        }
+        for r in result.would_send
+    ]
+    return payload
 
 
 @router.get("/objectives")
