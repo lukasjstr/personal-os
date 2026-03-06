@@ -198,6 +198,19 @@ Do not parallelize these tickets; each depends on previous output.
 - Objective + KRs + tasks + routines + milestones + reminder skeleton + suggested slots
 - Validation and anti-overgeneration limits
 
+**CORE-1 mini-ticket completion log**
+- CORE-1a: `7709f7e` — fallback draft generator models (`bot/core/okr_generator.py`)
+- CORE-1b: `2470d55` — read-only draft endpoint (`POST /api/objectives/okr-draft`)
+- CORE-1c: `30e4b63` — strict input validation + explicit 400 error mapping
+
+**CORE-1 smoke check (manual quick verify)**
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/objectives/okr-draft \
+  -H 'Content-Type: application/json' \
+  -d '{"source_text":"Improve my fitness consistency","horizon_weeks":4}'
+```
+Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
+
 ### CORE-2 Review/accept/modify/reject flow (conversation + API)
 - Store proposal drafts
 - User approval gate before any DB creation
