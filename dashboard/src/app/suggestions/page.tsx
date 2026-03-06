@@ -155,7 +155,7 @@ export default function SuggestionsPage() {
 
       {!isLoading && history.length === 0 && !error && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center text-zinc-500 text-sm">
-          Noch keine Suggestions vorhanden. Klicke "Neu generieren" um die heutigen KI-Empfehlungen zu erstellen.
+          Noch keine Suggestions vorhanden. Klicke &ldquo;Neu generieren&rdquo; um die heutigen KI-Empfehlungen zu erstellen.
         </div>
       )}
 
