@@ -358,10 +358,12 @@ class ScheduledReminder(Base):
     linked_key_result_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("key_results.id", ondelete="SET NULL"))
     linked_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"))
     linked_routine_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("routines.id", ondelete="SET NULL"))
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, sent, cancelled, snoozed
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, sent, cancelled, snoozed, failed
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     auto_generated: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="scheduled_reminders")
     linked_key_result: Mapped[Optional["KeyResult"]] = relationship(back_populates="scheduled_reminders")

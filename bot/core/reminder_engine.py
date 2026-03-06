@@ -1,19 +1,20 @@
-"""CORE-5a: Reminder execution loop skeleton (no sending).
+"""CORE-5a/5c: Reminder execution loop with persistence helpers.
 
 Responsibilities:
-- Select due reminders from stored ScheduledReminder rows (or ReminderDraft placeholders)
+- Select due reminders from stored ScheduledReminder rows
 - Apply quiet-hours gate
 - Batch reminders per user (BATCH_SIZE cap)
-- Retry policy scaffolding (no actual retries in this phase)
-- dry_run_preview(): returns what would be sent for a given now-time (no DB writes)
-
-Phase 5b will wire the actual Telegram send + mark_sent + retry scheduling.
+- Retry policy: escalating backoff, dead-letter after MAX_ATTEMPTS
+- dry_run_preview(): returns what would be sent at a given now-time (no DB writes)
+- mark_sent(): persist sent state on success
+- mark_failed(): increment retry_count, persist next_retry_at on failure
+- mark_dead_letter(): move to failed/dead-letter state when MAX_ATTEMPTS exceeded
 """
 
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import and_, select
@@ -39,15 +40,16 @@ _HIGH_PRIORITY_TYPES: frozenset[str] = frozenset(
 class DueReminder:
     """Lightweight view of a reminder that the engine would dispatch."""
 
-    id: Optional[int]          # DB row id; None for in-memory draft placeholders
+    id: Optional[int]                      # DB row id; None for in-memory draft placeholders
     user_id: int
-    reminder_type: str         # mirrors ScheduledReminder.reminder_type
+    reminder_type: str                     # mirrors ScheduledReminder.reminder_type
     message: str
     scheduled_for: datetime
-    priority: int              # 1=high, 2=medium, 3=low
-    source: str                # "db" | "draft"
-    retry_attempt: int = 0     # 0 = first delivery attempt
-    quiet_hours_blocked: bool = False  # True if suppressed by quiet-hours gate
+    priority: int                          # 1=high, 2=medium, 3=low
+    source: str                            # "db" | "draft"
+    retry_attempt: int = 0                 # mirrors retry_count from DB row
+    next_retry_at: Optional[datetime] = None  # persisted next_retry_at from DB row
+    quiet_hours_blocked: bool = False      # True if suppressed by quiet-hours gate
 
 
 @dataclasses.dataclass
