@@ -20,7 +20,7 @@ from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
-    DailySuggestion, FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, Routine,
+    DailySuggestion, FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, OKRProposalDraft, Routine,
     RoutineCompletion, RoutineObjectiveImpact, ShoppingDefault, Task, User, UserAchievement,
     WeeklyReflection,
 )
@@ -79,6 +79,24 @@ class OKRDraftResponse(BaseModel):
     draft: OKRDraft
 
 
+class ProposalDraftCreateRequest(BaseModel):
+    source_text: str
+    draft_payload: dict
+
+    @field_validator("source_text", mode="before")
+    @classmethod
+    def _strip_source_text(cls, value: str) -> str:
+        return (value or "").strip()
+
+
+class ProposalDraftResponse(BaseModel):
+    id: int
+    source_text: str
+    draft_payload: dict
+    status: str
+    created_at: str
+
+
 @router.post("/admin/kill-switches")
 async def set_kill_switch(
     body: KillSwitchBody,
@@ -112,6 +130,62 @@ async def generate_objective_okr_draft(
 
     draft = generate_okr_draft_fallback(source_text=text, horizon_weeks=body.horizon_weeks)
     return OKRDraftResponse(draft=draft)
+
+
+@router.post("/objectives/proposal-drafts", response_model=ProposalDraftResponse)
+async def create_proposal_draft(
+    body: ProposalDraftCreateRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> ProposalDraftResponse:
+    """Create a persisted proposal draft (draft status only)."""
+    if not body.source_text:
+        raise HTTPException(status_code=400, detail="source_text is required")
+
+    row = OKRProposalDraft(
+        user_id=user.id,
+        source_text=body.source_text,
+        draft_payload=body.draft_payload,
+        status="draft",
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+
+    return ProposalDraftResponse(
+        id=row.id,
+        source_text=row.source_text,
+        draft_payload=row.draft_payload,
+        status=row.status,
+        created_at=row.created_at.isoformat() if row.created_at else datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/objectives/proposal-drafts/{draft_id}", response_model=ProposalDraftResponse)
+async def get_proposal_draft(
+    draft_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> ProposalDraftResponse:
+    """Fetch one persisted proposal draft for current user."""
+    result = await session.execute(
+        select(OKRProposalDraft).where(
+            and_(OKRProposalDraft.id == draft_id, OKRProposalDraft.user_id == user.id)
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="proposal draft not found")
+    if row.status != "draft":
+        raise HTTPException(status_code=400, detail="only draft status is supported in this endpoint")
+
+    return ProposalDraftResponse(
+        id=row.id,
+        source_text=row.source_text,
+        draft_payload=row.draft_payload,
+        status=row.status,
+        created_at=row.created_at.isoformat() if row.created_at else datetime.utcnow().isoformat(),
+    )
 
 
 @router.get("/objectives")
