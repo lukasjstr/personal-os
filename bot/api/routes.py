@@ -3701,6 +3701,97 @@ def _build_deterministic_daily_plan(
     return {"summary": summary, "sections": sections, "suggested_blocks": suggested_blocks}
 
 
+@router.get("/autopilot/today")
+async def get_autopilot_today(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Unified autopilot snapshot for today.
+
+    Contract-first: see SPEC_AUTOPILOT_API.md.
+
+    Composes:
+    - next_action (CORE-7)
+    - daily plan (CORE-6, via deterministic builder)
+    - pending reminders count
+    - pending nudges count
+    - progress summary
+    """
+    from datetime import timezone as _tz
+
+    from bot.core.completion_hooks import get_next_unblocked_action
+
+    today = date.today()
+
+    # Plan: reuse deterministic daily plan builder (and optionally AI summary below)
+    plan = await get_daily_plan(user=user, session=session)
+
+    # Next action
+    next_action_task = await get_next_unblocked_action(session, user.id)
+    next_action = None
+    if next_action_task:
+        next_action = {
+            "type": "task",
+            **next_action_task,
+        }
+
+    # Counts
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+    rem_count_res = await session.execute(
+        select(func.count(ScheduledReminder.id)).where(
+            and_(
+                ScheduledReminder.user_id == user.id,
+                ScheduledReminder.status == "pending",
+                ScheduledReminder.scheduled_for >= now,
+            )
+        )
+    )
+    pending_reminders = int(rem_count_res.scalar() or 0)
+
+    nudge_count_res = await session.execute(
+        select(func.count(AutopilotNotification.id)).where(
+            and_(
+                AutopilotNotification.user_id == user.id,
+                AutopilotNotification.status == "pending",
+            )
+        )
+    )
+    pending_nudges = int(nudge_count_res.scalar() or 0)
+
+    # Progress summary
+    obj_count_res = await session.execute(
+        select(func.count(Objective.id)).where(
+            and_(Objective.user_id == user.id, Objective.status == "active")
+        )
+    )
+    active_objectives = int(obj_count_res.scalar() or 0)
+
+    completed_today_res = await session.execute(
+        select(func.count(Task.id)).where(
+            and_(
+                Task.user_id == user.id,
+                Task.completed_at.is_not(None),
+                Task.completed_at >= datetime.combine(today, datetime.min.time()),
+            )
+        )
+    )
+    completed_today = int(completed_today_res.scalar() or 0)
+
+    return {
+        "date": today.isoformat(),
+        "next_action": next_action,
+        "plan": plan,
+        "counts": {
+            "pending_nudges": pending_nudges,
+            "pending_reminders": pending_reminders,
+        },
+        "progress": {
+            "active_objectives": active_objectives,
+            "completed_today": completed_today,
+        },
+    }
+
+
 @router.get("/autopilot/daily-plan")
 async def get_daily_plan(
     user: User = Depends(get_current_user),

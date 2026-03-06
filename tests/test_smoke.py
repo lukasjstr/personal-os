@@ -115,6 +115,13 @@ class TestAutopilotEndpoints:
         res = get("/api/autopilot/daily-plan")
         assert res.status_code in (200, 500), f"Unexpected status: {res.status_code}"
 
+    def test_autopilot_today(self):
+        res = get("/api/autopilot/today")
+        assert res.status_code in (200, 500), f"Unexpected status: {res.status_code}"
+        data = res.json()
+        assert "date" in data
+        assert "plan" in data
+
     def test_next_action(self):
         res = get("/api/autopilot/next-action")
         assert res.status_code in (200, 404)
