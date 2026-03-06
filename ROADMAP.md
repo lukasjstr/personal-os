@@ -1,5 +1,8 @@
 # ROADMAP – Personal Operating System (POS)
 
+> NOTE (2026-03-06): This file contains legacy phase prompts and broad planning notes.
+> The authoritative execution plan and CORE ticket tracking lives in: `ROADMAP-ULTIMATE-AUTOPILOT.md`.
+
 ## Aktueller Stand
 
 ### ✅ Committed

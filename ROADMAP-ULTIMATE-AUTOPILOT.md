@@ -244,14 +244,20 @@ Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
 - Morning brief + evening review fully fed by goal pipeline outputs
 - Warning detector + free-slot suggestions
 
+**CORE-6 shipped:** `898c93c feat(core): CORE-6 daily plan integration`
+
 ### CORE-7 Next-action completion loop
 - Completion hooks update KR/objective progress
 - Next unblocked action surfaced immediately
+
+**CORE-7 shipped:** `adb822e feat(core): CORE-7 next-action completion loop`
 
 ### CORE-8 App integration (mobile + web/PWA)
 - Goal proposal/review screens
 - Autopilot status/action cards + reminders overview
 - Parity across mobile and dashboard
+
+**CORE-8 shipped:** `9c656df feat(core): CORE-8 app integration`
 
 ---
 
