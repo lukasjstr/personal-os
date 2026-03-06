@@ -228,6 +228,7 @@ Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
 
 **CORE-3 progress (mini-tickets)**
 - CORE-3a: proposal calendar slot scaffold (model + migration), no auto-scheduling side-effects
+- CORE-3b: pure slot candidate generator scaffold (`bot/core/slot_candidates.py`), read-only/no side-effects
 
 ### CORE-4 Auto reminder generation
 - Reminder factory by KR type/frequency
