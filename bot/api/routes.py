@@ -236,6 +236,39 @@ async def review_proposal_draft(
     )
 
 
+async def _require_accepted_draft(draft_id: int, user_id: int, session: AsyncSession) -> OKRProposalDraft:
+    """Approval gate guard: raises 403 unless draft status is 'accepted'."""
+    result = await session.execute(
+        select(OKRProposalDraft).where(
+            and_(OKRProposalDraft.id == draft_id, OKRProposalDraft.user_id == user_id)
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="proposal draft not found")
+    if row.status != "accepted":
+        raise HTTPException(
+            status_code=403,
+            detail=f"proposal draft must be accepted before execution (current status: {row.status})",
+        )
+    return row
+
+
+@router.post("/objectives/proposal-drafts/{draft_id}/execute", status_code=202)
+async def execute_proposal_draft(
+    draft_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Skeleton execution endpoint — approval gate enforced, no downstream side-effects yet."""
+    await _require_accepted_draft(draft_id, user.id, session)
+    return {
+        "status": "accepted",
+        "draft_id": draft_id,
+        "message": "execution placeholder — not yet implemented",
+    }
+
+
 @router.get("/objectives")
 async def list_objectives(
     user: User = Depends(get_current_user),

@@ -216,6 +216,12 @@ Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
 - User approval gate before any DB creation
 - Accept/modify/reject executors
 
+**CORE-2 progress (mini-tickets)**
+- CORE-2a: `8dfc583` — proposal draft persistence scaffold (model + migration)
+- CORE-2b: `7e71b42` — draft create/fetch API skeleton
+- CORE-2c: `209d2b9` — review status actions (accept/modify/reject)
+- CORE-2d: approval-gate guard + execute placeholder (no side-effects)
+
 ### CORE-3 Auto calendar generation
 - Recurring blocks + milestones + deadlines
 - Conflict detection and alternative slot assignment
