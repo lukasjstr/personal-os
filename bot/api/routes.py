@@ -350,9 +350,15 @@ async def preview_proposal_draft_reminder_drafts(
         "count": len(drafts),
         "reminder_drafts": [
             {
+                "kind": d.kind,
                 "title": d.title,
                 "body": d.body,
                 "scheduled_at": d.scheduled_at.isoformat(),
+                "scheduled_time_local": d.scheduled_time_local,
+                "cron": d.cron,
+                "priority": d.priority,
+                "quiet_hours_respected": d.quiet_hours_respected,
+                "max_per_day_bucket": d.max_per_day_bucket,
                 "source_objective": d.source_objective,
                 "source_key_result": d.source_key_result,
                 "frequency": d.frequency,
