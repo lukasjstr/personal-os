@@ -64,6 +64,7 @@ class User(Base):
     autopilot_notifications: Mapped[list["AutopilotNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     action_queue_items: Mapped[list["ActionQueueItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     okr_proposal_drafts: Mapped[list["OKRProposalDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    proposal_calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -659,6 +660,31 @@ class OKRProposalDraft(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="okr_proposal_drafts")
+    calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="proposal_draft", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<OKRProposalDraft id={self.id} user_id={self.user_id} status={self.status}>"
+
+
+# ─── CORE-3A — Proposal Calendar Slot Scaffold ───────────────────────────────
+
+class ProposalCalendarSlot(Base):
+    __tablename__ = "proposal_calendar_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    proposal_draft_id: Mapped[int] = mapped_column(Integer, ForeignKey("okr_proposal_drafts.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    starts_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    slot_type: Mapped[str] = mapped_column(String(30), nullable=False, default="proposed_block", index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="proposal_calendar_slots")
+    proposal_draft: Mapped["OKRProposalDraft"] = relationship(back_populates="calendar_slots")
+
+    def __repr__(self) -> str:
+        return f"<ProposalCalendarSlot id={self.id} draft={self.proposal_draft_id} status={self.status}>"

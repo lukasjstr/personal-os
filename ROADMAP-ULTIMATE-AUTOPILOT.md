@@ -226,6 +226,9 @@ Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
 - Recurring blocks + milestones + deadlines
 - Conflict detection and alternative slot assignment
 
+**CORE-3 progress (mini-tickets)**
+- CORE-3a: proposal calendar slot scaffold (model + migration), no auto-scheduling side-effects
+
 ### CORE-4 Auto reminder generation
 - Reminder factory by KR type/frequency
 - Smart conditions + anti-spam constraints in config model
