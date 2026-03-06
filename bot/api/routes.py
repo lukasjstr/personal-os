@@ -26,6 +26,7 @@ from bot.database.models import (
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.core.okr_generator import OKRDraft, generate_okr_draft_fallback
+from bot.core.slot_candidates import derive_slot_candidates
 from bot.telegram.sender import send_message
 
 router = APIRouter(prefix="/api")
@@ -266,6 +267,35 @@ async def execute_proposal_draft(
         "status": "accepted",
         "draft_id": draft_id,
         "message": "execution placeholder — not yet implemented",
+    }
+
+
+@router.get("/objectives/proposal-drafts/{draft_id}/slot-candidates")
+async def preview_proposal_draft_slot_candidates(
+    draft_id: int,
+    horizon_days: int = Query(90, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Preview read-only slot candidates derived from an accepted proposal draft."""
+    row = await _require_accepted_draft(draft_id, user.id, session)
+    candidates = derive_slot_candidates(row.draft_payload, horizon_days=horizon_days)
+    return {
+        "draft_id": draft_id,
+        "status": row.status,
+        "count": len(candidates),
+        "slot_candidates": [
+            {
+                "title": c.title,
+                "starts_at": c.starts_at.isoformat(),
+                "ends_at": c.ends_at.isoformat(),
+                "slot_type": c.slot_type,
+                "notes": c.notes,
+                "source_objective": c.source_objective,
+                "source_key_result": c.source_key_result,
+            }
+            for c in candidates
+        ],
     }
 
 
