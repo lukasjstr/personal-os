@@ -97,6 +97,12 @@ class ProposalDraftResponse(BaseModel):
     created_at: str
 
 
+class ProposalDraftReviewRequest(BaseModel):
+    action: str  # accept | modify | reject
+    source_text: Optional[str] = None
+    draft_payload: Optional[dict] = None
+
+
 @router.post("/admin/kill-switches")
 async def set_kill_switch(
     body: KillSwitchBody,
@@ -176,8 +182,50 @@ async def get_proposal_draft(
     row = result.scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="proposal draft not found")
-    if row.status != "draft":
-        raise HTTPException(status_code=400, detail="only draft status is supported in this endpoint")
+
+    return ProposalDraftResponse(
+        id=row.id,
+        source_text=row.source_text,
+        draft_payload=row.draft_payload,
+        status=row.status,
+        created_at=row.created_at.isoformat() if row.created_at else datetime.utcnow().isoformat(),
+    )
+
+
+@router.post("/objectives/proposal-drafts/{draft_id}/review", response_model=ProposalDraftResponse)
+async def review_proposal_draft(
+    draft_id: int,
+    body: ProposalDraftReviewRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> ProposalDraftResponse:
+    """Review flow skeleton: status transitions only, no downstream execution side-effects."""
+    result = await session.execute(
+        select(OKRProposalDraft).where(
+            and_(OKRProposalDraft.id == draft_id, OKRProposalDraft.user_id == user.id)
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="proposal draft not found")
+
+    action = (body.action or "").strip().lower()
+    if action not in {"accept", "modify", "reject"}:
+        raise HTTPException(status_code=400, detail="action must be one of: accept, modify, reject")
+
+    if action == "accept":
+        row.status = "accepted"
+    elif action == "reject":
+        row.status = "rejected"
+    else:
+        row.status = "draft"
+        if body.source_text is not None:
+            row.source_text = body.source_text.strip()
+        if body.draft_payload is not None:
+            row.draft_payload = body.draft_payload
+
+    await session.commit()
+    await session.refresh(row)
 
     return ProposalDraftResponse(
         id=row.id,
