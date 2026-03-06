@@ -63,6 +63,7 @@ class User(Base):
     daily_suggestions: Mapped[list["DailySuggestion"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     autopilot_notifications: Mapped[list["AutopilotNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     action_queue_items: Mapped[list["ActionQueueItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    okr_proposal_drafts: Mapped[list["OKRProposalDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -642,3 +643,22 @@ class ObjectiveTaskSuggestion(Base):
 
     def __repr__(self) -> str:
         return f"<ObjectiveTaskSuggestion id={self.id} status={self.status} title={self.title!r}>"
+
+
+# ─── CORE-2A — Proposal Draft Persistence ─────────────────────────────────────
+
+class OKRProposalDraft(Base):
+    __tablename__ = "okr_proposal_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    draft_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="okr_proposal_drafts")
+
+    def __repr__(self) -> str:
+        return f"<OKRProposalDraft id={self.id} user_id={self.user_id} status={self.status}>"
