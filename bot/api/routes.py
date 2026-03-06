@@ -26,6 +26,7 @@ from bot.database.models import (
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.core.okr_generator import OKRDraft, generate_okr_draft_fallback
+from bot.core.reminder_factory import ReminderConfig, generate_reminder_drafts
 from bot.core.slot_candidates import derive_slot_candidates
 from bot.core.slot_conflict_detection import detect_conflicts
 from bot.telegram.sender import send_message
@@ -312,6 +313,52 @@ async def preview_proposal_draft_slot_candidates(
                 ),
             }
             for c in candidates
+        ],
+    }
+
+
+@router.get("/objectives/proposal-drafts/{draft_id}/reminder-drafts")
+async def preview_proposal_draft_reminder_drafts(
+    draft_id: int,
+    horizon_days: int = Query(30, ge=1, le=90),
+    preferred_hour: int = Query(9, ge=0, le=23),
+    quiet_hour_start: int = Query(22, ge=0, le=23),
+    quiet_hour_end: int = Query(8, ge=0, le=23),
+    max_per_day: int = Query(3, ge=1, le=10),
+    min_interval_hours: int = Query(4, ge=1, le=24),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Preview read-only reminder drafts derived from an accepted proposal draft."""
+    row = await _require_accepted_draft(draft_id, user.id, session)
+
+    config = ReminderConfig(
+        horizon_days=horizon_days,
+        preferred_hour=preferred_hour,
+        quiet_hour_start=quiet_hour_start,
+        quiet_hour_end=quiet_hour_end,
+        max_per_day=max_per_day,
+        min_interval_hours=min_interval_hours,
+    )
+
+    drafts = generate_reminder_drafts(row.draft_payload, config=config)
+
+    return {
+        "draft_id": draft_id,
+        "status": row.status,
+        "config": config.model_dump(),
+        "count": len(drafts),
+        "reminder_drafts": [
+            {
+                "title": d.title,
+                "body": d.body,
+                "scheduled_at": d.scheduled_at.isoformat(),
+                "source_objective": d.source_objective,
+                "source_key_result": d.source_key_result,
+                "frequency": d.frequency,
+                "anti_spam_adjusted": d.anti_spam_adjusted,
+            }
+            for d in drafts
         ],
     }
 
