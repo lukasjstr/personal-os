@@ -1617,6 +1617,11 @@ export default function HomeScreen() {
         {/* ── Autopilot Section ── */}
         <Text style={styles.sectionTitle}>Autopilot</Text>
 
+        <View style={styles.autopilotStatusCard}>
+          <Text style={styles.autopilotStatusTitle}>Autopilot status</Text>
+          <Text style={styles.autopilotStatusSub}>Confidence: {resolvedNextAction?.score ?? '—'}</Text>
+        </View>
+
         <AutopilotNudgesCard
           data={notificationsApi.error ? null : (notificationsApi.data ?? null)}
           loading={notificationsApi.loading}
@@ -1672,6 +1677,25 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111827' },
   scroll: { padding: 16, flexGrow: 1 },
+
+  autopilotStatusCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    backgroundColor: '#0f172a',
+  },
+  autopilotStatusTitle: {
+    color: '#f9fafb',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  autopilotStatusSub: {
+    marginTop: 6,
+    color: '#9ca3af',
+    fontSize: 12,
+  },
 
   header: {
     flexDirection: 'row',

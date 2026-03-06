@@ -143,6 +143,31 @@ async def generate_objective_okr_draft(
     return OKRDraftResponse(draft=draft)
 
 
+@router.get("/objectives/proposal-drafts", response_model=list[ProposalDraftResponse])
+async def list_proposal_drafts(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[ProposalDraftResponse]:
+    """List persisted proposal drafts for current user (newest first)."""
+    result = await session.execute(
+        select(OKRProposalDraft)
+        .where(OKRProposalDraft.user_id == user.id)
+        .order_by(OKRProposalDraft.id.desc())
+        .limit(200)
+    )
+    rows = result.scalars().all()
+    return [
+        ProposalDraftResponse(
+            id=row.id,
+            source_text=row.source_text,
+            draft_payload=row.draft_payload,
+            status=row.status,
+            created_at=row.created_at.isoformat() if row.created_at else datetime.utcnow().isoformat(),
+        )
+        for row in rows
+    ]
+
+
 @router.post("/objectives/proposal-drafts", response_model=ProposalDraftResponse)
 async def create_proposal_draft(
     body: ProposalDraftCreateRequest,
