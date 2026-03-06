@@ -230,6 +230,7 @@ Expected: `200` with `{"draft": ...}` payload (fallback-generated structure).
 - CORE-3a: proposal calendar slot scaffold (model + migration), no auto-scheduling side-effects
 - CORE-3b: pure slot candidate generator scaffold (`bot/core/slot_candidates.py`), read-only/no side-effects
 - CORE-3c: read-only API preview endpoint for accepted-draft slot candidates (no DB writes/scheduling side-effects)
+- CORE-3d: conflict-detection scaffold hooked into slot-candidate preview (read-only, no auto-rescheduling)
 
 ### CORE-4 Auto reminder generation
 - Reminder factory by KR type/frequency
