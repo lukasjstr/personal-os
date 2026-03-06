@@ -1,17 +1,13 @@
-"""CORE-5b: Due reminder processor loop scaffold (read-only / safe mode).
+"""CORE-5b/5d: Due reminder processor loop — fetches, gates, sends, persists.
 
 Responsibilities:
 - Fetch all distinct user IDs that have pending reminders due at *now*
 - For each user: delegate per-user batching + quiet-hours gate to reminder_engine
-- Apply retry backoff policy: mark items whose simulated next_retry_at > now as
-  deferred (no DB column yet; scaffold models the decision only)
+- Apply retry backoff gate (next_retry_at enforced at DB level)
+- Send each dispatchable reminder via Telegram
+- Persist outcome: mark_sent on success; mark_failed (schedules retry) or
+  mark_dead_letter (MAX_ATTEMPTS exceeded) on failure
 - Produce a ProcessorTickResult summary per tick
-
-No DB rows are mutated. No Telegram messages are sent.
-Phase 5c will wire:
-  - Actual Telegram send call
-  - mark_sent() on success
-  - Persist retry_count + next_retry_at on ScheduledReminder rows on failure
 """
 
 from __future__ import annotations
@@ -25,13 +21,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.reminder_engine import (
     BATCH_SIZE,
+    MAX_ATTEMPTS,
     DueReminder,
     EnginePreviewResult,
     dry_run_preview,
+    mark_dead_letter,
+    mark_failed,
+    mark_sent,
     retry_delay_minutes,
+    send_telegram,
 )
 from bot.core.reminder_factory import ReminderConfig
-from bot.database.models import ScheduledReminder
+from bot.database.models import ScheduledReminder, User
 
 
 # ── Processor-level policy constants ─────────────────────────────────────────
@@ -53,6 +54,10 @@ class UserTickResult:
     dispatchable: list[DueReminder]
     # Items skipped because simulated next_retry_at > now
     retry_deferred: list[DueReminder]
+    # Outcomes after actual send attempts
+    sent: list[DueReminder] = dataclasses.field(default_factory=list)
+    failed: list[DueReminder] = dataclasses.field(default_factory=list)
+    dead_lettered: list[DueReminder] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -67,6 +72,9 @@ class ProcessorTickResult:
     total_dispatchable: int    # reminders that would actually be sent
     total_retry_deferred: int  # reminders held back by backoff gate
     per_user: list[UserTickResult]
+    total_sent: int = 0
+    total_failed: int = 0
+    total_dead_lettered: int = 0
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -77,25 +85,25 @@ async def process_tick(
     now: datetime,
     config: Optional[ReminderConfig] = None,
 ) -> ProcessorTickResult:
-    """Run one processor tick: scan all users with due reminders, apply policy.
-
-    Pure read-only — no DB writes, no external sends.
+    """Run one processor tick: scan all users with due reminders, send via Telegram.
 
     Steps:
       1. Fetch distinct user_ids that have pending reminders with scheduled_for <= now
       2. For each user (up to MAX_USERS_PER_TICK):
          a. Call dry_run_preview() from reminder_engine
          b. Apply retry-backoff gate to the would_send list
-         c. Collect UserTickResult
+         c. Fetch user's telegram_id
+         d. Send each dispatchable reminder; persist result via mark_sent /
+            mark_failed / mark_dead_letter
       3. Return aggregate ProcessorTickResult
 
     Args:
-        session: Async SQLAlchemy session (read-only usage).
+        session: Async SQLAlchemy session.
         now:     Reference timestamp for the tick (injected for testability).
         config:  Anti-spam / quiet-hours config; defaults to ReminderConfig().
 
     Returns:
-        ProcessorTickResult summarising what would be dispatched.
+        ProcessorTickResult summarising what was dispatched.
     """
     if config is None:
         config = ReminderConfig()
@@ -115,12 +123,45 @@ async def process_tick(
             else:
                 dispatchable.append(reminder)
 
+        sent: list[DueReminder] = []
+        failed: list[DueReminder] = []
+        dead_lettered: list[DueReminder] = []
+
+        telegram_id = await _get_user_telegram_id(session, user_id)
+
+        for reminder in dispatchable:
+            # No telegram_id means the user row is gone — dead-letter immediately.
+            if telegram_id is None:
+                if reminder.id is not None:
+                    await mark_dead_letter(session, reminder.id)
+                dead_lettered.append(reminder)
+                continue
+
+            ok = await send_telegram(telegram_id, reminder.message)
+            if ok:
+                if reminder.id is not None:
+                    await mark_sent(session, reminder.id, now)
+                sent.append(reminder)
+            else:
+                if reminder.id is not None:
+                    if reminder.retry_attempt + 1 >= MAX_ATTEMPTS:
+                        await mark_dead_letter(session, reminder.id)
+                        dead_lettered.append(reminder)
+                    else:
+                        await mark_failed(session, reminder.id, now, reminder.retry_attempt)
+                        failed.append(reminder)
+                else:
+                    failed.append(reminder)
+
         per_user.append(
             UserTickResult(
                 user_id=user_id,
                 engine_result=engine_result,
                 dispatchable=dispatchable,
                 retry_deferred=retry_deferred,
+                sent=sent,
+                failed=failed,
+                dead_lettered=dead_lettered,
             )
         )
 
@@ -133,10 +174,24 @@ async def process_tick(
         total_dispatchable=sum(len(u.dispatchable) for u in per_user),
         total_retry_deferred=sum(len(u.retry_deferred) for u in per_user),
         per_user=per_user,
+        total_sent=sum(len(u.sent) for u in per_user),
+        total_failed=sum(len(u.failed) for u in per_user),
+        total_dead_lettered=sum(len(u.dead_lettered) for u in per_user),
     )
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+
+async def _get_user_telegram_id(
+    session: AsyncSession,
+    user_id: int,
+) -> Optional[int]:
+    """Return telegram_id for the given internal user_id, or None if not found."""
+    result = await session.execute(
+        select(User.telegram_id).where(User.id == user_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def _fetch_users_with_due_reminders(

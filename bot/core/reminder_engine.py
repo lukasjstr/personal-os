@@ -17,7 +17,7 @@ import dataclasses
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.core.reminder_factory import ReminderConfig, _is_in_quiet_hours
@@ -103,7 +103,8 @@ async def dry_run_preview(
                 scheduled_for=row.scheduled_for,
                 priority=priority,
                 source="db",
-                retry_attempt=0,
+                retry_attempt=row.retry_count,
+                next_retry_at=row.next_retry_at,
                 quiet_hours_blocked=in_quiet,
             )
         )
@@ -145,6 +146,10 @@ async def _select_due_reminders(
                 ScheduledReminder.user_id == user_id,
                 ScheduledReminder.status == "pending",
                 ScheduledReminder.scheduled_for <= now,
+                or_(
+                    ScheduledReminder.next_retry_at == None,  # noqa: E711
+                    ScheduledReminder.next_retry_at <= now,
+                ),
             )
         )
         .order_by(ScheduledReminder.scheduled_for)
@@ -162,14 +167,66 @@ def _apply_batch(reminders: list[DueReminder], batch_size: int) -> list[DueRemin
 def retry_delay_minutes(attempt: int) -> Optional[int]:
     """Return minutes to wait before the next retry, or None if max attempts reached.
 
-    Scaffolding only — actual retry scheduling is Phase 5b.
-
-    attempt=0 → first delivery (not a retry)
-    attempt=1 → first retry after 5 min
-    attempt=2 → second retry after 15 min
-    attempt=3 → third retry after 60 min (MAX_ATTEMPTS)
-    attempt>3 → None (give up)
+    attempt=0 → first retry after 5 min
+    attempt=1 → second retry after 15 min
+    attempt=2 → third retry after 60 min (MAX_ATTEMPTS - 1)
+    attempt>=3 → None (give up)
     """
     if attempt >= MAX_ATTEMPTS:
         return None
     return RETRY_BACKOFF_MINUTES[attempt]
+
+
+# ── Persistence helpers ───────────────────────────────────────────────────────
+
+
+async def mark_sent(session: AsyncSession, row_id: int, now: datetime) -> None:
+    """Mark a ScheduledReminder as successfully sent."""
+    await session.execute(
+        update(ScheduledReminder)
+        .where(ScheduledReminder.id == row_id)
+        .values(status="sent", sent_at=now)
+    )
+    await session.commit()
+
+
+async def mark_failed(
+    session: AsyncSession,
+    row_id: int,
+    now: datetime,
+    current_retry_count: int,
+) -> None:
+    """Increment retry_count and schedule next_retry_at using escalating backoff.
+
+    Only call this when current_retry_count + 1 < MAX_ATTEMPTS (i.e. retries remain).
+    Use mark_dead_letter() when the attempt ceiling is reached.
+    """
+    new_count = current_retry_count + 1
+    delay = retry_delay_minutes(current_retry_count)  # index = current count
+    next_retry = now + timedelta(minutes=delay) if delay is not None else None
+    await session.execute(
+        update(ScheduledReminder)
+        .where(ScheduledReminder.id == row_id)
+        .values(retry_count=new_count, next_retry_at=next_retry)
+    )
+    await session.commit()
+
+
+async def mark_dead_letter(session: AsyncSession, row_id: int) -> None:
+    """Set status='failed' (dead-letter) — no further retries will be attempted."""
+    await session.execute(
+        update(ScheduledReminder)
+        .where(ScheduledReminder.id == row_id)
+        .values(status="failed")
+    )
+    await session.commit()
+
+
+# ── Telegram sender helper ────────────────────────────────────────────────────
+
+
+async def send_telegram(telegram_id: int, message: str) -> bool:
+    """Send *message* to *telegram_id* via the bot.  Returns True on success."""
+    from bot.telegram.sender import send_message  # deferred import avoids circular
+
+    return await send_message(telegram_id, message)
