@@ -25,6 +25,7 @@ from bot.database.models import (
     WeeklyReflection,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
+from bot.core.okr_generator import OKRDraft, generate_okr_draft_fallback
 from bot.telegram.sender import send_message
 
 router = APIRouter(prefix="/api")
@@ -64,6 +65,15 @@ class KillSwitchBody(BaseModel):
     enabled: bool
 
 
+class OKRDraftRequest(BaseModel):
+    source_text: str
+    horizon_weeks: int = 4
+
+
+class OKRDraftResponse(BaseModel):
+    draft: OKRDraft
+
+
 @router.post("/admin/kill-switches")
 async def set_kill_switch(
     body: KillSwitchBody,
@@ -78,6 +88,21 @@ async def set_kill_switch(
     else:
         disable(body.switch)
     return {"ok": True, **status()}
+
+
+@router.post("/objectives/okr-draft", response_model=OKRDraftResponse)
+async def generate_objective_okr_draft(
+    body: OKRDraftRequest,
+    user: User = Depends(get_current_user),
+) -> OKRDraftResponse:
+    """Generate read-only objective draft payload from free-form text (fallback-only)."""
+    text = (body.source_text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="source_text is required")
+
+    horizon = max(1, min(body.horizon_weeks, 52))
+    draft = generate_okr_draft_fallback(source_text=text, horizon_weeks=horizon)
+    return OKRDraftResponse(draft=draft)
 
 
 @router.get("/objectives")
