@@ -284,18 +284,35 @@ async def _require_accepted_draft(draft_id: int, user_id: int, session: AsyncSes
     return row
 
 
-@router.post("/objectives/proposal-drafts/{draft_id}/execute", status_code=202)
+@router.post("/objectives/proposal-drafts/{draft_id}/execute")
 async def execute_proposal_draft(
     draft_id: int,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Skeleton execution endpoint — approval gate enforced, no downstream side-effects yet."""
-    await _require_accepted_draft(draft_id, user.id, session)
+    """Execute an accepted proposal draft into real DB objects.
+
+    Side-effects (Option B):
+    - Objective + KeyResults + Tasks
+    - Calendar blocks (CalendarEvent) from slot candidates
+    - Scheduled reminders (ScheduledReminder) from reminder drafts
+    """
+    row = await _require_accepted_draft(draft_id, user.id, session)
+
+    from bot.core.proposal_execute import execute_accepted_proposal
+
+    result = await execute_accepted_proposal(session, row)
     return {
-        "status": "accepted",
+        "ok": True,
         "draft_id": draft_id,
-        "message": "execution placeholder — not yet implemented",
+        "status": "executed",
+        "created": {
+            "objective_id": result.objective_id,
+            "key_result_ids": result.key_result_ids,
+            "task_ids": result.task_ids,
+            "calendar_event_ids": result.calendar_event_ids,
+            "scheduled_reminder_ids": result.scheduled_reminder_ids,
+        },
     }
 
 
