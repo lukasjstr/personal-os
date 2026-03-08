@@ -1958,6 +1958,22 @@ async def complete_task_endpoint(
     task.completed_at = datetime.utcnow()
     await session.flush()
 
+    # Auto-complete any action queue item linked to this task
+    aq_result = await session.execute(
+        select(ActionQueueItem).where(
+            and_(
+                ActionQueueItem.linked_task_id == task.id,
+                ActionQueueItem.user_id == user.id,
+                ActionQueueItem.state != "completed",
+            )
+        )
+    )
+    linked_queue_item = aq_result.scalar_one_or_none()
+    if linked_queue_item:
+        linked_queue_item.state = "completed"
+        linked_queue_item.updated_at = datetime.utcnow()
+    await session.flush()
+
     # CORE-7: update KR progress
     kr_updated = await update_kr_on_task_complete(session, task)
 
