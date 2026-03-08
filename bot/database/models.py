@@ -660,6 +660,8 @@ class OKRProposalDraft(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+    executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    executed_objective_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('objectives.id', ondelete='SET NULL'), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="okr_proposal_drafts")
     calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="proposal_draft", cascade="all, delete-orphan")
