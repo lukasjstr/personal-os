@@ -17,6 +17,7 @@ import {
   useFitnessSummary,
   useGamificationStats,
   useTodaySuggestions,
+  useAutopilotSuggestions,
 } from "@/hooks/useApi";
 import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
 import PatternsCard from "@/components/PatternsCard";
@@ -147,6 +148,7 @@ export default function DashboardPage() {
   const { data: fitnessSummary } = useFitnessSummary();
   const { data: gamification } = useGamificationStats();
   const { data: suggestionsData } = useTodaySuggestions();
+  const { data: autopilotSuggestions } = useAutopilotSuggestions();
 
   if (dashLoading) return <LoadingSpinner />;
   if (dashError) {
@@ -352,6 +354,28 @@ export default function DashboardPage() {
 
       {/* AI Coach Daily Suggestions */}
       <AiCoachSection suggestionsData={suggestionsData} />
+
+      {/* P2.3 — Autopilot Suggestions Widget */}
+      {autopilotSuggestions && autopilotSuggestions.suggestions.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
+          <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+            <span>💡</span> Proaktive Vorschläge
+          </h3>
+          <div className="space-y-2">
+            {autopilotSuggestions.suggestions.slice(0, 3).map((item, i) => (
+              <div key={i} className="flex items-start gap-3 py-1.5">
+                <span className="text-indigo-400 shrink-0 mt-0.5">›</span>
+                <div>
+                  <p className="text-zinc-200 text-sm">{item.message}</p>
+                  {item.action_hint && (
+                    <p className="text-zinc-500 text-xs mt-0.5">{item.action_hint}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Autopilot Confidence (E5) */}
       <ConfidenceCard />
