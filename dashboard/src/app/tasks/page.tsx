@@ -39,12 +39,14 @@ const TASK_CATEGORIES = ["general", "health", "fitness", "business", "personal",
 function EditTaskModal({
   task,
   objectives,
+  tasks,
   onSave,
   onClose,
   saving,
 }: {
   task: Task;
   objectives: { id: number; title: string }[];
+  tasks: Task[];
   onSave: (data: {
     title: string;
     category: string | null;
@@ -52,6 +54,8 @@ function EditTaskModal({
     due_date: string | null;
     status: string;
     objective_id: number | null;
+    parent_task_id: number | null;
+    blocked_by_task_id: number | null;
   }) => void;
   onClose: () => void;
   saving: boolean;
@@ -63,7 +67,11 @@ function EditTaskModal({
     due_date: task.due_date ?? "",
     status: task.status,
     objective_id: task.objective_id ?? 0,
+    parent_task_id: task.parent_task_id ?? 0,
+    blocked_by_task_id: task.blocked_by_task_id ?? 0,
   });
+
+  const otherTasks = tasks.filter((t) => t.id !== task.id);
 
   function handleSave() {
     onSave({
@@ -73,6 +81,8 @@ function EditTaskModal({
       due_date: form.due_date || null,
       status: form.status,
       objective_id: form.objective_id > 0 ? form.objective_id : null,
+      parent_task_id: form.parent_task_id > 0 ? form.parent_task_id : null,
+      blocked_by_task_id: form.blocked_by_task_id > 0 ? form.blocked_by_task_id : null,
     });
   }
 
@@ -163,6 +173,38 @@ function EditTaskModal({
               </select>
             </div>
           )}
+
+          {otherTasks.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Parent Task</label>
+              <select
+                value={form.parent_task_id}
+                onChange={(e) => setForm((f) => ({ ...f, parent_task_id: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={0}>— kein Parent —</option>
+                {otherTasks.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {otherTasks.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Blockiert von</label>
+              <select
+                value={form.blocked_by_task_id}
+                onChange={(e) => setForm((f) => ({ ...f, blocked_by_task_id: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={0}>— nicht blockiert —</option>
+                {otherTasks.filter((t) => t.id !== form.parent_task_id).map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 justify-end mt-6">
@@ -190,12 +232,14 @@ function EditTaskModal({
 
 function CreateTaskModal({
   objectives,
+  tasks,
   onSave,
   onClose,
   saving,
 }: {
   objectives: { id: number; title: string }[];
-  onSave: (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null }) => void;
+  tasks: Task[];
+  onSave: (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null; parent_task_id: number | null; blocked_by_task_id: number | null }) => void;
   onClose: () => void;
   saving: boolean;
 }) {
@@ -205,6 +249,8 @@ function CreateTaskModal({
     priority: 3,
     due_date: "",
     objective_id: 0,
+    parent_task_id: 0,
+    blocked_by_task_id: 0,
   });
 
   return (
@@ -272,13 +318,39 @@ function CreateTaskModal({
               </select>
             </div>
           )}
+          {tasks.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Parent Task</label>
+              <select
+                value={form.parent_task_id}
+                onChange={(e) => setForm((f) => ({ ...f, parent_task_id: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={0}>— kein Parent —</option>
+                {tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+            </div>
+          )}
+          {tasks.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Blockiert von</label>
+              <select
+                value={form.blocked_by_task_id}
+                onChange={(e) => setForm((f) => ({ ...f, blocked_by_task_id: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value={0}>— nicht blockiert —</option>
+                {tasks.filter((t) => t.id !== form.parent_task_id).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 justify-end mt-6">
           <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">
             Abbrechen
           </button>
           <button
-            onClick={() => onSave({ title: form.title.trim(), category: form.category || null, priority: form.priority, due_date: form.due_date || null, objective_id: form.objective_id > 0 ? form.objective_id : null })}
+            onClick={() => onSave({ title: form.title.trim(), category: form.category || null, priority: form.priority, due_date: form.due_date || null, objective_id: form.objective_id > 0 ? form.objective_id : null, parent_task_id: form.parent_task_id > 0 ? form.parent_task_id : null, blocked_by_task_id: form.blocked_by_task_id > 0 ? form.blocked_by_task_id : null })}
             disabled={saving || !form.title.trim()}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium"
           >
@@ -492,7 +564,7 @@ export default function TasksPage() {
   );
 
   const handleCreate = useCallback(
-    async (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null }) => {
+    async (data: { title: string; category: string | null; priority: number; due_date: string | null; objective_id: number | null; parent_task_id: number | null; blocked_by_task_id: number | null }) => {
       setSaving(true);
       try {
         await api.createTask(data);
@@ -516,6 +588,8 @@ export default function TasksPage() {
       due_date: string | null;
       status: string;
       objective_id: number | null;
+      parent_task_id: number | null;
+      blocked_by_task_id: number | null;
     }) => {
       if (!editingTask) return;
       setSaving(true);
@@ -722,6 +796,7 @@ export default function TasksPage() {
       {creating && (
         <CreateTaskModal
           objectives={objectives}
+          tasks={all}
           onSave={handleCreate}
           onClose={() => setCreating(false)}
           saving={saving}
@@ -733,6 +808,7 @@ export default function TasksPage() {
         <EditTaskModal
           task={editingTask}
           objectives={objectives}
+          tasks={all}
           onSave={handleEdit}
           onClose={() => setEditingTask(null)}
           saving={saving}

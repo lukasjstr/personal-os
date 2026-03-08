@@ -684,7 +684,7 @@ export const api = {
   completeTask: (taskId: number) => apiPost<{ ok: boolean }>(`/api/tasks/${taskId}/complete`),
   completeRoutine: (routineId: number) => apiPost<{ ok: boolean }>(`/api/routines/${routineId}/complete`),
   // CRUD — Create
-  createTask: (body: { title: string; category?: string | null; priority?: number; due_date?: string | null; objective_id?: number | null; description?: string | null }) =>
+  createTask: (body: { title: string; category?: string | null; priority?: number; due_date?: string | null; objective_id?: number | null; description?: string | null; parent_task_id?: number | null; blocked_by_task_id?: number | null }) =>
     apiPost<{ ok: boolean; id: number; title: string }>("/api/tasks", body),
   createObjective: (body: { title: string; category?: string; description?: string | null; target_date?: string | null }) =>
     apiPost<{ ok: boolean; id: number; title: string }>("/api/objectives", body),
@@ -700,7 +700,7 @@ export const api = {
     apiPatch<{ ok: boolean } & KeyResult>(`/api/objectives/${objectiveId}/key-results/${krId}`, body),
   deleteKeyResult: (objectiveId: number, krId: number) =>
     apiDelete<{ ok: boolean }>(`/api/objectives/${objectiveId}/key-results/${krId}`),
-  updateTask: (id: number, body: Partial<{ title: string; category: string | null; priority: number; due_date: string | null; status: string; objective_id: number | null }>) =>
+  updateTask: (id: number, body: Partial<{ title: string; category: string | null; priority: number; due_date: string | null; status: string; objective_id: number | null; parent_task_id: number | null; blocked_by_task_id: number | null }>) =>
     apiPut<{ ok: boolean }>(`/api/tasks/${id}`, body),
   deleteTask: (id: number) => apiDelete<{ ok: boolean }>(`/api/tasks/${id}`),
   updateRoutine: (id: number, body: Partial<{ title: string; description: string | null; frequency_human: string | null; status: string; time_of_day: string; sort_order: number }>) =>
