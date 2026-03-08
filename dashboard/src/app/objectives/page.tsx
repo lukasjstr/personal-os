@@ -474,6 +474,18 @@ function ObjectiveCard({
                 {avgProgress}%
               </span>
             </div>
+            {krProgress !== null && taskProgress !== null && (
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-xs text-zinc-600 shrink-0 w-6">T</span>
+                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-zinc-500 rounded-full transition-all duration-500"
+                    style={{ width: `${taskProgress}%` }}
+                  />
+                </div>
+                <span className="text-xs text-zinc-500 shrink-0">{taskProgress}%</span>
+              </div>
+            )}
           </div>
           <div className="text-zinc-500 shrink-0">
             {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
