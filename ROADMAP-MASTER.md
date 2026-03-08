@@ -18,6 +18,11 @@ This roadmap merges:
 - CORE-8: app integration skeleton (proposals + cards) — `9c656df`
 - CORE-2 Execute: accepted draft → DB side-effects (objective/KRs/tasks + calendar + reminders) — `a8f1355`
 - T2: `GET /api/autopilot/today` unified snapshot — `4581b39`
+- P0.1: Notification pipeline + enqueue helper (quiet-hours/anti-spam) + ERR-1/ERR-3 fixes — `509d8b1`
+- P0.2: Action Queue completion wiring + POST create endpoint — `1a5ed85`
+- P0.3: HomeScreen migrated to `/api/autopilot/today` snapshot — `393140b`
+- P0.4: CORE-2 execute hardening (idempotency + conflict detection + reminder kinds) — `8f69589`
+- P1.2: CRUD everywhere Dashboard (KR inline, reflection, calendar, proposals) — `70eb5e0`
 
 ---
 
@@ -109,11 +114,13 @@ For every ticket:
 
 ---
 
-## 5) Next 5 tickets (current queue)
+## 5) Next tickets (current queue)
 
-1) P0.1 Autopilot Inbox / Notification pipeline (fix ERR-1/3 while here)
-2) P0.2 Action Queue completion wiring
-3) P0.3 Migrate mobile Home to `/api/autopilot/today`
-4) P0.4 CORE-2 execute hardening (idempotency + conflict detection)
-5) P1.2 CRUD everywhere (dashboard)
+All P0 + P1.2 tickets shipped (2026-03-08). Remaining:
+
+1) P1.1 Task↔Objective deep relations (objective_id, parent_task_id, blocked_by_task_id on Task)
+2) P1.3 Settings + export (profile edit, toggles UI, data export)
+3) P2.1 Reflection feedback injection (weekly priorities → planner weights)
+4) P2.2 Explainability panel ("why" for next_action + plan items)
+5) P2.3 Daily suggestions pipeline
 
