@@ -30,8 +30,10 @@ import {
   setMinutes,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, X, Save, Clock, Tag, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Save, Clock, Tag, FileText, Pencil, Trash2 } from "lucide-react";
 import type { CalendarEvent } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastContainer, useToast } from "@/components/Toast";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -71,22 +73,43 @@ type ViewMode = "month" | "week" | "day";
 
 // ─── Event Detail Modal ───────────────────────────────────────────────────────
 
+const EVENT_TYPES = Object.keys(EVENT_TYPE_LABEL);
+
 function EventModal({
   event,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   event: CalendarEvent;
   onClose: () => void;
   onSaved: (updated: CalendarEvent) => void;
+  onDeleted: (id: number) => void;
 }) {
+  const [editMode, setEditMode] = useState(false);
+  const [title, setTitle] = useState(event.title);
+  const [eventType, setEventType] = useState(event.event_type);
+  const [startTime, setStartTime] = useState(
+    event.start_time ? event.start_time.slice(0, 16) : ""
+  );
+  const [endTime, setEndTime] = useState(
+    event.end_time ? event.end_time.slice(0, 16) : ""
+  );
   const [notes, setNotes] = useState(event.description ?? "");
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      const updated = await api.addCalendarNotes(event.id, notes);
+      const updated = await api.updateCalendarEvent(event.id, {
+        title: title.trim() || event.title,
+        event_type: eventType,
+        start_time: startTime || undefined,
+        end_time: endTime || undefined,
+        description: notes || null,
+      });
       onSaved(updated);
       onClose();
     } catch {
@@ -94,90 +117,137 @@ function EventModal({
     } finally {
       setSaving(false);
     }
-  }, [event.id, notes, onClose, onSaved]);
+  }, [event.id, event.title, title, eventType, startTime, endTime, notes, onSaved, onClose]);
+
+  const handleDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await api.deleteCalendarEvent(event.id);
+      onDeleted(event.id);
+      onClose();
+    } catch {
+      // ignore
+    } finally {
+      setDeleting(false);
+    }
+  }, [event.id, onDeleted, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md p-5 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">{EVENT_TYPE_EMOJI[event.event_type] ?? "📌"}</span>
-              <h2 className="text-white font-semibold text-lg leading-tight">{event.title}</h2>
-            </div>
-            <span
-              className={cn(
-                "text-xs px-2 py-0.5 rounded border",
-                EVENT_TYPE_BADGE[event.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600"
+    <>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md p-5 shadow-2xl">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1 min-w-0">
+              {editMode ? (
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white font-semibold text-base focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              ) : (
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">{EVENT_TYPE_EMOJI[event.event_type] ?? "📌"}</span>
+                  <h2 className="text-white font-semibold text-lg leading-tight">{event.title}</h2>
+                </div>
               )}
-            >
-              {EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}
-            </span>
+              {!editMode && (
+                <span className={cn("text-xs px-2 py-0.5 rounded border", EVENT_TYPE_BADGE[event.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600")}>
+                  {EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0 ml-2">
+              <button onClick={() => setEditMode((v) => !v)} className="p-1.5 rounded-lg text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-colors" title="Bearbeiten">
+                <Pencil size={15} />
+              </button>
+              <button onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors" title="Löschen">
+                <Trash2 size={15} />
+              </button>
+              <button onClick={onClose} className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0 ml-2"
-          >
-            <X size={16} />
-          </button>
-        </div>
 
-        {/* Time */}
-        <div className="flex items-center gap-2 text-zinc-400 text-sm mb-3">
-          <Clock size={14} />
-          <span>
-            {event.all_day
-              ? `${formatDate(event.start_time)} · Ganztägig`
-              : `${formatDate(event.start_time)} · ${formatTime(event.start_time)}${
-                  event.end_time ? ` – ${formatTime(event.end_time)}` : ""
-                }`}
-          </span>
-        </div>
+          {editMode ? (
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-zinc-400 text-xs mb-1 block">Typ</label>
+                <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                  {EVENT_TYPES.map((t) => <option key={t} value={t}>{EVENT_TYPE_LABEL[t]}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-zinc-400 text-xs mb-1 block">Start</label>
+                  <input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="text-zinc-400 text-xs mb-1 block">Ende</label>
+                  <input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-zinc-400 text-xs mb-1 block">Notizen</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500 resize-none" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-3">
+                <Clock size={14} />
+                <span>
+                  {event.all_day
+                    ? `${formatDate(event.start_time)} · Ganztägig`
+                    : `${formatDate(event.start_time)} · ${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-4">
+                <Tag size={14} />
+                <span>{EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}</span>
+              </div>
+              {event.description && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-1.5 text-zinc-400 text-xs mb-1.5">
+                    <FileText size={12} />
+                    <span>Notizen</span>
+                  </div>
+                  <p className="text-zinc-300 text-sm">{event.description}</p>
+                </div>
+              )}
+            </>
+          )}
 
-        {/* Type row */}
-        <div className="flex items-center gap-2 text-zinc-400 text-sm mb-4">
-          <Tag size={14} />
-          <span>{EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}</span>
-        </div>
-
-        {/* Notes */}
-        <div className="mb-4">
-          <div className="flex items-center gap-1.5 text-zinc-400 text-xs mb-1.5">
-            <FileText size={12} />
-            <span>Notizen</span>
+          {/* Actions */}
+          <div className="flex gap-2 justify-end">
+            <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+              Abbrechen
+            </button>
+            {editMode && (
+              <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm text-white font-medium transition-colors">
+                <Save size={13} />
+                {saving ? "Speichern..." : "Speichern"}
+              </button>
+            )}
           </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notizen zum Event..."
-            rows={4}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500 resize-none"
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm text-white font-medium transition-colors"
-          >
-            <Save size={13} />
-            {saving ? "Speichern..." : "Speichern"}
-          </button>
         </div>
       </div>
-    </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Event löschen?"
+        message={`"${event.title}" wird dauerhaft gelöscht.`}
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </>
   );
 }
 
@@ -466,20 +536,31 @@ export default function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const { data, error, isLoading, mutate } = useCalendar(90, 30);
+  const { toasts, addToast, dismissToast } = useToast();
 
   const handleEventSaved = useCallback(
     (updated: CalendarEvent) => {
       mutate(
         (prev) =>
           prev
-            ? {
-                events: prev.events.map((e) => (e.id === updated.id ? updated : e)),
-              }
+            ? { events: prev.events.map((e) => (e.id === updated.id ? updated : e)) }
             : prev,
         false
       );
+      addToast("Event aktualisiert", "success");
     },
-    [mutate]
+    [mutate, addToast]
+  );
+
+  const handleEventDeleted = useCallback(
+    (id: number) => {
+      mutate(
+        (prev) => prev ? { events: prev.events.filter((e) => e.id !== id) } : prev,
+        false
+      );
+      addToast("Event gelöscht", "success");
+    },
+    [mutate, addToast]
   );
 
   if (isLoading) return <LoadingSpinner />;
@@ -699,8 +780,11 @@ export default function CalendarPage() {
           event={activeEvent}
           onClose={() => setActiveEvent(null)}
           onSaved={handleEventSaved}
+          onDeleted={handleEventDeleted}
         />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
