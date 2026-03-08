@@ -30,7 +30,7 @@ interface Routine {
 }
 
 interface RoutinesResponse {
-  routines: Routine[];
+  routines?: Routine[];
 }
 
 type TimeOfDay = 'morning' | 'midday' | 'evening' | 'anytime';
@@ -84,7 +84,7 @@ function RoutineRow({
             {routine.objective_impacts.slice(0, 2).map(oi => (
               <View key={oi.objective_id} style={styles.impactBadge}>
                 <Text style={styles.impactBadgeText} numberOfLines={1}>
-                  {'\u25CF'.repeat(oi.impact_score)} {oi.objective_title}
+                  {'\u25CF'.repeat(Math.max(0, Math.min(5, oi.impact_score ?? 1)))} {oi.objective_title}
                 </Text>
               </View>
             ))}
@@ -137,7 +137,8 @@ export default function RoutinesScreen() {
     [refetch],
   );
 
-  const routines: Routine[] = (data?.routines ?? []).map(r => ({
+  const rawRoutines = Array.isArray(data?.routines) ? data!.routines : [];
+  const routines: Routine[] = rawRoutines.map(r => ({
     ...r,
     completed_today: r.completed_today || localDone.has(r.id),
   }));
