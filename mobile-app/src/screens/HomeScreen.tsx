@@ -229,6 +229,20 @@ interface DailyPlanResponse {
   suggested_blocks: DailyPlanSuggestedBlock[];
 }
 
+// ── Autopilot Suggestions (P2.3) ──────────────────────────────────────────
+
+interface AutopilotSuggestionItem {
+  type: string;
+  message: string;
+  action_hint: string;
+  notification_id: number | null;
+}
+
+interface AutopilotSuggestionsResponse {
+  suggestions: AutopilotSuggestionItem[];
+  generated_at: string;
+}
+
 // ── Autopilot Today Snapshot ───────────────────────────────────────────────
 
 interface AutopilotTodaySnapshot {
@@ -397,6 +411,9 @@ function NextActionCard({
       <Text style={styles.nextActionTitle} numberOfLines={3}>
         {task.title}
       </Text>
+      {reason != null && reason.length > 0 && (
+        <Text style={styles.nextActionReason}>{reason}</Text>
+      )}
       {task.category != null && (
         <Text style={styles.metaText}>{task.category}</Text>
       )}
@@ -1398,6 +1415,65 @@ function ActionQueueCard({
   );
 }
 
+// ── SuggestionsCard (P2.3) ─────────────────────────────────────────────────
+
+const ACTION_HINT_LABEL: Record<string, string> = {
+  routine: 'Routine',
+  task: 'Task',
+  objective: 'Ziel',
+  brain_dump: 'Brain Dump',
+};
+
+function SuggestionsCard({
+  data,
+  loading,
+  onDismiss,
+}: {
+  data: AutopilotSuggestionsResponse | null;
+  loading: boolean;
+  onDismiss: (notificationId: number) => void;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <SectionLabel text="Vorschläge" />
+        {[0, 1, 2].map(i => (
+          <SkeletonLine key={i} height={14} style={{ marginBottom: 8 }} />
+        ))}
+      </Card>
+    );
+  }
+
+  if (!data || data.suggestions.length === 0) return null;
+
+  return (
+    <Card>
+      <SectionLabel text="Vorschläge" />
+      {data.suggestions.map((item, i) => (
+        <View key={i} style={[styles.suggestionRow, i > 0 && styles.priorityRowBorder]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.suggestionMessage}>{item.message}</Text>
+            {item.action_hint != null && (
+              <Text style={styles.suggestionHint}>
+                {ACTION_HINT_LABEL[item.action_hint] ?? item.action_hint}
+              </Text>
+            )}
+          </View>
+          {item.notification_id != null && (
+            <TouchableOpacity
+              style={styles.dismissBtn}
+              onPress={() => onDismiss(item.notification_id!)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dismissBtnText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -1427,6 +1503,9 @@ export default function HomeScreen() {
   const notificationsApi = useApi<NotificationsResponse>('/api/notifications');
   // Lightweight counts for badge — always fetched independently
   const notifCountsApi = useApi<NotificationCounts>('/api/notifications/counts');
+
+  // P2.3 — Daily suggestions
+  const suggestionsApi = useApi<AutopilotSuggestionsResponse>('/api/autopilot/suggestions');
 
   const isDashboardLoading = health.loading || dashboard.loading;
   const isAutopilotLoading = todayApi.loading || prioritiesApi.loading;
@@ -1515,6 +1594,17 @@ export default function HomeScreen() {
       // best-effort — silent fail
     }
     todayApi.refetch();
+  }
+
+  async function handleDismissSuggestion(notificationId: number) {
+    try {
+      await apiRequest(`/api/notifications/${notificationId}/acknowledge`, {
+        method: 'POST',
+      });
+    } catch {
+      // best-effort — silent fail
+    }
+    suggestionsApi.refetch();
   }
 
   useEffect(() => {
@@ -1715,6 +1805,12 @@ export default function HomeScreen() {
           onAccept={handleAcceptQueueItem}
           onComplete={handleCompleteQueueItem}
         />
+
+        <SuggestionsCard
+          data={suggestionsApi.error ? null : (suggestionsApi.data ?? null)}
+          loading={suggestionsApi.loading}
+          onDismiss={handleDismissSuggestion}
+        />
       </ScrollView>
 
       {/* Command palette FAB — floats above scroll content */}
@@ -1823,7 +1919,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
   },
-  nextActionTitle: { fontSize: 17, fontWeight: '700', color: '#f9fafb', marginBottom: 6 },
+  nextActionTitle: { fontSize: 17, fontWeight: '700', color: '#f9fafb', marginBottom: 4 },
+  nextActionReason: { fontSize: 12, color: '#a1a1aa', marginBottom: 4 },
   metaText: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
   emptySubtext: { fontSize: 13, color: '#6b7280' },
 
@@ -1884,6 +1981,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   priorityRowBorder: { borderTopWidth: 1, borderTopColor: '#374151' },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 8 },
+  suggestionMessage: { fontSize: 13, color: '#e5e7eb', flexShrink: 1 },
+  suggestionHint: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  dismissBtn: { padding: 6, borderRadius: 6, backgroundColor: '#1f2937' },
+  dismissBtnText: { fontSize: 11, color: '#9ca3af' },
   priorityIndex: {
     fontSize: 15,
     fontWeight: '700',

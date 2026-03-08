@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.core.explainability import get_task_reason
 from bot.database.models import KeyResult, Objective, Routine, Task
 
 
@@ -139,6 +140,7 @@ async def get_next_unblocked_action(
             "key_result_id": t.key_result_id,
             "objective_id": t.objective_id,
             "source": source,
+            "reason": get_task_reason(t),
         }
 
     # 1. Same KR
