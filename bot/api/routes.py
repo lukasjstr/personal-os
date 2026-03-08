@@ -2192,6 +2192,8 @@ class CreateTaskBody(BaseModel):
     due_date: Optional[str] = None
     objective_id: Optional[int] = None
     description: Optional[str] = None
+    parent_task_id: Optional[int] = None
+    blocked_by_task_id: Optional[int] = None
 
 
 class CreateRoutineBody(BaseModel):
@@ -2216,6 +2218,8 @@ class UpdateTaskBody(BaseModel):
     due_date: Optional[str] = None
     status: Optional[str] = None
     objective_id: Optional[int] = None
+    parent_task_id: Optional[int] = None
+    blocked_by_task_id: Optional[int] = None
 
 
 class UpdateRoutineBody(BaseModel):
@@ -2468,6 +2472,8 @@ async def create_task(
         priority=max(1, min(5, body.priority or 3)),
         due_date=due,
         objective_id=body.objective_id or None,
+        parent_task_id=body.parent_task_id or None,
+        blocked_by_task_id=body.blocked_by_task_id or None,
         status="todo",
     )
     session.add(task)
@@ -2508,6 +2514,10 @@ async def update_task(
             task.completed_at = datetime.utcnow()
     if body.objective_id is not None:
         task.objective_id = body.objective_id if body.objective_id > 0 else None
+    if body.parent_task_id is not None:
+        task.parent_task_id = body.parent_task_id if body.parent_task_id > 0 and body.parent_task_id != task_id else None
+    if body.blocked_by_task_id is not None:
+        task.blocked_by_task_id = body.blocked_by_task_id if body.blocked_by_task_id > 0 and body.blocked_by_task_id != task_id else None
 
     await session.flush()
     return {"ok": True, "id": task_id}
