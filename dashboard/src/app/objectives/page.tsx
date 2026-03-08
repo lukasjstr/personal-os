@@ -9,7 +9,7 @@ import { ToastContainer, useToast } from "@/components/Toast";
 import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Objective, ObjectiveTask, GoalMomentumResponse } from "@/lib/api";
+import type { Objective, ObjectiveTask, KeyResult, GoalMomentumResponse } from "@/lib/api";
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -218,6 +218,113 @@ function EditObjectiveModal({
   );
 }
 
+// ─── KR Modals ────────────────────────────────────────────────────────────────
+
+const KR_METRIC_TYPES = ["number", "percentage", "boolean", "streak", "checklist"];
+
+function AddKRModal({
+  onSave,
+  onClose,
+  saving,
+}: {
+  onSave: (data: { title: string; metric_type: string; target_value: number | null; unit: string | null }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({ title: "", metric_type: "number", target_value: "", unit: "" });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+        <h3 className="text-white font-semibold text-base mb-4">Key Result hinzufügen</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1 block">Titel *</label>
+            <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} autoFocus placeholder="Key Result Titel" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1 block">Typ</label>
+              <select value={form.metric_type} onChange={(e) => setForm((f) => ({ ...f, metric_type: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                {KR_METRIC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1 block">Zielwert</label>
+              <input type="number" value={form.target_value} onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} placeholder="100" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label className="text-zinc-400 text-xs mb-1 block">Einheit</label>
+            <input type="text" value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="z.B. kg, km, mal" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end mt-5">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">Abbrechen</button>
+          <button onClick={() => onSave({ title: form.title.trim(), metric_type: form.metric_type, target_value: form.target_value ? parseFloat(form.target_value) : null, unit: form.unit.trim() || null })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
+            {saving ? "Erstellen…" : "Hinzufügen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditKRModal({
+  kr,
+  onSave,
+  onClose,
+  saving,
+}: {
+  kr: KeyResult;
+  onSave: (data: { title: string; metric_type: string; target_value: number | null; unit: string | null }) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({
+    title: kr.title,
+    metric_type: kr.metric_type,
+    target_value: kr.target_value != null ? String(kr.target_value) : "",
+    unit: kr.unit ?? "",
+  });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+        <h3 className="text-white font-semibold text-base mb-4">Key Result bearbeiten</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-zinc-400 text-xs mb-1 block">Titel</label>
+            <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1 block">Typ</label>
+              <select value={form.metric_type} onChange={(e) => setForm((f) => ({ ...f, metric_type: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                {KR_METRIC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1 block">Zielwert</label>
+              <input type="number" value={form.target_value} onChange={(e) => setForm((f) => ({ ...f, target_value: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label className="text-zinc-400 text-xs mb-1 block">Einheit</label>
+            <input type="text" value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="z.B. kg, km, mal" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end mt-5">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">Abbrechen</button>
+          <button onClick={() => onSave({ title: form.title.trim(), metric_type: form.metric_type, target_value: form.target_value ? parseFloat(form.target_value) : null, unit: form.unit.trim() || null })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
+            {saving ? "Speichern…" : "Speichern"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Task Checklist ───────────────────────────────────────────────────────────
 
 function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
@@ -272,10 +379,16 @@ function ObjectiveCard({
   obj,
   onEdit,
   onDelete,
+  onAddKR,
+  onEditKR,
+  onDeleteKR,
 }: {
   obj: Objective;
   onEdit: (obj: Objective) => void;
   onDelete: (obj: Objective) => void;
+  onAddKR: (obj: Objective) => void;
+  onEditKR: (obj: Objective, kr: KeyResult) => void;
+  onDeleteKR: (obj: Objective, kr: KeyResult) => void;
 }) {
   const [expanded, setExpanded] = useState(obj.status === "active");
   const isLifeArea = obj.key_results.length === 0 && obj.tasks.length === 0;
@@ -368,10 +481,10 @@ function ObjectiveCard({
         </button>
 
         {/* Key Results */}
-        {expanded && obj.key_results.length > 0 && (
+        {expanded && (
           <div className="border-t border-zinc-800 divide-y divide-zinc-800/50">
             {obj.key_results.map((kr) => (
-              <div key={kr.id} className="px-5 py-3 flex items-center gap-4">
+              <div key={kr.id} className="px-5 py-3 flex items-center gap-4 group/kr">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
@@ -390,7 +503,7 @@ function ObjectiveCard({
                     <span className="text-xs text-zinc-400 shrink-0">{kr.progress_pct}%</span>
                   </div>
                 </div>
-                <div className="text-right shrink-0 w-28">
+                <div className="text-right shrink-0 w-24">
                   <div className="text-sm text-white font-medium">
                     {kr.current_value}
                     {kr.unit ? ` ${kr.unit}` : ""}
@@ -403,8 +516,33 @@ function ObjectiveCard({
                     )}
                   </div>
                 </div>
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/kr:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEditKR(obj, kr); }}
+                    className="p-1 rounded text-zinc-500 hover:text-blue-400 transition-colors"
+                    title="Bearbeiten"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteKR(obj, kr); }}
+                    className="p-1 rounded text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Löschen"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
             ))}
+            {/* Add KR button */}
+            <div className="px-5 py-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddKR(obj); }}
+                className="flex items-center gap-1 text-xs text-zinc-500 hover:text-blue-400 transition-colors"
+              >
+                <Plus size={12} /> Key Result hinzufügen
+              </button>
+            </div>
           </div>
         )}
 
@@ -467,6 +605,12 @@ export default function ObjectivesPage() {
   const [deletingObj, setDeletingObj] = useState<Objective | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // KR state
+  const [addingKRToObj, setAddingKRToObj] = useState<Objective | null>(null);
+  const [editingKR, setEditingKR] = useState<{ obj: Objective; kr: KeyResult } | null>(null);
+  const [deletingKR, setDeletingKR] = useState<{ obj: Objective; kr: KeyResult } | null>(null);
+  const [krSaving, setKRSaving] = useState(false);
+  const [krDeleting, setKRDeleting] = useState(false);
   const { toasts, addToast, dismissToast } = useToast();
 
   const handleCreate = useCallback(
@@ -533,6 +677,57 @@ export default function ObjectivesPage() {
     }
   }, [deletingObj, mutate, addToast]);
 
+  const handleAddKR = useCallback(
+    async (data: { title: string; metric_type: string; target_value: number | null; unit: string | null }) => {
+      if (!addingKRToObj) return;
+      setKRSaving(true);
+      try {
+        await api.createKeyResult(addingKRToObj.id, data);
+        await mutate();
+        addToast("Key Result hinzugefügt", "success");
+        setAddingKRToObj(null);
+      } catch {
+        addToast("Fehler beim Hinzufügen", "error");
+      } finally {
+        setKRSaving(false);
+      }
+    },
+    [addingKRToObj, mutate, addToast]
+  );
+
+  const handleEditKR = useCallback(
+    async (data: { title: string; metric_type: string; target_value: number | null; unit: string | null }) => {
+      if (!editingKR) return;
+      setKRSaving(true);
+      try {
+        await api.updateKeyResult(editingKR.obj.id, editingKR.kr.id, data);
+        await mutate();
+        addToast("Key Result aktualisiert", "success");
+        setEditingKR(null);
+      } catch {
+        addToast("Fehler beim Speichern", "error");
+      } finally {
+        setKRSaving(false);
+      }
+    },
+    [editingKR, mutate, addToast]
+  );
+
+  const handleDeleteKR = useCallback(async () => {
+    if (!deletingKR) return;
+    setKRDeleting(true);
+    try {
+      await api.deleteKeyResult(deletingKR.obj.id, deletingKR.kr.id);
+      await mutate();
+      addToast("Key Result gelöscht", "success");
+      setDeletingKR(null);
+    } catch {
+      addToast("Fehler beim Löschen", "error");
+    } finally {
+      setKRDeleting(false);
+    }
+  }, [deletingKR, mutate, addToast]);
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
   if (!data) return <LoadingSpinner />;
@@ -575,6 +770,9 @@ export default function ObjectivesPage() {
                 obj={obj}
                 onEdit={setEditingObj}
                 onDelete={setDeletingObj}
+                onAddKR={setAddingKRToObj}
+                onEditKR={(obj, kr) => setEditingKR({ obj, kr })}
+                onDeleteKR={(obj, kr) => setDeletingKR({ obj, kr })}
               />
             ))}
           </div>
@@ -647,6 +845,9 @@ export default function ObjectivesPage() {
               obj={obj}
               onEdit={setEditingObj}
               onDelete={setDeletingObj}
+              onAddKR={setAddingKRToObj}
+              onEditKR={(obj, kr) => setEditingKR({ obj, kr })}
+              onDeleteKR={(obj, kr) => setDeletingKR({ obj, kr })}
             />
           ))}
         </div>
@@ -675,6 +876,35 @@ export default function ObjectivesPage() {
         loading={deleting}
         onConfirm={handleDelete}
         onCancel={() => setDeletingObj(null)}
+      />
+
+      {/* Add KR Modal */}
+      {addingKRToObj && (
+        <AddKRModal
+          onSave={handleAddKR}
+          onClose={() => setAddingKRToObj(null)}
+          saving={krSaving}
+        />
+      )}
+
+      {/* Edit KR Modal */}
+      {editingKR && (
+        <EditKRModal
+          kr={editingKR.kr}
+          onSave={handleEditKR}
+          onClose={() => setEditingKR(null)}
+          saving={krSaving}
+        />
+      )}
+
+      {/* Delete KR Confirm */}
+      <ConfirmDialog
+        open={!!deletingKR}
+        title="Key Result löschen?"
+        message={`"${deletingKR?.kr.title}" wird dauerhaft gelöscht.`}
+        loading={krDeleting}
+        onConfirm={handleDeleteKR}
+        onCancel={() => setDeletingKR(null)}
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
