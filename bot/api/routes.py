@@ -3544,6 +3544,33 @@ class SnoozeRequest(BaseModel):
     minutes: int = 60  # default snooze 60 minutes
 
 
+@router.get("/notifications/counts")
+async def notification_counts(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Lightweight endpoint returning pending/snoozed/total notification counts."""
+    from datetime import timezone as _tz
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+
+    result = await session.execute(
+        select(AutopilotNotification).where(
+            AutopilotNotification.user_id == user.id,
+        )
+    )
+    all_notifs = result.scalars().all()
+
+    # Auto-expire snoozed items whose window has passed
+    for n in all_notifs:
+        if n.status == "snoozed" and n.snoozed_until and n.snoozed_until <= now:
+            n.status = "pending"
+    await session.flush()
+
+    pending = sum(1 for n in all_notifs if n.status == "pending")
+    snoozed = sum(1 for n in all_notifs if n.status == "snoozed")
+    return {"pending": pending, "snoozed": snoozed, "total": len(all_notifs)}
+
+
 @router.post("/notifications/{notification_id}/acknowledge")
 async def acknowledge_notification(
     notification_id: int,
