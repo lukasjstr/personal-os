@@ -229,6 +229,32 @@ interface DailyPlanResponse {
   suggested_blocks: DailyPlanSuggestedBlock[];
 }
 
+// ── Autopilot Today Snapshot ───────────────────────────────────────────────
+
+interface AutopilotTodaySnapshot {
+  date: string;
+  next_action: (NextActionResponse & { type: string }) | null;
+  plan: DailyPlanResponse | null;
+  counts: {
+    pending_nudges: number;
+    pending_reminders: number;
+  };
+  progress: {
+    active_objectives: number;
+    completed_today: number;
+  };
+  open_tasks: number;
+  action_queue: {
+    items: ActionQueueItem[];
+    total_active: number;
+  };
+  notification_counts: {
+    pending: number;
+    snoozed: number;
+    total: number;
+  };
+}
+
 // ── Shared task / calendar types (for fallback) ────────────────────────────
 
 interface Task {
@@ -1384,10 +1410,10 @@ export default function HomeScreen() {
   const health = useApi<HealthResponse>('/health');
   const dashboard = useApi<DashboardResponse>('/api/dashboard');
 
-  // Autopilot endpoints (may 404 on older backends)
-  const nextAction = useApi<NextActionResponse>('/api/autopilot/next-action');
+  // Unified autopilot snapshot — replaces next-action, plan, daily-plan, action-queue
+  const todayApi = useApi<AutopilotTodaySnapshot>('/api/autopilot/today');
+
   const prioritiesApi = useApi<PrioritiesResponse>('/api/priorities');
-  const planApi = useApi<PlanResponse>('/api/autopilot/plan');
 
   // Fallback data sources
   const tasksApi = useApi<TasksResponse>('/api/tasks');
@@ -1402,23 +1428,17 @@ export default function HomeScreen() {
   // Lightweight counts for badge — always fetched independently
   const notifCountsApi = useApi<NotificationCounts>('/api/notifications/counts');
 
-  // Daily Plan Orchestrator (A2) — graceful fallback when unavailable
-  const dailyPlanApi = useApi<DailyPlanResponse>('/api/autopilot/daily-plan');
-
-  // Action Queue (A3) — safe fallback when endpoint unavailable
-  const actionQueueApi = useApi<ActionQueueResponse>('/api/autopilot/action-queue');
-
   const isDashboardLoading = health.loading || dashboard.loading;
-  const isAutopilotLoading = nextAction.loading || prioritiesApi.loading || planApi.loading;
+  const isAutopilotLoading = todayApi.loading || prioritiesApi.loading;
   const isFallbackLoading = tasksApi.loading || calendarApi.loading;
   const isAnyLoading = isDashboardLoading || (isAutopilotLoading && isFallbackLoading);
 
-  // Resolved data: prefer autopilot, fall back to derived
-  const resolvedNextAction = nextAction.error ? null : (nextAction.data ?? null);
+  // Resolved data: prefer today snapshot, fall back to derived
+  const resolvedNextAction = todayApi.error ? null : (todayApi.data?.next_action ?? null);
   const resolvedPriorities = prioritiesApi.error
     ? null
     : (prioritiesApi.data?.priorities ?? null);
-  const resolvedPlan = planApi.error ? null : (planApi.data ?? null);
+  const resolvedPlan = todayApi.error ? null : (todayApi.data?.plan ?? null);
 
   const tasks = tasksApi.data?.tasks ?? [];
   const events = calendarApi.data?.events ?? [];
@@ -1440,17 +1460,14 @@ export default function HomeScreen() {
   function handleRefresh() {
     health.refetch();
     dashboard.refetch();
-    nextAction.refetch();
+    todayApi.refetch();
     prioritiesApi.refetch();
-    planApi.refetch();
     tasksApi.refetch();
     calendarApi.refetch();
     reflectionApi.refetch();
     weeklyPlanApi.refetch();
     notificationsApi.refetch();
     notifCountsApi.refetch();
-    dailyPlanApi.refetch();
-    actionQueueApi.refetch();
   }
 
   async function handleAcknowledgeNudge(id: number) {
@@ -1485,7 +1502,7 @@ export default function HomeScreen() {
     } catch {
       // best-effort — silent fail
     }
-    actionQueueApi.refetch();
+    todayApi.refetch();
   }
 
   async function handleCompleteQueueItem(id: number) {
@@ -1497,7 +1514,7 @@ export default function HomeScreen() {
     } catch {
       // best-effort — silent fail
     }
-    actionQueueApi.refetch();
+    todayApi.refetch();
   }
 
   useEffect(() => {
@@ -1508,9 +1525,8 @@ export default function HomeScreen() {
   }, [isAnyLoading]);
 
   const autopilotCardLoading =
-    (nextAction.loading && tasksApi.loading) ||
-    (prioritiesApi.loading && tasksApi.loading) ||
-    (planApi.loading && (tasksApi.loading || calendarApi.loading));
+    (todayApi.loading && tasksApi.loading) ||
+    (prioritiesApi.loading && tasksApi.loading);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -1667,7 +1683,7 @@ export default function HomeScreen() {
         <NextActionCard
           nextAction={resolvedNextAction}
           tasks={tasks}
-          loading={autopilotCardLoading && nextAction.loading && tasksApi.loading}
+          loading={autopilotCardLoading && todayApi.loading && tasksApi.loading}
         />
 
         <PriorityListCard
@@ -1682,20 +1698,20 @@ export default function HomeScreen() {
           events={events}
           loading={
             autopilotCardLoading &&
-            planApi.loading &&
+            todayApi.loading &&
             tasksApi.loading &&
             calendarApi.loading
           }
         />
 
         <DailyPlanOrchestratorCard
-          data={dailyPlanApi.error ? null : (dailyPlanApi.data ?? null)}
-          loading={dailyPlanApi.loading && tasksApi.loading}
+          data={todayApi.error ? null : (todayApi.data?.plan ?? null)}
+          loading={todayApi.loading && tasksApi.loading}
         />
 
         <ActionQueueCard
-          data={actionQueueApi.error ? null : (actionQueueApi.data ?? null)}
-          loading={actionQueueApi.loading}
+          data={todayApi.error ? null : (todayApi.data?.action_queue ? { items: todayApi.data.action_queue.items, counts: { planned: 0, suggested: 0, accepted: 0, completed: 0, snoozed: 0 }, total_active: todayApi.data.action_queue.total_active } : null)}
+          loading={todayApi.loading}
           onAccept={handleAcceptQueueItem}
           onComplete={handleCompleteQueueItem}
         />
