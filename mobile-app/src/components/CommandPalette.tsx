@@ -176,15 +176,30 @@ function BrainDumpView({ onDone }: { onDone: () => void }) {
 
 function FocusModeView() {
   const [task, setTask] = useState<{ id: number; title: string; category?: string | null; reason?: string | null } | null>(null);
+  const [queueItemId, setQueueItemId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
   const [done, setDone] = useState(false);
 
+  // Best-effort: find a linked action queue item for the given task id
+  function fetchLinkedQueueItem(taskId: number) {
+    apiRequest<{ items: Array<{ id: number; linked_task_id?: number | null; state: string }> }>(
+      '/api/autopilot/action-queue',
+    ).then(queueData => {
+      const linked = queueData.items.find(
+        i => i.linked_task_id === taskId && i.state !== 'completed',
+      );
+      setQueueItemId(linked ? linked.id : null);
+    }).catch(() => { /* best-effort */ });
+  }
+
   const fetchNextAction = useCallback(async () => {
     setLoading(true);
+    setQueueItemId(null);
     try {
       const data = await apiRequest<NextActionResponse>('/api/autopilot/next-action');
       setTask({ id: data.task.id, title: data.task.title, category: data.task.category, reason: data.reason });
+      fetchLinkedQueueItem(data.task.id);
     } catch {
       // Fallback: top open task
       try {
@@ -195,7 +210,10 @@ function FocusModeView() {
             if (a.is_overdue !== b.is_overdue) return a.is_overdue ? -1 : 1;
             return (b.priority ?? 0) - (a.priority ?? 0);
           });
-        if (open.length > 0) setTask({ id: open[0].id, title: open[0].title, category: open[0].category });
+        if (open.length > 0) {
+          setTask({ id: open[0].id, title: open[0].title, category: open[0].category });
+          fetchLinkedQueueItem(open[0].id);
+        }
       } catch {
         // no-op
       }
@@ -212,6 +230,13 @@ function FocusModeView() {
       await apiRequest(`/api/tasks/${task.id}/complete`, { method: 'POST' });
     } catch {
       // best-effort
+    }
+    // Best-effort: sync linked queue item to completed
+    if (queueItemId) {
+      apiRequest(`/api/autopilot/action-queue/${queueItemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ state: 'completed' }),
+      }).catch(() => { /* best-effort */ });
     }
     setDone(true);
   }
