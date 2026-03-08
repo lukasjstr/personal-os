@@ -298,7 +298,8 @@ export default function NotificationsScreen() {
   const activeQueueCount = queueData?.total_active ?? 0;
 
   const loading = notifLoading || queueLoading;
-  const error = notifError || queueError;
+  // Full error only when BOTH fetches fail
+  const bothFailed = !!(notifError && queueError);
 
   // Section list data: flatten notifications + queue items with section headers
   type SectionRow =
@@ -309,18 +310,24 @@ export default function NotificationsScreen() {
 
   const rows: SectionRow[] = [];
 
-  if (notifications.length > 0 || !queueLoading) {
+  // Notifications section — show unless still loading with no data yet
+  if (!notifLoading || notifData) {
     rows.push({ kind: 'section-header', label: 'Notifications', count: pendingCount });
-    if (notifications.length === 0) {
+    if (notifError && notifications.length === 0) {
+      rows.push({ kind: 'empty', label: 'Could not load notifications' });
+    } else if (notifications.length === 0) {
       rows.push({ kind: 'empty', label: 'No notifications' });
     } else {
       notifications.forEach(n => rows.push({ kind: 'notif', item: n }));
     }
   }
 
-  if (queueItems.length > 0 || !notifLoading) {
+  // Action queue section — show unless still loading with no data yet
+  if (!queueLoading || queueData) {
     rows.push({ kind: 'section-header', label: 'Action Queue', count: activeQueueCount });
-    if (queueItems.length === 0) {
+    if (queueError && queueItems.length === 0) {
+      rows.push({ kind: 'empty', label: 'Could not load action queue' });
+    } else if (queueItems.length === 0) {
       rows.push({ kind: 'empty', label: 'No pending approvals' });
     } else {
       queueItems.forEach(q => rows.push({ kind: 'queue', item: q }));
@@ -335,10 +342,11 @@ export default function NotificationsScreen() {
     );
   }
 
-  if (error && rows.length === 0) {
+  // Full error state only when both failed and nothing to show
+  if (bothFailed && rows.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
-        <ErrorState error={error} onRetry={refetchAll} />
+        <ErrorState error={notifError!} onRetry={refetchAll} />
       </SafeAreaView>
     );
   }
@@ -403,10 +411,28 @@ export default function NotificationsScreen() {
         ))}
       </View>
 
-      {error ? (
+      {notifError && !queueError ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText} numberOfLines={1}>
-            Load error — showing cached data
+            Notifications unavailable
+          </Text>
+          <TouchableOpacity onPress={refetchNotifs} activeOpacity={0.75}>
+            <Text style={styles.errorBannerRetry}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : queueError && !notifError ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText} numberOfLines={1}>
+            Action queue unavailable
+          </Text>
+          <TouchableOpacity onPress={refetchQueue} activeOpacity={0.75}>
+            <Text style={styles.errorBannerRetry}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : bothFailed ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText} numberOfLines={1}>
+            Load error — pull to retry
           </Text>
           <TouchableOpacity onPress={refetchAll} activeOpacity={0.75}>
             <Text style={styles.errorBannerRetry}>Retry</Text>
