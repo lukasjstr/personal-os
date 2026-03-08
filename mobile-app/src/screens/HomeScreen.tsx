@@ -154,6 +154,12 @@ interface NotificationsResponse {
   latest: AutopilotNudge | null;
 }
 
+interface NotificationCounts {
+  pending: number;
+  snoozed: number;
+  total: number;
+}
+
 // ── Action Queue (A3) ─────────────────────────────────────────────────────
 
 type ActionQueueState = 'planned' | 'suggested' | 'accepted' | 'completed' | 'snoozed';
@@ -1078,11 +1084,13 @@ function ExecutionPulseCard({
 function AutopilotNudgesCard({
   data,
   loading,
+  pendingCount: pendingCountOverride,
   onAcknowledge,
   onSnooze,
 }: {
   data: NotificationsResponse | null;
   loading: boolean;
+  pendingCount?: number;
   onAcknowledge: (id: number) => void;
   onSnooze: (id: number) => void;
 }) {
@@ -1097,12 +1105,33 @@ function AutopilotNudgesCard({
     );
   }
 
+  // Badge count: prefer lightweight counts endpoint override, fall back to full response
+  const resolvedPendingCount = pendingCountOverride ?? data?.pending_count ?? 0;
+
   // Gracefully handle missing endpoint or zero nudges
-  if (!data || data.pending_count === 0) {
+  if (!data && resolvedPendingCount === 0) {
     return (
       <Card>
         <SectionLabel text="Nudges" />
         <Text style={styles.emptySubtext}>No pending nudges — all clear!</Text>
+      </Card>
+    );
+  }
+
+  if (!data || data.pending_count === 0) {
+    return (
+      <Card>
+        <SectionLabel text="Nudges" />
+        {resolvedPendingCount > 0 ? (
+          <View style={styles.nudgesHeader}>
+            <Text style={styles.emptySubtext}>Nudges loading…</Text>
+            <View style={styles.nudgesBadge}>
+              <Text style={styles.nudgesBadgeText}>{resolvedPendingCount}</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.emptySubtext}>No pending nudges — all clear!</Text>
+        )}
       </Card>
     );
   }
@@ -1114,7 +1143,7 @@ function AutopilotNudgesCard({
       <View style={styles.nudgesHeader}>
         <SectionLabel text="Nudges" />
         <View style={styles.nudgesBadge}>
-          <Text style={styles.nudgesBadgeText}>{data.pending_count}</Text>
+          <Text style={styles.nudgesBadgeText}>{resolvedPendingCount}</Text>
         </View>
       </View>
 
@@ -1370,6 +1399,8 @@ export default function HomeScreen() {
 
   // Autopilot notifications (A1) — safe fallback when endpoint unavailable
   const notificationsApi = useApi<NotificationsResponse>('/api/notifications');
+  // Lightweight counts for badge — always fetched independently
+  const notifCountsApi = useApi<NotificationCounts>('/api/notifications/counts');
 
   // Daily Plan Orchestrator (A2) — graceful fallback when unavailable
   const dailyPlanApi = useApi<DailyPlanResponse>('/api/autopilot/daily-plan');
@@ -1417,6 +1448,7 @@ export default function HomeScreen() {
     reflectionApi.refetch();
     weeklyPlanApi.refetch();
     notificationsApi.refetch();
+    notifCountsApi.refetch();
     dailyPlanApi.refetch();
     actionQueueApi.refetch();
   }
@@ -1428,6 +1460,7 @@ export default function HomeScreen() {
       // best-effort — silent fail, will re-sync on next refresh
     }
     notificationsApi.refetch();
+    notifCountsApi.refetch();
   }
 
   async function handleSnoozeNudge(id: number) {
@@ -1440,6 +1473,7 @@ export default function HomeScreen() {
       // best-effort — silent fail
     }
     notificationsApi.refetch();
+    notifCountsApi.refetch();
   }
 
   async function handleAcceptQueueItem(id: number) {
@@ -1625,6 +1659,7 @@ export default function HomeScreen() {
         <AutopilotNudgesCard
           data={notificationsApi.error ? null : (notificationsApi.data ?? null)}
           loading={notificationsApi.loading}
+          pendingCount={notifCountsApi.data?.pending ?? notificationsApi.data?.pending_count}
           onAcknowledge={handleAcknowledgeNudge}
           onSnooze={handleSnoozeNudge}
         />
