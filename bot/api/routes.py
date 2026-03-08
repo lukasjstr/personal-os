@@ -3820,6 +3820,55 @@ async def get_autopilot_today(
     )
     completed_today = int(completed_today_res.scalar() or 0)
 
+    # Open tasks count
+    open_tasks_res = await session.execute(
+        select(func.count(Task.id)).where(
+            and_(
+                Task.user_id == user.id,
+                Task.status.in_(["todo", "in_progress"]),
+            )
+        )
+    )
+    open_tasks = int(open_tasks_res.scalar() or 0)
+
+    # Action queue: top 5 active items + total_active count
+    active_queue_res = await session.execute(
+        select(ActionQueueItem)
+        .where(
+            and_(
+                ActionQueueItem.user_id == user.id,
+                ActionQueueItem.state != "completed",
+            )
+        )
+        .order_by(ActionQueueItem.created_at.desc())
+        .limit(5)
+    )
+    active_queue_items = list(active_queue_res.scalars().all())
+
+    total_active_res = await session.execute(
+        select(func.count(ActionQueueItem.id)).where(
+            and_(
+                ActionQueueItem.user_id == user.id,
+                ActionQueueItem.state.in_(["planned", "suggested", "accepted"]),
+            )
+        )
+    )
+    total_active_queue = int(total_active_res.scalar() or 0)
+
+    # Notification counts (pending / snoozed / total)
+    all_notifs_res = await session.execute(
+        select(AutopilotNotification).where(
+            AutopilotNotification.user_id == user.id,
+        )
+    )
+    all_notifs = all_notifs_res.scalars().all()
+    # Auto-expire snoozed items whose window has passed
+    for n in all_notifs:
+        if n.status == "snoozed" and n.snoozed_until and n.snoozed_until <= now:
+            n.status = "pending"
+    notif_pending = sum(1 for n in all_notifs if n.status == "pending")
+    notif_snoozed = sum(1 for n in all_notifs if n.status == "snoozed")
+
     return {
         "date": today.isoformat(),
         "next_action": next_action,
@@ -3831,6 +3880,16 @@ async def get_autopilot_today(
         "progress": {
             "active_objectives": active_objectives,
             "completed_today": completed_today,
+        },
+        "open_tasks": open_tasks,
+        "action_queue": {
+            "items": [_queue_item_dict(i) for i in active_queue_items],
+            "total_active": total_active_queue,
+        },
+        "notification_counts": {
+            "pending": notif_pending,
+            "snoozed": notif_snoozed,
+            "total": len(all_notifs),
         },
     }
 
