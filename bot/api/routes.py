@@ -3988,6 +3988,36 @@ def _queue_item_dict(item: ActionQueueItem) -> dict:
     }
 
 
+class ActionQueueItemCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    reason: Optional[str] = None
+    item_type: str = "task"
+    linked_task_id: Optional[int] = None
+
+
+@router.post("/autopilot/action-queue")
+async def create_action_queue_item(
+    body: ActionQueueItemCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new action queue item. State defaults to 'planned'."""
+    item = ActionQueueItem(
+        user_id=user.id,
+        title=body.title,
+        description=body.description,
+        reason=body.reason,
+        item_type=body.item_type,
+        linked_task_id=body.linked_task_id,
+        state="planned",
+        created_at=datetime.utcnow(),
+    )
+    session.add(item)
+    await session.flush()
+    return {"ok": True, "item": _queue_item_dict(item)}
+
+
 @router.get("/autopilot/action-queue")
 async def list_action_queue(
     user: User = Depends(get_current_user),
