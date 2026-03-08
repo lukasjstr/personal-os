@@ -575,6 +575,40 @@ export default function SettingsPage() {
           </div>
         </Section>
 
+        {/* ── Ruhezeiten ───────────────────────────────────────── */}
+        <Section title="🌙 Ruhezeiten">
+          <p className="text-zinc-500 text-xs mb-4">
+            In dieser Zeit werden keine Benachrichtigungen gesendet (Stunde 0–23).
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Beginn</label>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={quietStart}
+                onChange={(e) => setQuietStart(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Ende</label>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={quietEnd}
+                onChange={(e) => setQuietEnd(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <SaveButton onClick={saveQuietHours} saving={quietSaving} saved={quietSaved} />
+          </div>
+        </Section>
+
         {/* ── Kategorien-Gewichtung ─────────────────────────────── */}
         <Section title="⚖️ Kategorien-Gewichtung">
           <p className="text-zinc-500 text-xs mb-4">

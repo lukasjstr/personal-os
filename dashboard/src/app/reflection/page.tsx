@@ -19,6 +19,15 @@ import { useReflections } from "@/hooks/useApi";
 import type { WeeklyReflection } from "@/lib/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const CATEGORIES = [
+  { key: "health", label: "Gesundheit" },
+  { key: "business", label: "Business" },
+  { key: "personal", label: "Persönlich" },
+  { key: "fitness", label: "Fitness" },
+  { key: "finance", label: "Finanzen" },
+  { key: "learning", label: "Lernen" },
+];
 import { Trash2 } from "lucide-react";
 
 // ─── Score color helper ──────────────────────────────────────────────────────
@@ -59,6 +68,34 @@ function ReflectionDetail({
   const [regenError, setRegenError] = useState<string | null>(null);
   const ai = aiSummary;
   const raw = reflection.raw_answers || {};
+
+  const initialPriorities = Array.isArray((raw as Record<string, unknown>).top_priorities)
+    ? ((raw as Record<string, unknown>).top_priorities as string[])
+    : [];
+  const [topPriorities, setTopPriorities] = useState<string[]>(initialPriorities);
+  const [prioritiesSaving, setPrioritiesSaving] = useState(false);
+  const [prioritiesSaved, setPrioritiesSaved] = useState(false);
+
+  const togglePriority = (key: string) => {
+    setTopPriorities((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key);
+      if (prev.length >= 3) return prev;
+      return [...prev, key];
+    });
+  };
+
+  const savePriorities = useCallback(async () => {
+    setPrioritiesSaving(true);
+    try {
+      await api.updateReflectionPriorities(reflection.id, topPriorities);
+      setPrioritiesSaved(true);
+      setTimeout(() => setPrioritiesSaved(false), 2000);
+    } catch {
+      // best-effort
+    } finally {
+      setPrioritiesSaving(false);
+    }
+  }, [reflection.id, topPriorities]);
 
   const handleRegenerate = useCallback(async () => {
     setRegenerating(true);
@@ -118,6 +155,45 @@ function ReflectionDetail({
               {regenError}
             </div>
           )}
+          {/* Top Priorities dieser Woche */}
+          <div className="border border-zinc-700 rounded-xl p-4">
+            <div className="text-zinc-400 text-xs uppercase tracking-wide mb-2">🎯 Top Prioritäten diese Woche</div>
+            <p className="text-zinc-500 text-xs mb-3">Wähle max. 3 Kategorien — beeinflusst den Tagesplan.</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => togglePriority(c.key)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                    topPriorities.includes(c.key)
+                      ? "bg-blue-600 border-blue-500 text-white"
+                      : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-600 text-xs">{topPriorities.length}/3 gewählt</span>
+              <button
+                onClick={savePriorities}
+                disabled={prioritiesSaving}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  prioritiesSaved
+                    ? "bg-green-700 text-white"
+                    : prioritiesSaving
+                    ? "bg-zinc-700 text-zinc-400 cursor-wait"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                )}
+              >
+                {prioritiesSaved ? "✓ Gespeichert" : prioritiesSaving ? "..." : "Speichern"}
+              </button>
+            </div>
+          </div>
+
           {/* Answers */}
           {reflection.biggest_win && (
             <Section label="💪 Größter Erfolg" content={reflection.biggest_win} />

@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from bot.api.auth import generate_api_token, get_current_user
 from bot.core.brain_dumps import get_all_brain_dumps
+from bot.core.explainability import get_task_reason as _get_task_reason
 from bot.core.gamification import add_xp as _add_xp, get_level, get_level_title
 from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
@@ -3277,6 +3278,7 @@ def _reflection_dict(r: WeeklyReflection) -> dict:
         "key_learning": r.key_learning,
         "raw_answers": r.raw_answers or {},
         "priorities_next_week": r.priorities_next_week,
+        "top_priorities": (r.raw_answers or {}).get("top_priorities", []),
         "ai_summary": r.ai_summary,
         "created_at": r.created_at.isoformat(),
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -3366,6 +3368,35 @@ async def delete_reflection(
     await session.delete(r)
     await session.flush()
     return {"ok": True, "deleted_id": reflection_id}
+
+
+class ReflectionPatchBody(BaseModel):
+    top_priorities: Optional[list] = None
+
+
+@router.patch("/reflections/{reflection_id}")
+async def patch_reflection(
+    reflection_id: int,
+    body: ReflectionPatchBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update reflection fields (e.g. top_priorities for the week)."""
+    result = await session.execute(
+        select(WeeklyReflection).where(and_(
+            WeeklyReflection.id == reflection_id,
+            WeeklyReflection.user_id == user.id,
+        ))
+    )
+    r = result.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    if body.top_priorities is not None:
+        raw = dict(r.raw_answers or {})
+        raw["top_priorities"] = [str(p) for p in body.top_priorities[:3]]
+        r.raw_answers = raw
+    await session.flush()
+    return _reflection_dict(r)
 
 
 # ─── Daily Suggestions Endpoint ────────────────────────────────────────────────
@@ -3844,6 +3875,7 @@ def _build_deterministic_daily_plan(
     completed_routine_ids: set,
     events: list,
     today: date,
+    top_priorities: Optional[list] = None,
 ) -> dict:
     """Build a fully deterministic plan — no AI required."""
     # Score tasks
@@ -3859,6 +3891,9 @@ def _build_deterministic_daily_plan(
                 score += 20
             elif t.due_date <= today + timedelta(days=7):
                 score += 10
+        # Boost tasks in categories matching this week's top priorities (P2.1)
+        if top_priorities and t.category and t.category in top_priorities:
+            score = int(score * 1.5)
         scored.append((score, t))
     scored.sort(key=lambda x: -x[0])
 
@@ -3870,14 +3905,8 @@ def _build_deterministic_daily_plan(
     # 1. Top tasks
     task_items = []
     for sc, t in scored[:5]:
-        if t.due_date and t.due_date < today:
-            reason = "Overdue"
-        elif t.due_date and t.due_date == today:
-            reason = "Due today"
-        elif t.due_date and t.due_date <= today + timedelta(days=2):
-            reason = "Due soon"
-        else:
-            reason = "High priority" if t.priority <= 2 else "Open task"
+        reason = _get_task_reason(t)
+        boosted = bool(top_priorities and t.category and t.category in top_priorities)
         task_items.append({
             "id": t.id,
             "type": "task",
@@ -3886,6 +3915,7 @@ def _build_deterministic_daily_plan(
             "category": t.category,
             "priority": t.priority,
             "is_overdue": bool(t.due_date and t.due_date < today),
+            "boosted": boosted,
         })
     if task_items:
         sections.append({"id": "top_tasks", "title": "Top Priorities", "items": task_items})
@@ -3970,6 +4000,51 @@ def _build_deterministic_daily_plan(
     return {"summary": summary, "sections": sections, "suggested_blocks": suggested_blocks}
 
 
+# ─── P2.2: Explainability helpers ─────────────────────────────────────────────
+
+def _compute_next_action_reason(task_dict: dict, today: date) -> str:
+    """Compute a human-readable reason for why a task is the next action."""
+    due_str = task_dict.get("due_date")
+    due = date.fromisoformat(due_str) if due_str else None
+    if due and due < today:
+        return "Überfällig"
+    if due and due == today:
+        return "Heute fällig"
+    if task_dict.get("priority") == 1:
+        return "Höchste Priorität"
+    obj_id = task_dict.get("objective_id")
+    if obj_id:
+        # Caller may populate objective_title; use it if available
+        obj_title = task_dict.get("objective_title")
+        if obj_title:
+            return f"Ziel: {obj_title}"
+    return "Nächste offene Aufgabe"
+
+
+@router.get("/autopilot/next-action")
+async def get_next_action_endpoint(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return next unblocked task with explainability reason (P2.2)."""
+    from bot.core.completion_hooks import get_next_unblocked_action as _get_next
+
+    today = date.today()
+    t = await _get_next(session, user.id)
+    if not t:
+        return {"task": None, "reason": None, "score": None}
+
+    # Enrich with objective title if needed
+    obj_id = t.get("objective_id")
+    if obj_id and not t.get("objective_title"):
+        obj_row = await session.get(Objective, obj_id)
+        if obj_row:
+            t = {**t, "objective_title": obj_row.title}
+
+    reason = _compute_next_action_reason(t, today)
+    return {"task": t, "reason": reason, "score": None}
+
+
 @router.get("/autopilot/today")
 async def get_autopilot_today(
     user: User = Depends(get_current_user),
@@ -4001,6 +4076,7 @@ async def get_autopilot_today(
     if next_action_task:
         next_action = {
             "type": "task",
+            "reason": _compute_next_action_reason(next_action_task, today),
             **next_action_task,
         }
 
@@ -4166,7 +4242,24 @@ async def get_daily_plan(
     routines = list(routines_result.scalars().all())
     completed_routine_ids: set[int] = set(completed_ids) if completed_ids else set()
 
-    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids, events, today)
+    # P2.1: Fetch top_priorities from latest reflection in last 7 days
+    week_ago = datetime.utcnow().date() - timedelta(days=7)
+    latest_ref_result = await session.execute(
+        select(WeeklyReflection)
+        .where(and_(
+            WeeklyReflection.user_id == user.id,
+            WeeklyReflection.status == "completed",
+            WeeklyReflection.week_start >= week_ago,
+        ))
+        .order_by(WeeklyReflection.week_start.desc())
+        .limit(1)
+    )
+    latest_ref = latest_ref_result.scalar_one_or_none()
+    top_priorities: Optional[list] = None
+    if latest_ref and latest_ref.raw_answers:
+        top_priorities = (latest_ref.raw_answers or {}).get("top_priorities") or None
+
+    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids, events, today, top_priorities)
     generated_by = "deterministic"
 
     # Optional AI summary (non-blocking, 8s timeout)
@@ -4207,6 +4300,43 @@ async def get_daily_plan(
         "date": today.isoformat(),
         "generated_by": generated_by,
         **plan,
+    }
+
+
+@router.get("/autopilot/suggestions")
+async def get_autopilot_suggestions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """P2.3 — Generate and return daily proactive suggestions, enqueuing each as a notification."""
+    from bot.core.suggestions import generate_daily_suggestions as _gen_suggestions
+    from bot.core.notifications import enqueue_notification as _enqueue
+    from datetime import datetime as _dt, timezone as _tz
+
+    raw = await _gen_suggestions(session, user.id)
+
+    result = []
+    for item in raw:
+        notif = await _enqueue(
+            session,
+            user_id=user.id,
+            notification_type="suggestion",
+            body=item["message"],
+            title=item["type"].replace("_", " ").title(),
+            source="autopilot",
+        )
+        entry = {
+            "type": item["type"],
+            "message": item["message"],
+            "action_hint": item["action_hint"],
+            "notification_id": notif.id if notif else None,
+        }
+        result.append(entry)
+
+    await session.commit()
+    return {
+        "suggestions": result,
+        "generated_at": _dt.now(tz=_tz.utc).isoformat(),
     }
 
 
