@@ -324,6 +324,8 @@ export interface UserSettings {
     evening_review_time: string;
     weekly_reflection_day: string;
     weekly_reflection_time: string;
+    quiet_hour_start: number;
+    quiet_hour_end: number;
   };
   category_weights: Record<string, number>;
 }
@@ -338,6 +340,8 @@ export interface SettingsUpdateBody {
   weekly_reflection_day?: string;
   weekly_reflection_time?: string;
   category_weights?: Record<string, number>;
+  quiet_hour_start?: number;
+  quiet_hour_end?: number;
 }
 
 // ─── Phase 4 Types ─────────────────────────────────────────────────────────
@@ -717,6 +721,15 @@ export const api = {
   updateSettings: (body: SettingsUpdateBody) =>
     apiPut<{ ok: boolean }>("/api/settings", body),
   exportData: () => apiFetch<unknown>("/api/settings/export"),
+  exportDataCsv: async (): Promise<string> => {
+    const token = getToken();
+    const res = await fetch(`${API_URL}/api/settings/export?format=csv`, {
+      headers: { Authorization: token ? `Bearer ${token}` : "" },
+    });
+    if (res.status === 401) throw new Error("UNAUTHORIZED");
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    return res.text();
+  },
   deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
   reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
   reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),

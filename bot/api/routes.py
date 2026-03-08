@@ -2697,6 +2697,8 @@ class UpdateSettingsBody(BaseModel):
     weekly_reflection_day: Optional[str] = None
     weekly_reflection_time: Optional[str] = None
     category_weights: Optional[dict] = None
+    quiet_hour_start: Optional[int] = None
+    quiet_hour_end: Optional[int] = None
 
 
 @router.get("/settings")
@@ -2722,6 +2724,8 @@ async def get_settings(
             "evening_review_time": s.get("evening_review_time", "21:00"),
             "weekly_reflection_day": s.get("weekly_reflection_day", "sunday"),
             "weekly_reflection_time": s.get("weekly_reflection_time", "19:00"),
+            "quiet_hour_start": s.get("quiet_hour_start", 22),
+            "quiet_hour_end": s.get("quiet_hour_end", 8),
         },
         "category_weights": s.get("category_weights", {}),
     }
@@ -2772,6 +2776,10 @@ async def update_settings(
         settings["weekly_reflection_time"] = body.weekly_reflection_time
     if body.category_weights is not None:
         settings["category_weights"] = body.category_weights
+    if body.quiet_hour_start is not None:
+        settings["quiet_hour_start"] = max(0, min(23, body.quiet_hour_start))
+    if body.quiet_hour_end is not None:
+        settings["quiet_hour_end"] = max(0, min(23, body.quiet_hour_end))
     user.settings = settings
     await session.flush()
     return {"ok": True}
@@ -2781,8 +2789,9 @@ async def update_settings(
 async def export_data(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
+    format: str = Query("json"),
 ) -> JSONResponse:
-    """Export all user data as JSON download."""
+    """Export all user data as JSON or CSV download."""
     obj_result = await session.execute(
         select(Objective)
         .options(selectinload(Objective.key_results))
@@ -2911,6 +2920,30 @@ async def export_data(
             for e in calendar_events
         ],
     }
+
+    if format == "csv":
+        import csv
+        import io
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["id", "title", "status", "priority", "due_date", "objective"])
+        obj_map = {o.id: o.title for o in objectives}
+        for t in tasks:
+            obj_title = obj_map.get(t.objective_id, "") if t.objective_id else ""
+            writer.writerow([
+                t.id,
+                t.title,
+                t.status,
+                t.priority,
+                t.due_date.isoformat() if t.due_date else "",
+                obj_title,
+            ])
+        from fastapi.responses import Response
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=personal-os-tasks.csv"},
+        )
 
     return JSONResponse(
         content=payload,

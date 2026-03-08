@@ -152,6 +152,12 @@ export default function SettingsPage() {
   const [timesSaving, setTimesSaving] = useState(false);
   const [timesSaved, setTimesSaved] = useState(false);
 
+  // Quiet hours
+  const [quietStart, setQuietStart] = useState(22);
+  const [quietEnd, setQuietEnd] = useState(8);
+  const [quietSaving, setQuietSaving] = useState(false);
+  const [quietSaved, setQuietSaved] = useState(false);
+
   // Category weights
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [weightsSaving, setWeightsSaving] = useState(false);
@@ -178,6 +184,8 @@ export default function SettingsPage() {
       setTimezone(settings.profile.timezone || "");
       setToggles(settings.toggles);
       setTimes(settings.times);
+      setQuietStart(settings.times.quiet_hour_start ?? 22);
+      setQuietEnd(settings.times.quiet_hour_end ?? 8);
       const w: Record<string, number> = {};
       CATEGORIES.forEach((c) => {
         w[c.key] = settings.category_weights[c.key] ?? 5;
@@ -267,6 +275,20 @@ export default function SettingsPage() {
     }
   };
 
+  const saveQuietHours = async () => {
+    setQuietSaving(true);
+    setSaveError(null);
+    try {
+      await api.updateSettings({ quiet_hour_start: quietStart, quiet_hour_end: quietEnd });
+      setQuietSaved(true);
+      setTimeout(() => setQuietSaved(false), 2000);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Speichern fehlgeschlagen");
+    } finally {
+      setQuietSaving(false);
+    }
+  };
+
   const saveWeights = async () => {
     setWeightsSaving(true);
     setSaveError(null);
@@ -299,6 +321,27 @@ export default function SettingsPage() {
       setSaveError(e instanceof Error ? e.message : "Export fehlgeschlagen");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const [exportingCsv, setExportingCsv] = useState(false);
+
+  const handleExportCsv = async () => {
+    setExportingCsv(true);
+    setSaveError(null);
+    try {
+      const csv = await api.exportDataCsv();
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `personal-os-tasks-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Export fehlgeschlagen");
+    } finally {
+      setExportingCsv(false);
     }
   };
 
@@ -415,6 +458,43 @@ export default function SettingsPage() {
                 />
               </div>
             ))}
+            <div className="border-t border-zinc-800 pt-4">
+              <div className="text-white text-sm font-medium mb-1">Ruhestunden</div>
+              <div className="text-zinc-500 text-xs mb-3">Keine Benachrichtigungen in diesem Zeitraum</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-zinc-400 text-xs mb-1.5 block">Von (Stunde)</label>
+                  <select
+                    value={quietStart}
+                    onChange={(e) => setQuietStart(parseInt(e.target.value))}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-zinc-400 text-xs mb-1.5 block">Bis (Stunde)</label>
+                  <select
+                    value={quietEnd}
+                    onChange={(e) => setQuietEnd(parseInt(e.target.value))}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end mt-3">
+                <SaveButton
+                  onClick={saveQuietHours}
+                  saving={quietSaving}
+                  saved={quietSaved}
+                />
+              </div>
+            </div>
           </div>
         </Section>
 
@@ -603,15 +683,24 @@ export default function SettingsPage() {
         <Section title="📦 Daten-Export">
           <p className="text-zinc-500 text-sm mb-4">
             Alle deine Daten als JSON-Datei herunterladen (Objectives, Tasks,
-            Logs, Routinen, Brain Dumps, Kalender).
+            Logs, Routinen, Brain Dumps, Kalender). Tasks auch als CSV.
           </p>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-          >
-            {exporting ? "Exportiere..." : "📥 JSON exportieren"}
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {exporting ? "Exportiere..." : "📥 JSON exportieren"}
+            </button>
+            <button
+              onClick={handleExportCsv}
+              disabled={exportingCsv}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              {exportingCsv ? "Exportiere..." : "📊 CSV exportieren"}
+            </button>
+          </div>
         </Section>
 
         {/* ── Optimale Aktivzeiten (E4) ────────────────────────── */}
