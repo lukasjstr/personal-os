@@ -9,12 +9,14 @@ This module is intentionally conservative:
 
 Notes:
 - The slot/reminder generators are pure/read-only; here we persist their outputs.
-- We keep logic minimal; conflict detection and advanced scheduling can be added later.
+- Idempotency is enforced via draft.executed_at + draft.executed_objective_id.
+- Calendar conflict detection skips slots that overlap existing events.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -30,6 +32,15 @@ from bot.database.models import (
     Task,
 )
 
+logger = logging.getLogger(__name__)
+
+_REMINDER_KIND_MAP: dict[str, str] = {
+    "task_due": "task_due",
+    "checkin": "daily_checkin",
+    "milestone": "milestone",
+    "routine": "routine_nudge",
+}
+
 
 @dataclass
 class ExecuteResult:
@@ -38,6 +49,7 @@ class ExecuteResult:
     task_ids: list[int]
     calendar_event_ids: list[int]
     scheduled_reminder_ids: list[int]
+    calendar_conflicts: list[int] = field(default_factory=list)
 
 
 def _safe_int(x: Any, default: int = 0) -> int:
@@ -61,8 +73,8 @@ async def execute_accepted_proposal(
 ) -> ExecuteResult:
     """Execute one accepted proposal draft.
 
-    Idempotency: if we already created an Objective with a marker referencing this draft,
-    we return the existing objects. For now we use a simple description marker.
+    Idempotency: if draft.executed_at and draft.executed_objective_id are set,
+    the draft was already executed — return the existing object IDs immediately.
     """
 
     from bot.core.slot_candidates import derive_slot_candidates
@@ -70,21 +82,14 @@ async def execute_accepted_proposal(
 
     marker = f"[proposal_draft_id:{draft_row.id}]"
 
-    # If already executed, return existing ids.
-    existing_obj_res = await session.execute(
-        select(Objective)
-        .where(and_(Objective.user_id == draft_row.user_id, Objective.description.ilike(f"%{marker}%")))
-        .order_by(Objective.id.desc())
-        .limit(1)
-    )
-    existing_obj = existing_obj_res.scalar_one_or_none()
-    if existing_obj is not None:
-        # Collect related objects best-effort
+    # --- Idempotency guard (fast path) ---
+    if draft_row.executed_at is not None and draft_row.executed_objective_id is not None:
+        existing_obj_id = draft_row.executed_objective_id
         kr_res = await session.execute(
-            select(KeyResult.id).where(KeyResult.objective_id == existing_obj.id)
+            select(KeyResult.id).where(KeyResult.objective_id == existing_obj_id)
         )
         task_res = await session.execute(
-            select(Task.id).where(Task.objective_id == existing_obj.id)
+            select(Task.id).where(Task.objective_id == existing_obj_id)
         )
         ev_res = await session.execute(
             select(CalendarEvent.id).where(
@@ -103,11 +108,12 @@ async def execute_accepted_proposal(
             )
         )
         return ExecuteResult(
-            objective_id=existing_obj.id,
+            objective_id=existing_obj_id,
             key_result_ids=list(kr_res.scalars().all()),
             task_ids=list(task_res.scalars().all()),
             calendar_event_ids=list(ev_res.scalars().all()),
             scheduled_reminder_ids=list(rem_res.scalars().all()),
+            calendar_conflicts=[],
         )
 
     obj_d = _extract_first_objective(draft_row.draft_payload) or {}
@@ -172,8 +178,31 @@ async def execute_accepted_proposal(
         task_ids.append(task.id)
 
     # Calendar blocks: materialize slot candidates as CalendarEvent.
+    # Skip slots that overlap existing calendar events for this user.
     calendar_event_ids: list[int] = []
+    calendar_conflicts: list[int] = []
     for c in derive_slot_candidates(draft_row.draft_payload):
+        # Conflict detection: check for overlapping events
+        conflict_res = await session.execute(
+            select(CalendarEvent.id).where(
+                and_(
+                    CalendarEvent.user_id == draft_row.user_id,
+                    CalendarEvent.start_time < c.ends_at,
+                    CalendarEvent.end_time > c.starts_at,
+                )
+            ).limit(1)
+        )
+        conflict_id = conflict_res.scalar_one_or_none()
+        if conflict_id is not None:
+            logger.warning(
+                "Calendar conflict for draft %d slot '%s' (%s–%s): "
+                "overlaps event id=%d",
+                draft_row.id, c.title, c.starts_at, c.ends_at, conflict_id,
+            )
+            # Record the slot index (use the calendar_conflicts list to hold slot positions)
+            calendar_conflicts.append(len(calendar_event_ids) + len(calendar_conflicts))
+            continue
+
         ev = CalendarEvent(
             user_id=draft_row.user_id,
             title=c.title,
@@ -193,9 +222,11 @@ async def execute_accepted_proposal(
         msg = (r.body or "").strip()
         if marker not in msg:
             msg = (msg + "\n\n" + marker).strip()
+        reminder_kind = getattr(r, "kind", None) or ""
+        reminder_type = _REMINDER_KIND_MAP.get(reminder_kind, "generic")
         rem = ScheduledReminder(
             user_id=draft_row.user_id,
-            reminder_type="progress_nudge",
+            reminder_type=reminder_type,
             message=msg,
             scheduled_for=r.scheduled_at,
             repeat_rule=r.cron,
@@ -206,8 +237,10 @@ async def execute_accepted_proposal(
         await session.flush()
         scheduled_reminder_ids.append(rem.id)
 
-    # Mark draft as executed.
+    # Mark draft as executed and stamp idempotency fields.
     draft_row.status = "executed"
+    draft_row.executed_at = datetime.utcnow()
+    draft_row.executed_objective_id = objective.id
     await session.commit()
 
     return ExecuteResult(
@@ -216,4 +249,5 @@ async def execute_accepted_proposal(
         task_ids=task_ids,
         calendar_event_ids=calendar_event_ids,
         scheduled_reminder_ids=scheduled_reminder_ids,
+        calendar_conflicts=calendar_conflicts,
     )
