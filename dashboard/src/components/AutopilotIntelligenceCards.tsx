@@ -8,6 +8,7 @@ import {
   useAutopilotDailyPlan,
   useAutopilotActionQueue,
   useAutopilotNextAction,
+  useAutopilotSuggestions,
 } from "@/hooks/useApi";
 import type { AutopilotActionQueueItem } from "@/lib/api";
 
@@ -262,6 +263,68 @@ function ActionQueueCard() {
   );
 }
 
+// ── Daily Suggestions Card (P2.3) ──────────────────────────────────────────
+
+const ACTION_HINT_LABEL: Record<string, string> = {
+  routine: "Routine",
+  task: "Task",
+  objective: "Ziel",
+  brain_dump: "Brain Dump",
+};
+
+function DailySuggestionsCard() {
+  const { data, error } = useAutopilotSuggestions();
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+
+  if (error || !data || data.suggestions.length === 0) return null;
+
+  const visible = data.suggestions.filter(
+    (s) => s.notification_id == null || !dismissed.has(s.notification_id)
+  );
+  if (visible.length === 0) return null;
+
+  async function handleDismiss(notifId: number) {
+    setDismissed((prev) => new Set([...prev, notifId]));
+    try {
+      await api.acknowledgeNotification(notifId);
+    } catch {
+      // best-effort
+    }
+  }
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 col-span-full">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Vorschläge</span>
+        <span className="text-xs text-zinc-600">{visible.length} aktiv</span>
+      </div>
+      <div className="space-y-2">
+        {visible.slice(0, 3).map((item, i) => (
+          <div key={i} className="flex items-center gap-3 text-sm">
+            <div className="flex-1 min-w-0">
+              <span className="text-zinc-200">{item.message}</span>
+              {item.action_hint && (
+                <span className="ml-2 text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
+                  {ACTION_HINT_LABEL[item.action_hint] ?? item.action_hint}
+                </span>
+              )}
+            </div>
+            {item.notification_id != null && (
+              <button
+                onClick={() => handleDismiss(item.notification_id!)}
+                className="shrink-0 text-zinc-600 hover:text-zinc-400 text-xs px-1"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Section Wrapper ────────────────────────────────────────────────────────
 
 export default function AutopilotIntelligenceCards() {
@@ -274,6 +337,7 @@ export default function AutopilotIntelligenceCards() {
         <NextActionCard />
         <DailyPlanCard />
         <ActionQueueCard />
+        <DailySuggestionsCard />
       </div>
     </div>
   );

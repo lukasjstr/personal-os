@@ -122,3 +122,9 @@ export function useAutopilotNextAction() {
     refreshInterval: 60_000,
   });
 }
+
+export function useAutopilotSuggestions() {
+  return useSWR("autopilot-suggestions", () => api.autopilotSuggestions(), {
+    refreshInterval: 300_000,
+  });
+}

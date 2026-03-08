@@ -603,6 +603,20 @@ export interface AutopilotNextAction {
   score?: number | null;
 }
 
+// ─── Autopilot Suggestions (P2.3) ────────────────────────────────────────────
+
+export interface AutopilotSuggestionItem {
+  type: string;
+  message: string;
+  action_hint: string;
+  notification_id: number | null;
+}
+
+export interface AutopilotSuggestionsResponse {
+  suggestions: AutopilotSuggestionItem[];
+  generated_at: string;
+}
+
 // ─── Reflection Types ─────────────────────────────────────────────────────────
 
 export interface ReflectionAiSummary {
@@ -753,4 +767,6 @@ export const api = {
   autopilotPatterns: () => apiFetch<BehavioralPatterns>("/api/autopilot/patterns"),
   autopilotActiveHours: (days = 30) => apiFetch<ActiveHoursResponse>(`/api/autopilot/active-hours?days=${days}`),
   autopilotConfidence: () => apiFetch<AutopilotConfidence>("/api/autopilot/confidence"),
+  autopilotSuggestions: () => apiFetch<AutopilotSuggestionsResponse>("/api/autopilot/suggestions"),
+  acknowledgeNotification: (id: number) => apiPost<{ ok: boolean }>(`/api/notifications/${id}/acknowledge`, {}),
 };
