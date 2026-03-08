@@ -317,6 +317,27 @@ async def execute_proposal_draft(
     }
 
 
+@router.delete("/objectives/proposal-drafts/{draft_id}")
+async def delete_proposal_draft(
+    draft_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a proposal draft."""
+    res = await session.execute(
+        select(OKRProposalDraft).where(and_(
+            OKRProposalDraft.id == draft_id,
+            OKRProposalDraft.user_id == user.id,
+        ))
+    )
+    draft = res.scalar_one_or_none()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    await session.delete(draft)
+    await session.flush()
+    return {"ok": True, "deleted_id": draft_id}
+
+
 @router.get("/objectives/proposal-drafts/{draft_id}/slot-candidates")
 async def preview_proposal_draft_slot_candidates(
     draft_id: int,
@@ -1040,6 +1061,27 @@ async def add_calendar_notes(
     event.description = body.notes
     await session.flush()
     return _event_dict(event)
+
+
+@router.delete("/calendar/{event_id}")
+async def delete_calendar_event(
+    event_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a calendar event."""
+    result = await session.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.id == event_id,
+            CalendarEvent.user_id == user.id,
+        )
+    )
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event nicht gefunden")
+    await session.delete(event)
+    await session.flush()
+    return {"ok": True, "deleted_id": event_id}
 
 
 class CalendarLinkTaskBody(BaseModel):
@@ -2284,6 +2326,125 @@ async def delete_objective(
     return {"ok": True, "deleted_id": objective_id}
 
 
+# ─── Key Results CRUD ─────────────────────────────────────────────────────────
+
+class CreateKeyResultBody(BaseModel):
+    title: str
+    metric_type: Optional[str] = "number"
+    target_value: Optional[float] = None
+    unit: Optional[str] = None
+
+
+class UpdateKeyResultBody(BaseModel):
+    title: Optional[str] = None
+    metric_type: Optional[str] = None
+    target_value: Optional[float] = None
+    unit: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _kr_dict(kr: KeyResult) -> dict:
+    progress = (
+        min(100, int((kr.current_value / kr.target_value) * 100))
+        if kr.target_value and kr.target_value > 0
+        else 0
+    )
+    return {
+        "id": kr.id,
+        "title": kr.title,
+        "metric_type": kr.metric_type,
+        "target_value": kr.target_value,
+        "current_value": kr.current_value,
+        "unit": kr.unit,
+        "frequency": kr.frequency,
+        "status": kr.status,
+        "progress_pct": progress,
+    }
+
+
+@router.post("/objectives/{objective_id}/key-results")
+async def create_key_result(
+    objective_id: int,
+    body: CreateKeyResultBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Add a key result to an objective."""
+    obj_res = await session.execute(
+        select(Objective).where(and_(Objective.id == objective_id, Objective.user_id == user.id))
+    )
+    if not obj_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Objective not found")
+    kr = KeyResult(
+        objective_id=objective_id,
+        user_id=user.id,
+        title=body.title.strip(),
+        metric_type=body.metric_type or "number",
+        target_value=body.target_value,
+        unit=body.unit,
+    )
+    session.add(kr)
+    await session.flush()
+    await session.refresh(kr)
+    return {"ok": True, **_kr_dict(kr)}
+
+
+@router.patch("/objectives/{objective_id}/key-results/{kr_id}")
+async def update_key_result(
+    objective_id: int,
+    kr_id: int,
+    body: UpdateKeyResultBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a key result."""
+    res = await session.execute(
+        select(KeyResult).where(and_(
+            KeyResult.id == kr_id,
+            KeyResult.objective_id == objective_id,
+            KeyResult.user_id == user.id,
+        ))
+    )
+    kr = res.scalar_one_or_none()
+    if not kr:
+        raise HTTPException(status_code=404, detail="Key result not found")
+    if body.title is not None:
+        kr.title = body.title.strip()
+    if body.metric_type is not None:
+        kr.metric_type = body.metric_type
+    if body.target_value is not None:
+        kr.target_value = body.target_value
+    if body.unit is not None:
+        kr.unit = body.unit
+    if body.status is not None:
+        kr.status = body.status
+    await session.flush()
+    return {"ok": True, **_kr_dict(kr)}
+
+
+@router.delete("/objectives/{objective_id}/key-results/{kr_id}")
+async def delete_key_result(
+    objective_id: int,
+    kr_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a key result."""
+    res = await session.execute(
+        select(KeyResult).where(and_(
+            KeyResult.id == kr_id,
+            KeyResult.objective_id == objective_id,
+            KeyResult.user_id == user.id,
+        ))
+    )
+    kr = res.scalar_one_or_none()
+    if not kr:
+        raise HTTPException(status_code=404, detail="Key result not found")
+    await session.delete(kr)
+    await session.flush()
+    return {"ok": True, "deleted_id": kr_id}
+
+
 # ─── Tasks CRUD ───────────────────────────────────────────────────────────────
 
 @router.post("/tasks")
@@ -3141,6 +3302,27 @@ async def regenerate_reflection_insights(
         return {"ok": True, "ai_summary": ai_summary}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+
+@router.delete("/reflections/{reflection_id}")
+async def delete_reflection(
+    reflection_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a weekly reflection."""
+    result = await session.execute(
+        select(WeeklyReflection).where(and_(
+            WeeklyReflection.id == reflection_id,
+            WeeklyReflection.user_id == user.id,
+        ))
+    )
+    r = result.scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    await session.delete(r)
+    await session.flush()
+    return {"ok": True, "deleted_id": reflection_id}
 
 
 # ─── Daily Suggestions Endpoint ────────────────────────────────────────────────

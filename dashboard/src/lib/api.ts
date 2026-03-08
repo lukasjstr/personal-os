@@ -652,6 +652,7 @@ export const api = {
     apiFetch<{ events: CalendarEvent[] }>(`/api/calendar?days=${days}&days_past=${daysPast}`),
   updateCalendarEvent: (id: number, body: Partial<{ title: string; description: string | null; start_time: string; end_time: string | null; all_day: boolean; event_type: string }>) =>
     apiPut<CalendarEvent>(`/api/calendar/${id}`, body),
+  deleteCalendarEvent: (id: number) => apiDelete<{ ok: boolean }>(`/api/calendar/${id}`),
   addCalendarNotes: (id: number, notes: string) =>
     apiPost<CalendarEvent>(`/api/calendar/${id}/notes`, { notes }),
   brainDumps: () => apiFetch<{ brain_dumps: BrainDump[] }>("/api/brain-dumps"),
@@ -693,6 +694,12 @@ export const api = {
   updateObjective: (id: number, body: Partial<{ title: string; category: string; description: string | null; target_date: string | null; status: string }>) =>
     apiPut<{ ok: boolean }>(`/api/objectives/${id}`, body),
   deleteObjective: (id: number) => apiDelete<{ ok: boolean }>(`/api/objectives/${id}`),
+  createKeyResult: (objectiveId: number, body: { title: string; metric_type?: string; target_value?: number | null; unit?: string | null }) =>
+    apiPost<{ ok: boolean } & KeyResult>(`/api/objectives/${objectiveId}/key-results`, body),
+  updateKeyResult: (objectiveId: number, krId: number, body: Partial<{ title: string; metric_type: string; target_value: number | null; unit: string | null; status: string }>) =>
+    apiPatch<{ ok: boolean } & KeyResult>(`/api/objectives/${objectiveId}/key-results/${krId}`, body),
+  deleteKeyResult: (objectiveId: number, krId: number) =>
+    apiDelete<{ ok: boolean }>(`/api/objectives/${objectiveId}/key-results/${krId}`),
   updateTask: (id: number, body: Partial<{ title: string; category: string | null; priority: number; due_date: string | null; status: string; objective_id: number | null }>) =>
     apiPut<{ ok: boolean }>(`/api/tasks/${id}`, body),
   deleteTask: (id: number) => apiDelete<{ ok: boolean }>(`/api/tasks/${id}`),
@@ -713,12 +720,18 @@ export const api = {
   deleteAccount: () => apiDelete<{ ok: boolean }>("/api/settings/account"),
   reflections: () => apiFetch<{ reflections: WeeklyReflection[] }>("/api/reflections"),
   reflection: (id: number) => apiFetch<WeeklyReflection>(`/api/reflections/${id}`),
+  deleteReflection: (id: number) => apiDelete<{ ok: boolean }>(`/api/reflections/${id}`),
   regenerateReflectionInsights: (id: number) =>
     apiPost<{ ok: boolean; ai_summary: Record<string, unknown> }>(`/api/reflections/${id}/insights`, {}),
   todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
   suggestionsHistory: (days = 14) => apiFetch<DailySuggestionsHistory>(`/api/suggestions/history?days=${days}`),
   regenerateSuggestions: () => apiPost<DailySuggestionsResponse>("/api/suggestions/regenerate", {}),
   // Autopilot intelligence
+  deleteProposalDraft: (id: number) => apiDelete<{ ok: boolean }>(`/api/objectives/proposal-drafts/${id}`),
+  apiReviewProposal: (id: number, action: "accept" | "reject") =>
+    apiPost<{ ok: boolean }>(`/api/objectives/proposal-drafts/${id}/review`, { action }),
+  executeProposalDraft: (id: number) =>
+    apiPost<{ ok: boolean }>(`/api/objectives/proposal-drafts/${id}/execute`, {}),
   autopilotDailyPlan: () => apiFetch<AutopilotDailyPlan>("/api/autopilot/daily-plan"),
   autopilotActionQueue: () => apiFetch<AutopilotActionQueue>("/api/autopilot/action-queue"),
   autopilotNextAction: () => apiFetch<AutopilotNextAction>("/api/autopilot/next-action"),
