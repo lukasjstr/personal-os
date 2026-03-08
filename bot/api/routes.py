@@ -313,6 +313,7 @@ async def execute_proposal_draft(
             "calendar_event_ids": result.calendar_event_ids,
             "scheduled_reminder_ids": result.scheduled_reminder_ids,
         },
+        "calendar_conflicts": result.calendar_conflicts,
     }
 
 
