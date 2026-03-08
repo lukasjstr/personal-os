@@ -23,6 +23,11 @@ This roadmap merges:
 - P0.3: HomeScreen migrated to `/api/autopilot/today` snapshot — `393140b`
 - P0.4: CORE-2 execute hardening (idempotency + conflict detection + reminder kinds) — `8f69589`
 - P1.2: CRUD everywhere Dashboard (KR inline, reflection, calendar, proposals) — `70eb5e0`
+- P1.3: Settings + export (quiet hours UI, CSV export, profile fields polish) — `1694151`
+- P1.1: Task↔Objective deep relations (parent_task_id, blocked_by_task_id on forms) — `60a5cdb`
+- P2.1: Reflection top-priorities re-weight daily planner + boosted flag — `4827853`
+- P2.2: Explainability — get_task_reason, reason on next_action + plan tasks — `2534db6`
+- P2.3: Daily suggestions pipeline (missed_routine, overdue_task, stalled_objective, brain_dump_nudge) — `ab9e1e6`
 
 ---
 
@@ -116,11 +121,11 @@ For every ticket:
 
 ## 5) Next tickets (current queue)
 
-All P0 + P1.2 tickets shipped (2026-03-08). Remaining:
+All P0–P2 tickets shipped (2026-03-08). Queue complete.
 
-1) P1.1 Task↔Objective deep relations (objective_id, parent_task_id, blocked_by_task_id on Task)
-2) P1.3 Settings + export (profile edit, toggles UI, data export)
-3) P2.1 Reflection feedback injection (weekly priorities → planner weights)
-4) P2.2 Explainability panel ("why" for next_action + plan items)
-5) P2.3 Daily suggestions pipeline
+### P3 — Reliability & release
+
+1) P3.1 E2E smoke tests expanded (G1) — add P2 coverage to test_smoke.py
+2) P3.2 Monitoring + rollback (G3) — structured alert on suggestion errors
+3) P3.3 Incident playbook + kill switches (G4) — kill switch for suggestions pipeline
 
