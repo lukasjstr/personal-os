@@ -13,10 +13,13 @@ import {
 } from "recharts";
 import Header from "@/components/Header";
 import LoadingSpinner, { EmptyState, ErrorState } from "@/components/LoadingSpinner";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { ToastContainer, useToast } from "@/components/Toast";
 import { useReflections } from "@/hooks/useApi";
 import type { WeeklyReflection } from "@/lib/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Trash2 } from "lucide-react";
 
 // ─── Score color helper ──────────────────────────────────────────────────────
 
@@ -203,9 +206,11 @@ function Section({ label, content }: { label: string; content: string }) {
 function ReflectionCard({
   reflection,
   onClick,
+  onDelete,
 }: {
   reflection: WeeklyReflection;
   onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
 }) {
   const weekLabel = `KW${reflection.week_number}`;
   const dateLabel = new Date(reflection.week_start).toLocaleDateString("de-DE", {
@@ -216,48 +221,55 @@ function ReflectionCard({
   const isComplete = reflection.status === "completed";
 
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left rounded-xl border p-4 transition-all hover:border-zinc-600",
-        isComplete
-          ? "bg-zinc-900 border-zinc-800"
-          : "bg-zinc-900/60 border-zinc-800/60 opacity-75"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-white font-semibold text-sm">{weekLabel}</span>
-            {!isComplete && (
-              <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full">
-                Offen
-              </span>
+    <div className={cn(
+      "relative rounded-xl border transition-all group",
+      isComplete ? "bg-zinc-900 border-zinc-800" : "bg-zinc-900/60 border-zinc-800/60 opacity-75"
+    )}>
+      <button
+        onClick={onClick}
+        className="w-full text-left p-4 hover:bg-zinc-800/20 rounded-xl transition-colors"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-white font-semibold text-sm">{weekLabel}</span>
+              {!isComplete && (
+                <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full">
+                  Offen
+                </span>
+              )}
+            </div>
+            <div className="text-zinc-500 text-xs">{dateLabel}</div>
+            {reflection.biggest_win && (
+              <p className="text-zinc-400 text-xs mt-2 line-clamp-2">
+                💪 {reflection.biggest_win}
+              </p>
             )}
           </div>
-          <div className="text-zinc-500 text-xs">{dateLabel}</div>
-          {reflection.biggest_win && (
-            <p className="text-zinc-400 text-xs mt-2 line-clamp-2">
-              💪 {reflection.biggest_win}
-            </p>
+
+          {reflection.week_score ? (
+            <div className={cn(
+              "shrink-0 rounded-xl border px-3 py-1.5 text-sm font-bold",
+              scoreBg(reflection.week_score),
+              scoreColor(reflection.week_score),
+            )}>
+              {reflection.week_score}/10
+            </div>
+          ) : (
+            <div className="shrink-0 rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-600">
+              —
+            </div>
           )}
         </div>
-
-        {reflection.week_score ? (
-          <div className={cn(
-            "shrink-0 rounded-xl border px-3 py-1.5 text-sm font-bold",
-            scoreBg(reflection.week_score),
-            scoreColor(reflection.week_score),
-          )}>
-            {reflection.week_score}/10
-          </div>
-        ) : (
-          <div className="shrink-0 rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-600">
-            —
-          </div>
-        )}
-      </div>
-    </button>
+      </button>
+      <button
+        onClick={onDelete}
+        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-all"
+        title="Reflexion löschen"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
   );
 }
 
@@ -321,8 +333,26 @@ function ScoreTrendChart({ reflections }: { reflections: WeeklyReflection[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReflectionPage() {
-  const { data, error, isLoading } = useReflections();
+  const { data, error, isLoading, mutate } = useReflections();
   const [selected, setSelected] = useState<WeeklyReflection | null>(null);
+  const [deletingReflection, setDeletingReflection] = useState<WeeklyReflection | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const { toasts, addToast, dismissToast } = useToast();
+
+  const handleDelete = useCallback(async () => {
+    if (!deletingReflection) return;
+    setDeleting(true);
+    try {
+      await api.deleteReflection(deletingReflection.id);
+      await mutate();
+      addToast("Reflexion gelöscht", "success");
+      setDeletingReflection(null);
+    } catch {
+      addToast("Fehler beim Löschen", "error");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deletingReflection, mutate, addToast]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
@@ -420,6 +450,7 @@ export default function ReflectionPage() {
               key={r.id}
               reflection={r}
               onClick={() => setSelected(r)}
+              onDelete={(e) => { e.stopPropagation(); setDeletingReflection(r); }}
             />
           ))}
         </div>
@@ -432,6 +463,17 @@ export default function ReflectionPage() {
           onClose={() => setSelected(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!deletingReflection}
+        title="Reflexion löschen?"
+        message={`Reflexion KW${deletingReflection?.week_number}/${deletingReflection?.year} wird dauerhaft gelöscht.`}
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingReflection(null)}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
