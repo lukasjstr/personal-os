@@ -4108,6 +4108,7 @@ async def update_action_queue_state(
         )
 
     item.state = new_state
+    item.updated_at = datetime.utcnow()
     if new_state == "snoozed":
         minutes = max(1, min(body.snooze_minutes, 10080))
         now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
@@ -4116,7 +4117,48 @@ async def update_action_queue_state(
         item.snoozed_until = None
 
     await session.flush()
-    return {"ok": True, "item": _queue_item_dict(item), "changed": True}
+
+    response: dict = {"ok": True, "item": _queue_item_dict(item), "changed": True}
+
+    if new_state == "accepted":
+        from bot.core.completion_hooks import get_next_unblocked_action as _get_next
+        next_action = await _get_next(session, user.id)
+        if next_action:
+            response["next_action"] = next_action
+
+    elif new_state == "completed":
+        from bot.core.completion_hooks import (
+            check_objective_auto_complete as _check_obj,
+            get_next_unblocked_action as _get_next,
+            update_kr_on_task_complete as _update_kr,
+        )
+        if item.linked_task_id:
+            task_res = await session.execute(
+                select(Task).where(Task.id == item.linked_task_id)
+            )
+            linked_task = task_res.scalar_one_or_none()
+            if linked_task and linked_task.status != "done":
+                # Mark the linked task done and run KR/objective hooks
+                linked_task.status = "done"
+                linked_task.completed_at = datetime.utcnow()
+                await session.flush()
+                kr_updated = await _update_kr(session, linked_task)
+                if kr_updated:
+                    response["kr_progress"] = {
+                        "id": kr_updated.id,
+                        "current_value": kr_updated.current_value,
+                        "target_value": kr_updated.target_value,
+                        "status": kr_updated.status,
+                    }
+                if linked_task.objective_id:
+                    obj_completed = await _check_obj(session, linked_task.objective_id)
+                    if obj_completed:
+                        response["objective_completed"] = linked_task.objective_id
+        next_action = await _get_next(session, user.id)
+        if next_action:
+            response["next_action"] = next_action
+
+    return response
 
 
 # ─── Objective Task Suggestions (B3) ───────────────────────────────────────────
