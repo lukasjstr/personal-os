@@ -12,10 +12,9 @@ type ProposalDraft = {
   created_at: string;
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://95.111.252.176:8000';
 
 async function apiFetch(path: string, init?: RequestInit) {
-  if (!API_URL) throw new Error('EXPO_PUBLIC_API_URL not set');
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
