@@ -750,6 +750,8 @@ export const api = {
   deleteReflection: (id: number) => apiDelete<{ ok: boolean }>(`/api/reflections/${id}`),
   regenerateReflectionInsights: (id: number) =>
     apiPost<{ ok: boolean; ai_summary: Record<string, unknown> }>(`/api/reflections/${id}/insights`, {}),
+  updateReflectionPriorities: (id: number, priorities: string[]) =>
+    apiPatch<WeeklyReflection>(`/api/reflections/${id}`, { top_priorities: priorities }),
   todaySuggestions: () => apiFetch<DailySuggestionsResponse>("/api/suggestions/today"),
   suggestionsHistory: (days = 14) => apiFetch<DailySuggestionsHistory>(`/api/suggestions/history?days=${days}`),
   regenerateSuggestions: () => apiPost<DailySuggestionsResponse>("/api/suggestions/regenerate", {}),
