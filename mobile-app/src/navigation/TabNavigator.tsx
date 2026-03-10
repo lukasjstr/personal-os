@@ -41,8 +41,8 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const COLORS = {
   active: '#6366f1',
-  inactive: '#9ca3af',
-  background: '#111827',
+  inactive: '#6b7280',
+  background: '#0f172a',
   border: '#1f2937',
 };
 
@@ -61,6 +61,10 @@ export default function TabNavigator() {
           backgroundColor: COLORS.background,
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
+          paddingBottom: 8,
+          paddingTop: 6,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         headerStyle: {
           backgroundColor: COLORS.background,

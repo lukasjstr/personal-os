@@ -314,9 +314,9 @@ export default function NotificationsScreen() {
   if (!notifLoading || notifData) {
     rows.push({ kind: 'section-header', label: 'Notifications', count: pendingCount });
     if (notifError && notifications.length === 0) {
-      rows.push({ kind: 'empty', label: 'Could not load notifications' });
+      rows.push({ kind: 'empty', label: '⚠️  Could not load notifications' });
     } else if (notifications.length === 0) {
-      rows.push({ kind: 'empty', label: 'No notifications' });
+      rows.push({ kind: 'empty', label: '✓  All clear — no notifications' });
     } else {
       notifications.forEach(n => rows.push({ kind: 'notif', item: n }));
     }
@@ -326,9 +326,9 @@ export default function NotificationsScreen() {
   if (!queueLoading || queueData) {
     rows.push({ kind: 'section-header', label: 'Action Queue', count: activeQueueCount });
     if (queueError && queueItems.length === 0) {
-      rows.push({ kind: 'empty', label: 'Could not load action queue' });
+      rows.push({ kind: 'empty', label: '⚠️  Could not load action queue' });
     } else if (queueItems.length === 0) {
-      rows.push({ kind: 'empty', label: 'No pending approvals' });
+      rows.push({ kind: 'empty', label: '🎉  Nothing pending — you\'re all caught up' });
     } else {
       queueItems.forEach(q => rows.push({ kind: 'queue', item: q }));
     }
@@ -413,29 +413,32 @@ export default function NotificationsScreen() {
 
       {notifError && !queueError ? (
         <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={13} color="#fbbf24" />
           <Text style={styles.errorBannerText} numberOfLines={1}>
-            Notifications unavailable
+            Notifications unavailable — showing last known state
           </Text>
-          <TouchableOpacity onPress={refetchNotifs} activeOpacity={0.75}>
-            <Text style={styles.errorBannerRetry}>Retry</Text>
+          <TouchableOpacity onPress={refetchNotifs} activeOpacity={0.75} style={styles.errorBannerRetryBtn}>
+            <Ionicons name="refresh-outline" size={13} color="#d1d5db" />
           </TouchableOpacity>
         </View>
       ) : queueError && !notifError ? (
         <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={13} color="#fbbf24" />
           <Text style={styles.errorBannerText} numberOfLines={1}>
-            Action queue unavailable
+            Action queue unavailable — pull to retry
           </Text>
-          <TouchableOpacity onPress={refetchQueue} activeOpacity={0.75}>
-            <Text style={styles.errorBannerRetry}>Retry</Text>
+          <TouchableOpacity onPress={refetchQueue} activeOpacity={0.75} style={styles.errorBannerRetryBtn}>
+            <Ionicons name="refresh-outline" size={13} color="#d1d5db" />
           </TouchableOpacity>
         </View>
       ) : bothFailed ? (
         <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={13} color="#fbbf24" />
           <Text style={styles.errorBannerText} numberOfLines={1}>
-            Load error — pull to retry
+            Couldn't reach server — showing cached data
           </Text>
-          <TouchableOpacity onPress={refetchAll} activeOpacity={0.75}>
-            <Text style={styles.errorBannerRetry}>Retry</Text>
+          <TouchableOpacity onPress={refetchAll} activeOpacity={0.75} style={styles.errorBannerRetryBtn}>
+            <Ionicons name="refresh-outline" size={13} color="#d1d5db" />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -512,25 +515,35 @@ const styles = StyleSheet.create({
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1c1917',
+    backgroundColor: '#1c1400',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderLeftWidth: 3,
-    borderLeftColor: '#f87171',
-    gap: 8,
+    borderLeftColor: '#f59e0b',
+    gap: 6,
   },
   errorBannerText: {
     flex: 1,
     fontSize: 12,
-    color: '#fca5a5',
+    color: '#fde68a',
   },
   errorBannerRetry: {
     fontSize: 12,
     color: '#d1d5db',
     fontWeight: '600',
+  },
+  errorBannerRetryBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#292100',
+    borderWidth: 1,
+    borderColor: '#78350f',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // List

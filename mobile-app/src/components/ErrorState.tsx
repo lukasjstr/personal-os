@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -52,11 +53,12 @@ export function ErrorBanner({ error, onRetry }: ErrorStateProps) {
   const offline = isNetworkError(error);
   return (
     <View style={styles.banner}>
+      <Ionicons name="warning-outline" size={14} color="#fbbf24" style={{ marginRight: 2 }} />
       <Text style={styles.bannerText} numberOfLines={2}>
-        {offline ? 'Offline — showing cached data.' : `Load error: ${error}`}
+        {offline ? 'Offline — showing cached data.' : 'Could not refresh — showing cached data.'}
       </Text>
       <TouchableOpacity onPress={onRetry} activeOpacity={0.75} style={styles.bannerRetry}>
-        <Text style={styles.bannerRetryText}>Retry</Text>
+        <Ionicons name="refresh-outline" size={13} color="#d1d5db" />
       </TouchableOpacity>
     </View>
   );
@@ -107,27 +109,29 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1c1917',
+    backgroundColor: '#1c1400',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 12,
     borderLeftWidth: 3,
-    borderLeftColor: '#f87171',
-    gap: 8,
+    borderLeftColor: '#f59e0b',
+    gap: 6,
   },
   bannerText: {
     flex: 1,
     fontSize: 12,
-    color: '#fca5a5',
+    color: '#fde68a',
   },
   bannerRetry: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#292524',
+    backgroundColor: '#292100',
     borderWidth: 1,
-    borderColor: '#44403c',
+    borderColor: '#78350f',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bannerRetryText: {
     fontSize: 12,
