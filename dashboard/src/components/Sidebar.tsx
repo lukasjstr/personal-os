@@ -28,8 +28,9 @@ import XPBar from "./XPBar";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/goals/new", label: "✨ Neues Ziel", icon: Target },
   { href: "/objectives", label: "Objectives", icon: Target },
-  { href: "/proposals", label: "Goals", icon: Target },
+  { href: "/proposals", label: "Proposals", icon: ClipboardList },
   { href: "/tasks", label: "Tasks", icon: CheckSquare, badge: "open_tasks" },
   { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/routines", label: "Routinen", icon: RefreshCw },

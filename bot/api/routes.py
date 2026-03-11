@@ -5295,3 +5295,148 @@ Antworte NUR mit JSON:
             "missing_links": [],
             "summary": f"Analyse fehlgeschlagen: {str(e)}",
         }
+
+
+# ─── Goal Coach (AI-powered Goal Wizard) ─────────────────────────────────────
+
+class GoalClarifyBody(BaseModel):
+    goal: str
+
+
+class GoalGenerateBody(BaseModel):
+    goal: str
+    why: Optional[str] = None
+    timeframe: Optional[str] = None
+    current_state: Optional[str] = None
+
+
+@router.post("/goals/clarify")
+async def goal_clarify(
+    body: GoalClarifyBody,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return 3 AI-generated clarifying questions for the given goal."""
+    import os
+    from openai import AsyncOpenAI
+
+    fallback = {"questions": [
+        {"id": "why", "label": "Warum ist dir das wichtig?", "placeholder": "Deine tiefe Motivation..."},
+        {"id": "timeframe", "label": "Bis wann willst du es erreichen?", "placeholder": "z.B. in 3 Monaten, bis Ende Jahr..."},
+        {"id": "current_state", "label": "Wo stehst du gerade?", "placeholder": "Aktueller Stand, was hast du schon probiert..."},
+    ]}
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_key:
+        return fallback
+
+    try:
+        client = AsyncOpenAI(api_key=openai_key)
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": f'''Ziel des Nutzers: "{body.goal}"
+
+Generiere 3 kurze, präzise Rückfragen auf Deutsch.
+Antworte NUR mit JSON:
+{{"questions":[
+  {{"id":"why","label":"Frage zur Motivation (max 60 Zeichen)","placeholder":"Beispielantwort"}},
+  {{"id":"timeframe","label":"Frage zum Zeitrahmen","placeholder":"Beispielantwort"}},
+  {{"id":"current_state","label":"Frage zum aktuellen Stand","placeholder":"Beispielantwort"}}
+]}}'''}],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+        import json as _j
+        return _j.loads(resp.choices[0].message.content)
+    except Exception:
+        return fallback
+
+
+@router.post("/goals/generate")
+async def goal_generate(
+    body: GoalGenerateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """GPT-powered OKR plan generation. Saves as OKRProposalDraft and returns the plan."""
+    import json as _json
+    import os
+    from datetime import date as _date
+    from openai import AsyncOpenAI
+
+    # Load existing objectives for synergy detection
+    existing_result = await session.execute(
+        select(Objective).where(Objective.user_id == user.id, Objective.status == "active")
+    )
+    existing_objs = existing_result.scalars().all()
+    existing_titles = [o.title for o in existing_objs]
+
+    today = _date.today().isoformat()
+
+    system_prompt = (
+        "Du bist ein strategischer Life-Coach und OKR-Experte. "
+        "Du hilfst dem Nutzer konkrete, messbare Ziele zu definieren. "
+        "Antworte auf Deutsch. Sei präzise und actionable."
+    )
+    user_prompt = f"""Heute: {today}
+Bestehende Ziele des Nutzers: {', '.join(existing_titles) if existing_titles else 'Noch keine'}
+
+Neues Ziel:
+- Was: {body.goal}
+- Warum: {body.why or 'Nicht angegeben'}
+- Zeitrahmen: {body.timeframe or 'Nicht angegeben — verwende 90 Tage'}
+- Aktueller Stand: {body.current_state or 'Nicht angegeben'}
+
+Generiere einen vollständigen OKR-Plan als JSON. NUR JSON:
+{{
+  "objective": {{
+    "title": "Inspirierender Titel (max 80 Zeichen)",
+    "description": "1-2 Sätze warum wichtig",
+    "category": "health|fitness|business|personal|finance|learning|relationships",
+    "target_date": "YYYY-MM-DD",
+    "emoji": "passendes Emoji"
+  }},
+  "key_results": [
+    {{"title": "Messbares KR mit Zielwert", "metric_type": "number|percentage|boolean|streak", "target_value": 10, "current_value": 0, "unit": "Einheit", "why": "Warum dieses KR"}}
+  ],
+  "tasks": [
+    {{"title": "Konkreter Task", "priority": 1, "due_days": 7, "category": "Kategorie"}}
+  ],
+  "weekly_schedule": [
+    {{"day": "Montag", "activity": "Was tun", "duration_min": 60}}
+  ],
+  "synergies": [
+    {{"existing_goal": "Titel des bestehenden Ziels", "connection": "Wie hängt es zusammen"}}
+  ],
+  "motivation_message": "Persönliche motivierende Nachricht (2-3 Sätze)",
+  "first_step": "Der erste konkrete Schritt HEUTE"
+}}
+
+Regeln: 3-5 KRs (echte Zahlen), 5-8 Tasks, Wochenplan nur bei Habit/Sport-Zielen, Synergien nur wenn wirklich relevant."""
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_key:
+        raise HTTPException(status_code=500, detail="OpenAI API Key nicht konfiguriert")
+
+    client = AsyncOpenAI(api_key=openai_key)
+    resp = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    plan = _json.loads(resp.choices[0].message.content)
+
+    # Save as OKRProposalDraft for later execution
+    draft = OKRProposalDraft(
+        user_id=user.id,
+        source_text=body.goal,
+        draft_payload=plan,
+        status="pending",
+    )
+    session.add(draft)
+    await session.flush()
+
+    return {"draft_id": draft.id, "plan": plan}
