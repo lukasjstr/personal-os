@@ -2184,6 +2184,7 @@ class CreateObjectiveBody(BaseModel):
     category: Optional[str] = "personal"
     description: Optional[str] = None
     target_date: Optional[str] = None
+    parent_objective_id: Optional[int] = None
 
 
 class CreateTaskBody(BaseModel):
@@ -2258,6 +2259,7 @@ async def create_objective(
         description=body.description or None,
         target_date=target,
         status="active",
+        parent_objective_id=body.parent_objective_id or None,
     )
     session.add(obj)
     await session.flush()
@@ -5062,3 +5064,234 @@ async def evening_review(
 
     await session.flush()
     return {"ok": True, "day_score": brief.day_score}
+
+
+# ─── User Documents (Personal Reference Library) ──────────────────────────────
+
+class CreateDocBody(BaseModel):
+    title: str
+    emoji: str = "📄"
+    content: str = ""
+    sort_order: int = 0
+
+class UpdateDocBody(BaseModel):
+    title: Optional[str] = None
+    emoji: Optional[str] = None
+    content: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+@router.get("/docs")
+async def list_docs(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.database.models import UserDocument
+    result = await session.execute(
+        select(UserDocument)
+        .where(UserDocument.user_id == user.id)
+        .order_by(UserDocument.sort_order, UserDocument.id)
+    )
+    docs = result.scalars().all()
+    return {
+        "docs": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "emoji": d.emoji,
+                "content": d.content,
+                "sort_order": d.sort_order,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+                "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+            }
+            for d in docs
+        ]
+    }
+
+
+@router.post("/docs")
+async def create_doc(
+    body: CreateDocBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.database.models import UserDocument
+    doc = UserDocument(
+        user_id=user.id,
+        title=body.title,
+        emoji=body.emoji,
+        content=body.content,
+        sort_order=body.sort_order,
+    )
+    session.add(doc)
+    await session.flush()
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "emoji": doc.emoji,
+        "content": doc.content,
+        "sort_order": doc.sort_order,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+    }
+
+
+@router.put("/docs/{doc_id}")
+async def update_doc(
+    doc_id: int,
+    body: UpdateDocBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.database.models import UserDocument
+    doc = await session.get(UserDocument, doc_id)
+    if not doc or doc.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if body.title is not None:
+        doc.title = body.title
+    if body.emoji is not None:
+        doc.emoji = body.emoji
+    if body.content is not None:
+        doc.content = body.content
+    if body.sort_order is not None:
+        doc.sort_order = body.sort_order
+    await session.flush()
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "emoji": doc.emoji,
+        "content": doc.content,
+        "sort_order": doc.sort_order,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+    }
+
+
+@router.delete("/docs/{doc_id}")
+async def delete_doc(
+    doc_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.database.models import UserDocument
+    doc = await session.get(UserDocument, doc_id)
+    if not doc or doc.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    await session.delete(doc)
+    return {"ok": True}
+
+
+# ─── AI Objective Analysis ────────────────────────────────────────────────────
+
+class SetParentBody(BaseModel):
+    parent_objective_id: Optional[int] = None
+
+
+@router.post("/objectives/{objective_id}/set-parent")
+async def set_objective_parent(
+    objective_id: int,
+    body: SetParentBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    obj = await session.get(Objective, objective_id)
+    if not obj or obj.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if body.parent_objective_id and body.parent_objective_id == objective_id:
+        raise HTTPException(status_code=400, detail="Cannot be its own parent")
+    obj.parent_objective_id = body.parent_objective_id
+    await session.flush()
+    return {"ok": True, "objective_id": objective_id, "parent_objective_id": obj.parent_objective_id}
+
+
+@router.get("/objectives/ai-analysis")
+async def analyze_objectives(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """AI analyzes all objectives + tasks, returns structure suggestions."""
+    import json as _json
+    from openai import AsyncOpenAI
+    import os
+
+    result = await session.execute(
+        select(Objective)
+        .where(Objective.user_id == user.id, Objective.status == "active")
+        .options(selectinload(Objective.key_results))
+    )
+    objectives = result.scalars().all()
+
+    tasks_result = await session.execute(
+        select(Task).where(Task.user_id == user.id, Task.status == "open").limit(80)
+    )
+    tasks = tasks_result.scalars().all()
+
+    obj_list = [
+        {
+            "id": o.id,
+            "title": o.title,
+            "description": o.description,
+            "category": o.category,
+            "parent_objective_id": o.parent_objective_id,
+            "key_results": [kr.title for kr in o.key_results],
+        }
+        for o in objectives
+    ]
+    task_list = [{"id": t.id, "title": t.title, "objective_id": t.objective_id} for t in tasks[:50]]
+
+    if not obj_list:
+        return {"parent_suggestions": [], "synergies": [], "overlaps": [], "missing_links": [], "summary": "Keine aktiven Ziele vorhanden."}
+
+    prompt = f"""Du bist ein strategischer Life-Coach. Analysiere diese Ziele und Aufgaben und gib strukturierte Empfehlungen zurueck.
+
+Aktive Ziele:
+{_json.dumps(obj_list, ensure_ascii=False, indent=2)}
+
+Offene Aufgaben (Auswahl):
+{_json.dumps(task_list, ensure_ascii=False, indent=2)}
+
+Analysiere und erkenne:
+1. Hierarchie: Welche Ziele sind Unterziele anderer?
+2. Synergien: Welche Ziele ergaenzen sich?
+3. Ueberlappungen: Welche Ziele sind zu aehnlich?
+4. Fehlende Verbindungen: Welche haengen logisch zusammen?
+
+Antworte NUR mit JSON:
+{{
+  "parent_suggestions": [
+    {{"child_objective_id": int, "child_title": "string", "suggested_parent_id": int, "parent_title": "string", "reason": "kurze Begruendung auf Deutsch"}}
+  ],
+  "synergies": [
+    {{"objective_ids": [int, int], "titles": ["string", "string"], "synergy": "was haben sie gemeinsam"}}
+  ],
+  "overlaps": [
+    {{"objective_ids": [int, int], "titles": ["string", "string"], "overlap": "was ueberschneidet sich", "suggestion": "was tun"}}
+  ],
+  "missing_links": [
+    {{"objective_ids": [int, int], "titles": ["string", "string"], "connection": "warum sie zusammenhaengen"}}
+  ],
+  "summary": "1-2 Saetze Gesamtbewertung auf Deutsch"
+}}"""
+
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_key:
+        return {"parent_suggestions": [], "synergies": [], "overlaps": [], "missing_links": [], "summary": "OpenAI API Key nicht konfiguriert."}
+
+    try:
+        client = AsyncOpenAI(api_key=openai_key)
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+        analysis = _json.loads(response.choices[0].message.content)
+        return analysis
+    except Exception as e:
+        return {
+            "parent_suggestions": [],
+            "synergies": [],
+            "overlaps": [],
+            "missing_links": [],
+            "summary": f"Analyse fehlgeschlagen: {str(e)}",
+        }

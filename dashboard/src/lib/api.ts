@@ -644,6 +644,43 @@ export interface WeeklyReflection {
   updated_at: string | null;
 }
 
+export interface UserDoc {
+  id: number;
+  title: string;
+  emoji: string;
+  content: string;
+  sort_order: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ObjectiveAnalysis {
+  parent_suggestions: Array<{
+    child_objective_id: number;
+    child_title: string;
+    suggested_parent_id: number;
+    parent_title: string;
+    reason: string;
+  }>;
+  synergies: Array<{
+    objective_ids: number[];
+    titles: string[];
+    synergy: string;
+  }>;
+  overlaps: Array<{
+    objective_ids: number[];
+    titles: string[];
+    overlap: string;
+    suggestion: string;
+  }>;
+  missing_links: Array<{
+    objective_ids: number[];
+    titles: string[];
+    connection: string;
+  }>;
+  summary: string;
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -706,7 +743,7 @@ export const api = {
   // CRUD — Create
   createTask: (body: { title: string; category?: string | null; priority?: number; due_date?: string | null; objective_id?: number | null; description?: string | null; parent_task_id?: number | null; blocked_by_task_id?: number | null }) =>
     apiPost<{ ok: boolean; id: number; title: string }>("/api/tasks", body),
-  createObjective: (body: { title: string; category?: string; description?: string | null; target_date?: string | null }) =>
+  createObjective: (body: { title: string; category?: string; description?: string | null; target_date?: string | null; parent_objective_id?: number | null }) =>
     apiPost<{ ok: boolean; id: number; title: string }>("/api/objectives", body),
   createRoutine: (body: { title: string; description?: string | null; frequency_human?: string; time_of_day?: string }) =>
     apiPost<{ ok: boolean; id: number; title: string }>("/api/routines", body),
@@ -773,4 +810,15 @@ export const api = {
   autopilotConfidence: () => apiFetch<AutopilotConfidence>("/api/autopilot/confidence"),
   autopilotSuggestions: () => apiFetch<AutopilotSuggestionsResponse>("/api/autopilot/suggestions"),
   acknowledgeNotification: (id: number) => apiPost<{ ok: boolean }>(`/api/notifications/${id}/acknowledge`, {}),
+  // Docs
+  listDocs: () => apiFetch<{ docs: UserDoc[] }>("/api/docs"),
+  createDoc: (body: { title: string; emoji: string; content: string; sort_order?: number }) =>
+    apiPost<UserDoc>("/api/docs", body),
+  updateDoc: (id: number, body: Partial<{ title: string; emoji: string; content: string; sort_order: number }>) =>
+    apiPut<UserDoc>(`/api/docs/${id}`, body),
+  deleteDoc: (id: number) => apiDelete<{ ok: boolean }>(`/api/docs/${id}`),
+  // Objective AI analysis
+  analyzeObjectives: () => apiFetch<ObjectiveAnalysis>("/api/objectives/ai-analysis"),
+  setObjectiveParent: (id: number, parentId: number | null) =>
+    apiPost<{ ok: boolean }>(`/api/objectives/${id}/set-parent`, { parent_objective_id: parentId }),
 };

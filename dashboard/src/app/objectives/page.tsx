@@ -10,7 +10,8 @@ import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Objective, ObjectiveTask, KeyResult, GoalMomentumResponse } from "@/lib/api";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch, Sparkles, Check, X } from "lucide-react";
+import type { ObjectiveAnalysis } from "@/lib/api";
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Aktiv",
@@ -46,12 +47,16 @@ function CreateObjectiveModal({
   onSave,
   onClose,
   saving,
+  allObjectives = [],
+  defaultParentId,
 }: {
-  onSave: (data: { title: string; category: string; description: string | null; target_date: string | null }) => void;
+  onSave: (data: { title: string; category: string; description: string | null; target_date: string | null; parent_objective_id: number | null }) => void;
   onClose: () => void;
   saving: boolean;
+  allObjectives?: Objective[];
+  defaultParentId?: number;
 }) {
-  const [form, setForm] = useState({ title: "", category: "personal", description: "", target_date: "" });
+  const [form, setForm] = useState({ title: "", category: "personal", description: "", target_date: "", parent_objective_id: defaultParentId ? String(defaultParentId) : "" });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -63,6 +68,15 @@ function CreateObjectiveModal({
             <label className="text-zinc-400 text-xs mb-1.5 block">Titel *</label>
             <input type="text" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Objective-Titel" autoFocus className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
           </div>
+          {allObjectives.length > 0 && (
+            <div>
+              <label className="text-zinc-400 text-xs mb-1.5 block">Übergeordnetes Ziel (optional)</label>
+              <select value={form.parent_objective_id} onChange={(e) => setForm((f) => ({ ...f, parent_objective_id: e.target.value }))} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                <option value="">— Kein übergeordnetes Ziel —</option>
+                {allObjectives.filter((o) => o.status === "active").map((o) => <option key={o.id} value={String(o.id)}>{CATEGORY_EMOJI[o.category] ?? "🎯"} {o.title}</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-zinc-400 text-xs mb-1.5 block">Kategorie</label>
@@ -82,7 +96,7 @@ function CreateObjectiveModal({
         </div>
         <div className="flex gap-3 justify-end mt-6">
           <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 text-sm transition-colors">Abbrechen</button>
-          <button onClick={() => onSave({ title: form.title.trim(), category: form.category, description: form.description.trim() || null, target_date: form.target_date || null })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
+          <button onClick={() => onSave({ title: form.title.trim(), category: form.category, description: form.description.trim() || null, target_date: form.target_date || null, parent_objective_id: form.parent_objective_id ? parseInt(form.parent_objective_id) : null })} disabled={saving || !form.title.trim()} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 font-medium">
             {saving ? "Erstellen…" : "Objective erstellen"}
           </button>
         </div>
@@ -608,11 +622,245 @@ const MOMENTUM_COLOR: Record<string, string> = {
   low: "text-red-400",
 };
 
+// ─── AI Goal Analysis Panel ───────────────────────────────────────────────────
+
+function AiAnalysisPanel({ onApplyParent }: { onApplyParent: (childId: number, parentId: number) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<ObjectiveAnalysis | null>(null);
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  const [applying, setApplying] = useState<number | null>(null);
+
+  const runAnalysis = async () => {
+    setLoading(true);
+    try {
+      const result = await api.analyzeObjectives();
+      setAnalysis(result);
+      setOpen(true);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApply = async (childId: number, parentId: number, idx: number) => {
+    setApplying(idx);
+    try {
+      await onApplyParent(childId, parentId);
+      setDismissed((prev) => new Set([...prev, idx]));
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  const visibleSuggestions = analysis?.parent_suggestions.filter((_, i) => !dismissed.has(i)) ?? [];
+
+  return (
+    <div className="bg-zinc-900 border border-indigo-900/40 rounded-xl overflow-hidden mb-6">
+      <button
+        onClick={() => (analysis ? setOpen((v) => !v) : runAnalysis())}
+        disabled={loading}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-indigo-400" />
+          <span className="text-white font-semibold text-sm">KI-Zielanalyse</span>
+          {analysis && (
+            <span className="text-xs text-indigo-400 bg-indigo-900/30 px-2 py-0.5 rounded-full">
+              {visibleSuggestions.length} Vorschläge
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {loading && <span className="text-zinc-500 text-xs">Analysiere…</span>}
+          {!analysis && !loading && <span className="text-indigo-400 text-xs">Analyse starten →</span>}
+          {analysis && <span className="text-zinc-500 text-xs">{open ? "▲" : "▼"}</span>}
+        </div>
+      </button>
+
+      {open && analysis && (
+        <div className="border-t border-zinc-800 px-5 py-4 space-y-5">
+          {/* Summary */}
+          <div className="bg-indigo-950/30 border border-indigo-800/30 rounded-lg px-4 py-3">
+            <p className="text-indigo-200 text-sm">{analysis.summary}</p>
+          </div>
+
+          {/* Hierarchy suggestions */}
+          {visibleSuggestions.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <GitBranch size={14} className="text-blue-400" />
+                <span className="text-blue-400 text-xs font-semibold uppercase tracking-wider">Hierarchie-Vorschläge</span>
+              </div>
+              <div className="space-y-2">
+                {analysis.parent_suggestions.map((s, i) => dismissed.has(i) ? null : (
+                  <div key={i} className="bg-zinc-800 rounded-lg px-4 py-3 flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white text-sm font-medium truncate">
+                        <span className="text-zinc-400">{s.child_title}</span>
+                        <span className="text-zinc-600 mx-2">→</span>
+                        <span className="text-blue-300">Unterziel von:</span>
+                        <span className="text-white ml-1">{s.parent_title}</span>
+                      </div>
+                      <p className="text-zinc-500 text-xs mt-1">{s.reason}</p>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleApply(s.child_objective_id, s.suggested_parent_id, i)}
+                        disabled={applying === i}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 transition-colors disabled:opacity-40"
+                      >
+                        <Check size={12} />
+                        {applying === i ? "…" : "Übernehmen"}
+                      </button>
+                      <button
+                        onClick={() => setDismissed((prev) => new Set([...prev, i]))}
+                        className="p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-700 transition-colors"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Synergies */}
+          {analysis.synergies.length > 0 && (
+            <div>
+              <div className="text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">✨ Synergien</div>
+              <div className="space-y-1.5">
+                {analysis.synergies.map((s, i) => (
+                  <div key={i} className="bg-emerald-950/30 border border-emerald-800/20 rounded-lg px-3 py-2">
+                    <div className="text-emerald-300 text-xs font-medium">{s.titles.join(" + ")}</div>
+                    <div className="text-zinc-400 text-xs mt-0.5">{s.synergy}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Overlaps */}
+          {analysis.overlaps.length > 0 && (
+            <div>
+              <div className="text-yellow-400 text-xs font-semibold uppercase tracking-wider mb-2">⚠️ Überlappungen</div>
+              <div className="space-y-1.5">
+                {analysis.overlaps.map((s, i) => (
+                  <div key={i} className="bg-yellow-950/30 border border-yellow-800/20 rounded-lg px-3 py-2">
+                    <div className="text-yellow-300 text-xs font-medium">{s.titles.join(" & ")}</div>
+                    <div className="text-zinc-400 text-xs mt-0.5">{s.overlap}</div>
+                    <div className="text-yellow-600 text-xs mt-1">💡 {s.suggestion}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Refresh */}
+          <button
+            onClick={runAnalysis}
+            disabled={loading}
+            className="text-xs text-zinc-500 hover:text-indigo-400 transition-colors"
+          >
+            {loading ? "Analysiere…" : "↻ Erneut analysieren"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tree View ────────────────────────────────────────────────────────────────
+
+function buildTree(objectives: Objective[]): { roots: Objective[]; childMap: Map<number, Objective[]> } {
+  const childMap = new Map<number, Objective[]>();
+  const roots: Objective[] = [];
+  for (const obj of objectives) {
+    if (obj.parent_objective_id) {
+      const arr = childMap.get(obj.parent_objective_id) ?? [];
+      arr.push(obj);
+      childMap.set(obj.parent_objective_id, arr);
+    } else {
+      roots.push(obj);
+    }
+  }
+  return { roots, childMap };
+}
+
+function ObjectiveTreeNode({
+  obj,
+  childMap,
+  depth,
+  onEdit,
+  onDelete,
+  onAddKR,
+  onEditKR,
+  onDeleteKR,
+  onAddChild,
+}: {
+  obj: Objective;
+  childMap: Map<number, Objective[]>;
+  depth: number;
+  onEdit: (obj: Objective) => void;
+  onDelete: (obj: Objective) => void;
+  onAddKR: (obj: Objective) => void;
+  onEditKR: (obj: Objective, kr: KeyResult) => void;
+  onDeleteKR: (obj: Objective, kr: KeyResult) => void;
+  onAddChild: (parentId: number) => void;
+}) {
+  const children = childMap.get(obj.id) ?? [];
+  const hasChildren = children.length > 0;
+
+  return (
+    <div className={cn(depth > 0 && "ml-6 border-l-2 border-zinc-700/50 pl-4")}>
+      <ObjectiveCard
+        obj={obj}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onAddKR={onAddKR}
+        onEditKR={onEditKR}
+        onDeleteKR={onDeleteKR}
+      />
+      {/* Add sub-objective button */}
+      <div className="ml-2 mt-1 mb-3">
+        <button
+          onClick={() => onAddChild(obj.id)}
+          className="flex items-center gap-1 text-xs text-zinc-600 hover:text-blue-400 transition-colors"
+        >
+          <Plus size={10} /> Unterziel hinzufügen
+        </button>
+      </div>
+      {hasChildren && (
+        <div className="space-y-4 mb-2">
+          {children.map((child) => (
+            <ObjectiveTreeNode
+              key={child.id}
+              obj={child}
+              childMap={childMap}
+              depth={depth + 1}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onAddKR={onAddKR}
+              onEditKR={onEditKR}
+              onDeleteKR={onDeleteKR}
+              onAddChild={onAddChild}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ObjectivesPage() {
   const { data, error, isLoading, mutate } = useObjectives();
   const { data: momentumData } = useSWR<GoalMomentumResponse>("goal-momentum", api.goalMomentum, { refreshInterval: 300_000 });
   const [filter, setFilter] = useState<string>("all");
   const [creating, setCreating] = useState(false);
+  const [createParentId, setCreateParentId] = useState<number | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
   const [editingObj, setEditingObj] = useState<Objective | null>(null);
   const [deletingObj, setDeletingObj] = useState<Objective | null>(null);
   const [saving, setSaving] = useState(false);
@@ -626,13 +874,14 @@ export default function ObjectivesPage() {
   const { toasts, addToast, dismissToast } = useToast();
 
   const handleCreate = useCallback(
-    async (data: { title: string; category: string; description: string | null; target_date: string | null }) => {
+    async (data: { title: string; category: string; description: string | null; target_date: string | null; parent_objective_id: number | null }) => {
       setSaving(true);
       try {
         await api.createObjective(data);
         await mutate();
         addToast("Objective erstellt", "success");
         setCreating(false);
+        setCreateParentId(undefined);
       } catch {
         addToast("Fehler beim Erstellen", "error");
       } finally {
@@ -641,6 +890,16 @@ export default function ObjectivesPage() {
     },
     [mutate, addToast]
   );
+
+  const handleApplyParent = useCallback(async (childId: number, parentId: number) => {
+    try {
+      await api.setObjectiveParent(childId, parentId);
+      await mutate();
+      addToast("Hierarchie aktualisiert ✓", "success");
+    } catch {
+      addToast("Fehler beim Zuordnen", "error");
+    }
+  }, [mutate, addToast]);
 
   const handleEdit = useCallback(
     async (data: {
@@ -748,6 +1007,7 @@ export default function ObjectivesPage() {
   const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.tasks.length === 0 && o.status === "active");
   const realObjectives = all.filter((o) => o.key_results.length > 0 || o.tasks.length > 0);
   const filtered = filter === "all" ? realObjectives : realObjectives.filter((o) => o.status === filter);
+  const { roots, childMap } = buildTree(filtered);
 
   const counts = {
     all: realObjectives.length,
@@ -828,8 +1088,11 @@ export default function ObjectivesPage() {
         </div>
       )}
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 mb-6 flex-wrap">
+      {/* AI Analysis Panel */}
+      <AiAnalysisPanel onApplyParent={handleApplyParent} />
+
+      {/* Filter + View Toggle */}
+      <div className="flex gap-2 mb-6 flex-wrap items-center">
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -844,11 +1107,36 @@ export default function ObjectivesPage() {
             {FILTER_LABELS[f]} ({counts[f as keyof typeof counts] ?? 0})
           </button>
         ))}
+        <div className="ml-auto flex gap-1 bg-zinc-800 rounded-lg p-1">
+          <button onClick={() => setViewMode("tree")} className={cn("px-2.5 py-1 rounded text-xs transition-colors flex items-center gap-1", viewMode === "tree" ? "bg-zinc-600 text-white" : "text-zinc-400 hover:text-white")}>
+            <GitBranch size={12} /> Baum
+          </button>
+          <button onClick={() => setViewMode("list")} className={cn("px-2.5 py-1 rounded text-xs transition-colors", viewMode === "list" ? "bg-zinc-600 text-white" : "text-zinc-400 hover:text-white")}>
+            Liste
+          </button>
+        </div>
       </div>
 
-      {/* Objectives List */}
+      {/* Objectives — Tree or List */}
       {filtered.length === 0 ? (
         <EmptyState emoji="🎯" message="Keine Objectives gefunden" />
+      ) : viewMode === "tree" ? (
+        <div className="space-y-4">
+          {roots.map((obj) => (
+            <ObjectiveTreeNode
+              key={obj.id}
+              obj={obj}
+              childMap={childMap}
+              depth={0}
+              onEdit={setEditingObj}
+              onDelete={setDeletingObj}
+              onAddKR={setAddingKRToObj}
+              onEditKR={(obj, kr) => setEditingKR({ obj, kr })}
+              onDeleteKR={(obj, kr) => setDeletingKR({ obj, kr })}
+              onAddChild={(parentId) => { setCreateParentId(parentId); setCreating(true); }}
+            />
+          ))}
+        </div>
       ) : (
         <div className="space-y-4">
           {filtered.map((obj) => (
@@ -867,7 +1155,13 @@ export default function ObjectivesPage() {
 
       {/* Create Modal */}
       {creating && (
-        <CreateObjectiveModal onSave={handleCreate} onClose={() => setCreating(false)} saving={saving} />
+        <CreateObjectiveModal
+          onSave={handleCreate}
+          onClose={() => { setCreating(false); setCreateParentId(undefined); }}
+          saving={saving}
+          allObjectives={all}
+          defaultParentId={createParentId}
+        />
       )}
 
       {/* Edit Modal */}

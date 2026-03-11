@@ -61,6 +61,7 @@ class User(Base):
     fitness_splits: Mapped[list["FitnessSplit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     shopping_defaults: Mapped[list["ShoppingDefault"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_suggestions: Mapped[list["DailySuggestion"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    documents: Mapped[list["UserDocument"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     autopilot_notifications: Mapped[list["AutopilotNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     action_queue_items: Mapped[list["ActionQueueItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     okr_proposal_drafts: Mapped[list["OKRProposalDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -296,6 +297,24 @@ class BrainDump(Base):
 
     def __repr__(self) -> str:
         return f"<BrainDump id={self.id}>"
+
+
+class UserDocument(Base):
+    __tablename__ = "user_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(10), nullable=False, default="📄")
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="documents")
+
+    def __repr__(self) -> str:
+        return f"<UserDocument id={self.id} title={self.title!r}>"
 
 
 class Conversation(Base):
