@@ -425,30 +425,8 @@ function ObjectiveCard({
   const progressColor =
     avgProgress >= 75 ? "#22c55e" : avgProgress >= 40 ? "#3b82f6" : avgProgress >= 20 ? "#f59e0b" : "#ef4444";
 
-  if (isLifeArea) {
-    return (
-      <div
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm group"
-        style={{ borderColor: catColor.hex + "40", backgroundColor: catColor.hex + "10" }}
-      >
-        <span>{CATEGORY_EMOJI[obj.category] ?? "🎯"}</span>
-        <span style={{ color: catColor.hex }}>{obj.title}</span>
-        <span className="text-zinc-600 text-xs">Life Area</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onEdit(obj); }}
-          className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-blue-400 transition-all ml-1"
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(obj); }}
-          className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-    );
-  }
+  // Container objectives (no KRs/tasks yet) still render as full cards, just with a different body
+
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex">
@@ -477,28 +455,36 @@ function ObjectiveCard({
             {obj.description && (
               <p className="text-zinc-500 text-xs truncate">{obj.description}</p>
             )}
-            <div className="flex items-center gap-3 mt-2">
-              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${avgProgress}%`, backgroundColor: progressColor }}
-                />
+            {isLifeArea ? (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-zinc-500 italic">Übergeordnetes Ziel — füge Key Results oder Unterziele hinzu</span>
               </div>
-              <span className="text-xs font-medium shrink-0" style={{ color: progressColor }}>
-                {avgProgress}%
-              </span>
-            </div>
-            {krProgress !== null && taskProgress !== null && (
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-xs text-zinc-600 shrink-0 w-6">T</span>
-                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-zinc-500 rounded-full transition-all duration-500"
-                    style={{ width: `${taskProgress}%` }}
-                  />
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mt-2">
+                  <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${avgProgress}%`, backgroundColor: progressColor }}
+                    />
+                  </div>
+                  <span className="text-xs font-medium shrink-0" style={{ color: progressColor }}>
+                    {avgProgress}%
+                  </span>
                 </div>
-                <span className="text-xs text-zinc-500 shrink-0">{taskProgress}%</span>
-              </div>
+                {krProgress !== null && taskProgress !== null && (
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-xs text-zinc-600 shrink-0 w-6">T</span>
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-zinc-500 rounded-full transition-all duration-500"
+                        style={{ width: `${taskProgress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-zinc-500 shrink-0">{taskProgress}%</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <div className="text-zinc-500 shrink-0">
@@ -1004,17 +990,19 @@ export default function ObjectivesPage() {
   if (!data) return <LoadingSpinner />;
 
   const all = data?.objectives ?? [];
-  const lifeAreas = all.filter((o) => o.key_results.length === 0 && o.tasks.length === 0 && o.status === "active");
-  const realObjectives = all.filter((o) => o.key_results.length > 0 || o.tasks.length > 0);
-  const filtered = filter === "all" ? realObjectives : realObjectives.filter((o) => o.status === filter);
-  const { roots, childMap } = buildTree(filtered);
+  // Build full tree from ALL objectives (not just those with KRs/tasks)
+  const { roots: allRoots, childMap } = buildTree(all);
+  // Filter which root objectives to show, but children always inherit
+  const filteredRoots = filter === "all" ? allRoots : allRoots.filter((o) => o.status === filter);
+  // For list view, show flat filtered list
+  const filtered = filter === "all" ? all : all.filter((o) => o.status === filter);
 
   const counts = {
-    all: realObjectives.length,
-    active: realObjectives.filter((o) => o.status === "active").length,
-    completed: realObjectives.filter((o) => o.status === "completed").length,
-    paused: realObjectives.filter((o) => o.status === "paused").length,
-    abandoned: realObjectives.filter((o) => o.status === "abandoned").length,
+    all: all.length,
+    active: all.filter((o) => o.status === "active").length,
+    completed: all.filter((o) => o.status === "completed").length,
+    paused: all.filter((o) => o.status === "paused").length,
+    abandoned: all.filter((o) => o.status === "abandoned").length,
   };
 
   return (
@@ -1028,28 +1016,6 @@ export default function ObjectivesPage() {
           </button>
         }
       />
-
-      {/* Life Areas */}
-      {lifeAreas.length > 0 && (
-        <div className="mb-6">
-          <div className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-3">
-            Life Areas
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {lifeAreas.map((obj) => (
-              <ObjectiveCard
-                key={obj.id}
-                obj={obj}
-                onEdit={setEditingObj}
-                onDelete={setDeletingObj}
-                onAddKR={setAddingKRToObj}
-                onEditKR={(obj, kr) => setEditingKR({ obj, kr })}
-                onDeleteKR={(obj, kr) => setDeletingKR({ obj, kr })}
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Goal Momentum (F3) */}
       {momentumData && momentumData.objectives.length > 0 && (
@@ -1118,11 +1084,14 @@ export default function ObjectivesPage() {
       </div>
 
       {/* Objectives — Tree or List */}
-      {filtered.length === 0 ? (
-        <EmptyState emoji="🎯" message="Keine Objectives gefunden" />
+      {all.length === 0 ? (
+        <EmptyState emoji="🎯" message="Noch keine Objectives — leg dein erstes an!" />
       ) : viewMode === "tree" ? (
+        filteredRoots.length === 0 ? (
+          <EmptyState emoji="🎯" message="Keine Objectives gefunden" />
+        ) : (
         <div className="space-y-4">
-          {roots.map((obj) => (
+          {filteredRoots.map((obj) => (
             <ObjectiveTreeNode
               key={obj.id}
               obj={obj}
@@ -1137,6 +1106,7 @@ export default function ObjectivesPage() {
             />
           ))}
         </div>
+        )
       ) : (
         <div className="space-y-4">
           {filtered.map((obj) => (
