@@ -156,6 +156,11 @@ export default function SettingsPage() {
   const [quietStart, setQuietStart] = useState(22);
   const [quietEnd, setQuietEnd] = useState(8);
   const [quietSaving, setQuietSaving] = useState(false);
+
+  // iCal
+  const [icalUrl, setIcalUrl] = useState("");
+  const [icalStatus, setIcalStatus] = useState("");
+  const [icalSaving, setIcalSaving] = useState(false);
   const [quietSaved, setQuietSaved] = useState(false);
 
   // Category weights
@@ -172,7 +177,35 @@ export default function SettingsPage() {
   useEffect(() => {
     const t = localStorage.getItem("api_token") ?? "";
     setTokenInput(t);
+    // Load iCal status
+    if (t) {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || window.location.origin}/api/settings/ical`, {
+        headers: { Authorization: `Bearer ${t}` },
+      })
+        .then((r) => r.json())
+        .then((d) => { if (d.ical_url) setIcalUrl(d.ical_url); })
+        .catch(() => {});
+    }
   }, []);
+
+  const handleSaveIcal = async () => {
+    setIcalSaving(true);
+    setIcalStatus("");
+    try {
+      const t = localStorage.getItem("api_token") || "";
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || window.location.origin}/api/settings/ical`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ ical_url: icalUrl || null }),
+      });
+      const data = await res.json();
+      setIcalStatus(data.message || "Gespeichert!");
+    } catch {
+      setIcalStatus("Fehler beim Speichern");
+    } finally {
+      setIcalSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (settings) {
@@ -768,6 +801,37 @@ export default function SettingsPage() {
             )}
           </Section>
         )}
+
+        {/* ── Google Calendar iCal Sync ─────────────────────────── */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+          <h2 className="text-white font-semibold mb-1">📅 Google Calendar Sync</h2>
+          <p className="text-zinc-500 text-sm mb-4">
+            Verbinde deinen Google Kalender: <a href="https://calendar.google.com" target="_blank" rel="noopener" className="text-blue-400 underline">calendar.google.com</a>
+            {" → Einstellungen → Deinen Kalender → \"Geheime Adresse im iCal-Format\""}
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={icalUrl}
+              onChange={(e) => setIcalUrl(e.target.value)}
+              placeholder="https://calendar.google.com/calendar/ical/..."
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 min-w-0"
+            />
+            <button
+              onClick={handleSaveIcal}
+              disabled={icalSaving}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors disabled:opacity-40 shrink-0"
+            >
+              {icalSaving ? "..." : "Verbinden"}
+            </button>
+          </div>
+          {icalStatus && (
+            <p className={`text-xs mt-2 ${icalStatus.includes("Fehler") ? "text-red-400" : "text-green-400"}`}>{icalStatus}</p>
+          )}
+          {icalUrl && !icalStatus && (
+            <p className="text-zinc-500 text-xs mt-2">✓ Verbunden — sync alle 15 Minuten</p>
+          )}
+        </div>
 
         {/* ── Über Personal OS ─────────────────────────────────── */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">

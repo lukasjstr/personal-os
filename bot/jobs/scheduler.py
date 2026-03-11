@@ -71,5 +71,27 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
-    logger.info("Scheduler initialized with 5 active jobs: daily_suggestions, morning_brief, evening_review, reminders, weekly_reflection")
+    # iCal sync: every 15 minutes
+    from bot.jobs.ical_sync import sync_all_users as ical_sync_all
+    _scheduler.add_job(
+        ical_sync_all,
+        "interval",
+        minutes=15,
+        id="ical_sync",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Gap nudge: every 30 minutes during active hours
+    from bot.jobs.gap_nudge import send_gap_nudges
+    _scheduler.add_job(
+        send_gap_nudges,
+        "interval",
+        minutes=30,
+        id="gap_nudge",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logger.info("Scheduler initialized with 7 active jobs: daily_suggestions, morning_brief, evening_review, reminders, weekly_reflection, ical_sync, gap_nudge")
     return _scheduler

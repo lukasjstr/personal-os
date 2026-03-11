@@ -42,6 +42,7 @@ class User(Base):
     level: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     api_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
+    ical_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
@@ -271,6 +272,8 @@ class CalendarEvent(Base):
     linked_routine_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("routines.id", ondelete="SET NULL"))
     ical_uid: Mapped[str] = mapped_column(String(255), unique=True, default=lambda: f"{uuid.uuid4()}@personal-os")
     reminder_minutes_before: Mapped[int] = mapped_column(Integer, default=30)
+    external_id: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, index=True)
+    external_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="calendar_events")

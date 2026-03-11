@@ -2033,6 +2033,27 @@ async def complete_task_endpoint(
     if leveled_up:
         await send_message(user.telegram_id, f"⬆️ LEVEL UP! Du bist jetzt Level {new_level}! 🎉")
 
+    # Push next action to Telegram
+    try:
+        push_msg = f"✅ *{task.title}* erledigt!"
+        if objective_completed:
+            push_msg += f"\n\n🎯 Objective abgeschlossen! Großartig!"
+        elif next_action:
+            action_title = next_action.get("title") or next_action.get("description") or str(next_action)
+            push_msg += f"\n\n➡️ *Nächste Aktion:*\n☐ {action_title}"
+        else:
+            # Find next priority task
+            from bot.core.tasks import get_open_tasks
+            open_tasks = await get_open_tasks(session, user.id, limit=3)
+            remaining = [t for t in open_tasks if t.id != task_id]
+            if remaining:
+                push_msg += f"\n\n➡️ *Als nächstes:*\n☐ [P{remaining[0].priority}] {remaining[0].title}"
+            else:
+                push_msg += "\n\n🎉 Alle Tasks erledigt — Zeit für neue Ziele!"
+        await send_message(user.telegram_id, push_msg, parse_mode="Markdown")
+    except Exception as _push_err:
+        logger.warning("Next-action push failed: %s", _push_err)
+
     response: dict = {"ok": True, "task_id": task_id, "title": task.title, "xp_gained": 10}
     if kr_updated:
         response["kr_progress"] = {
@@ -5440,3 +5461,41 @@ Regeln: 3-5 KRs (echte Zahlen), 5-8 Tasks, Wochenplan nur bei Habit/Sport-Zielen
     await session.flush()
 
     return {"draft_id": draft.id, "plan": plan}
+
+
+# ─── iCal / Google Calendar Sync ─────────────────────────────────────────────
+
+class SetIcalBody(BaseModel):
+    ical_url: Optional[str] = None
+
+
+@router.get("/settings/ical")
+async def get_ical_status(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Get current iCal sync status."""
+    return {
+        "ical_url": user.ical_url,
+        "configured": bool(user.ical_url),
+    }
+
+
+@router.put("/settings/ical")
+async def set_ical_url(
+    body: SetIcalBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Save Google Calendar iCal URL and trigger immediate sync."""
+    user.ical_url = body.ical_url.strip() if body.ical_url else None
+    await session.flush()
+
+    if user.ical_url:
+        try:
+            from bot.jobs.ical_sync import sync_ical_for_user
+            count = await sync_ical_for_user(session, user)
+            return {"ok": True, "synced": count, "message": f"{count} Events importiert ✓"}
+        except Exception as e:
+            return {"ok": True, "synced": 0, "message": f"URL gespeichert, Sync fehlgeschlagen: {e}"}
+
+    return {"ok": True, "synced": 0, "message": "iCal URL entfernt"}
