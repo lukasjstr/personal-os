@@ -19,7 +19,7 @@ function NextActionCard() {
   const [completing, setCompleting] = useState(false);
   const [done, setDone] = useState(false);
 
-  if (error || !data) return null;
+  if (error || !data || !data.task) return null;
 
   const { task, reason, score } = data;
   const whyText =
