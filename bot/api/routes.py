@@ -4050,6 +4050,30 @@ async def list_notifications(
     }
 
 
+# ─── Epic 2.1: Unified Planner Snapshot models ────────────────────────────────
+
+class PlannerBlockerRef(BaseModel):
+    type: str
+    id: int
+    title: Optional[str] = None
+
+
+class PlannerBlocker(BaseModel):
+    task_id: int
+    task_title: str
+    blocked_by: list[PlannerBlockerRef]
+
+
+class PlannerProgressSummary(BaseModel):
+    completed_today: int
+    open_tasks: int
+    active_objectives: int
+    routines_done: int
+    routines_pending: int
+    pending_reminders: int
+    pending_nudges: int
+
+
 class SnoozeRequest(BaseModel):
     minutes: int = 60  # default snooze 60 minutes
 
@@ -4456,6 +4480,266 @@ async def get_autopilot_today(
             "pending": notif_pending,
             "snoozed": notif_snoozed,
             "total": len(all_notifs),
+        },
+    }
+
+
+@router.get("/autopilot/snapshot")
+async def get_autopilot_snapshot(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Epic 2.1 — Unified planner snapshot contract.
+
+    Single stable endpoint composing all planner signals:
+    - next_action: graph-aware unblocked next task (Epic 1.2)
+    - today_plan: tasks + routines + calendar sections (deterministic + optional AI summary)
+    - blockers: open tasks currently blocked by other open tasks
+    - suggestions: top pending suggestion notifications (read-only, no side-effects)
+    - progress_summary: day completion stats
+
+    Preserves all existing /autopilot/* endpoints — this is additive only.
+    """
+    import asyncio as _asyncio
+    import logging as _log
+    from datetime import timezone as _tz
+    from bot.core.completion_hooks import get_next_unblocked_action as _get_next
+    from bot.core.calendar import get_todays_events as _get_events
+    from bot.core.routines import get_todays_completions as _get_completions
+
+    _logger = _log.getLogger(__name__)
+    today = date.today()
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+
+    # ── 1. Parallel data fetch ──────────────────────────────────────────────────
+    (
+        next_action_task,
+        tasks_result,
+        routines_result,
+        completed_ids,
+        events,
+    ) = await _asyncio.gather(
+        _get_next(session, user.id),
+        session.execute(
+            select(Task)
+            .options(
+                selectinload(Task.key_result).selectinload(KeyResult.objective),
+                selectinload(Task.objective),
+            )
+            .where(and_(
+                Task.user_id == user.id,
+                Task.status.in_(["todo", "in_progress"]),
+                Task.category != "shopping",
+            ))
+            .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
+        ),
+        session.execute(
+            select(Routine)
+            .where(and_(Routine.user_id == user.id, Routine.status == "active"))
+            .order_by(Routine.sort_order, Routine.id)
+        ),
+        _get_completions(session, user.id),
+        _get_events(session, user.id),
+    )
+
+    tasks = list(tasks_result.scalars().all())
+    routines = list(routines_result.scalars().all())
+    completed_routine_ids_set: set[int] = set(completed_ids) if completed_ids else set()
+    task_by_id = {t.id: t for t in tasks}
+    task_ids = list(task_by_id.keys())
+
+    # ── 2. today_plan (reuse deterministic builder + optional AI summary) ───────
+    week_ago = datetime.utcnow().date() - timedelta(days=7)
+    latest_ref_result = await session.execute(
+        select(WeeklyReflection)
+        .where(and_(
+            WeeklyReflection.user_id == user.id,
+            WeeklyReflection.status == "completed",
+            WeeklyReflection.week_start >= week_ago,
+        ))
+        .order_by(WeeklyReflection.week_start.desc())
+        .limit(1)
+    )
+    latest_ref = latest_ref_result.scalar_one_or_none()
+    top_priorities: Optional[list] = None
+    if latest_ref and latest_ref.raw_answers:
+        top_priorities = (latest_ref.raw_answers or {}).get("top_priorities") or None
+
+    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids_set, events, today, top_priorities)
+    generated_by = "deterministic"
+
+    try:
+        from bot.ai.client import openai_client as _oai
+        top_tasks_text = "\n".join(
+            f"- [P{t.priority}] {t.title}" for t in sorted(tasks, key=lambda t: t.priority)[:6]
+        ) or "None"
+        routines_text = "\n".join(
+            f"- {r.title}" + (" (done)" if r.id in completed_routine_ids_set else "")
+            for r in routines[:5]
+        ) or "None"
+        events_text = "\n".join(
+            f"- {e.start_time.strftime('%H:%M')} {e.title}" for e in events[:5]
+        ) or "None"
+        prompt = (
+            f"Today is {today}. Write one crisp sentence (max 20 words) summarising the day ahead "
+            f"based on: tasks: {top_tasks_text} | routines: {routines_text} | events: {events_text}."
+        )
+        ai_resp = await _asyncio.wait_for(
+            _oai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=60,
+                temperature=0.4,
+            ),
+            timeout=8.0,
+        )
+        ai_text = (ai_resp.choices[0].message.content or "").strip()
+        if ai_text:
+            plan["summary"] = ai_text
+            generated_by = "ai"
+    except Exception as exc:
+        _logger.debug("snapshot AI summary skipped: %s", exc)
+
+    # ── 3. next_action ──────────────────────────────────────────────────────────
+    next_action = None
+    if next_action_task:
+        obj_id = next_action_task.get("objective_id")
+        if obj_id and not next_action_task.get("objective_title"):
+            obj_row = await session.get(Objective, obj_id)
+            if obj_row:
+                next_action_task = {**next_action_task, "objective_title": obj_row.title}
+        next_action = {
+            **next_action_task,
+            "type": "task",
+            "reason": _compute_next_action_reason(next_action_task, today),
+        }
+
+    # ── 4. blockers: open tasks blocked by other open tasks ─────────────────────
+    blockers: list[dict] = []
+    if task_ids:
+        rel_res = await session.execute(
+            select(NodeRelation).where(
+                and_(
+                    NodeRelation.user_id == user.id,
+                    or_(
+                        and_(
+                            NodeRelation.relation_type == "blocks",
+                            NodeRelation.from_type == "task",
+                            NodeRelation.from_id.in_(task_ids),
+                            NodeRelation.to_type == "task",
+                            NodeRelation.to_id.in_(task_ids),
+                        ),
+                        and_(
+                            NodeRelation.relation_type == "depends_on",
+                            NodeRelation.from_type == "task",
+                            NodeRelation.from_id.in_(task_ids),
+                            NodeRelation.to_type == "task",
+                            NodeRelation.to_id.in_(task_ids),
+                        ),
+                    ),
+                )
+            )
+        )
+        block_rels = list(rel_res.scalars().all())
+
+        blocked_map: dict[int, list[dict]] = defaultdict(list)
+        for rel in block_rels:
+            if rel.relation_type == "blocks":
+                # from_task blocks to_task
+                blocker_task = task_by_id.get(rel.from_id)
+                blocked_map[rel.to_id].append({
+                    "type": "task",
+                    "id": rel.from_id,
+                    "title": blocker_task.title if blocker_task else None,
+                })
+            elif rel.relation_type == "depends_on":
+                # from_task depends_on to_task → from_task is blocked by to_task
+                blocker_task = task_by_id.get(rel.to_id)
+                blocked_map[rel.from_id].append({
+                    "type": "task",
+                    "id": rel.to_id,
+                    "title": blocker_task.title if blocker_task else None,
+                })
+
+        for blocked_id, blocker_refs in blocked_map.items():
+            t = task_by_id.get(blocked_id)
+            if t:
+                blockers.append({
+                    "task_id": blocked_id,
+                    "task_title": t.title,
+                    "blocked_by": blocker_refs,
+                })
+
+    # ── 5. suggestions: top pending suggestion notifications (read-only) ─────────
+    suggestions_res = await session.execute(
+        select(AutopilotNotification)
+        .where(and_(
+            AutopilotNotification.user_id == user.id,
+            AutopilotNotification.notification_type == "suggestion",
+            AutopilotNotification.status == "pending",
+        ))
+        .order_by(AutopilotNotification.created_at.desc())
+        .limit(5)
+    )
+    suggestions = [
+        {
+            "notification_id": n.id,
+            "type": "suggestion",
+            "message": n.body,
+            "title": n.title,
+        }
+        for n in suggestions_res.scalars().all()
+    ]
+
+    # ── 6. progress_summary ─────────────────────────────────────────────────────
+    completed_today_res = await session.execute(
+        select(func.count(Task.id)).where(and_(
+            Task.user_id == user.id,
+            Task.completed_at.is_not(None),
+            Task.completed_at >= datetime.combine(today, datetime.min.time()),
+        ))
+    )
+    active_obj_res = await session.execute(
+        select(func.count(Objective.id)).where(
+            and_(Objective.user_id == user.id, Objective.status == "active")
+        )
+    )
+    rem_count_res = await session.execute(
+        select(func.count(ScheduledReminder.id)).where(and_(
+            ScheduledReminder.user_id == user.id,
+            ScheduledReminder.status == "pending",
+            ScheduledReminder.scheduled_for >= now,
+        ))
+    )
+    nudge_count_res = await session.execute(
+        select(func.count(AutopilotNotification.id)).where(and_(
+            AutopilotNotification.user_id == user.id,
+            AutopilotNotification.status == "pending",
+        ))
+    )
+
+    routines_done = len(completed_routine_ids_set & {r.id for r in routines})
+    routines_pending = len([r for r in routines if r.id not in completed_routine_ids_set])
+
+    return {
+        "date": today.isoformat(),
+        "generated_by": generated_by,
+        "next_action": next_action,
+        "today_plan": {
+            "date": today.isoformat(),
+            "generated_by": generated_by,
+            **plan,
+        },
+        "blockers": blockers,
+        "suggestions": suggestions,
+        "progress_summary": {
+            "completed_today": int(completed_today_res.scalar() or 0),
+            "open_tasks": len(tasks),
+            "active_objectives": int(active_obj_res.scalar() or 0),
+            "routines_done": routines_done,
+            "routines_pending": routines_pending,
+            "pending_reminders": int(rem_count_res.scalar() or 0),
+            "pending_nudges": int(nudge_count_res.scalar() or 0),
         },
     }
 

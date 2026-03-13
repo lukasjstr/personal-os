@@ -632,6 +632,54 @@ export interface AutopilotSuggestionsResponse {
   generated_at: string;
 }
 
+// ─── Epic 2.1: Unified Planner Snapshot Types ─────────────────────────────────
+
+export interface PlannerBlockerRef {
+  type: string;
+  id: number;
+  title: string | null;
+}
+
+export interface PlannerBlocker {
+  task_id: number;
+  task_title: string;
+  blocked_by: PlannerBlockerRef[];
+}
+
+export interface PlannerSuggestion {
+  notification_id: number | null;
+  type: string;
+  message: string;
+  title: string | null;
+}
+
+export interface PlannerProgressSummary {
+  completed_today: number;
+  open_tasks: number;
+  active_objectives: number;
+  routines_done: number;
+  routines_pending: number;
+  pending_reminders: number;
+  pending_nudges: number;
+}
+
+export interface PlannerSnapshot {
+  date: string;
+  generated_by: "ai" | "deterministic";
+  next_action: (AutopilotNextAction["task"] & {
+    type: "task";
+    reason: string | null;
+    why_selected?: string | null;
+    blocked_by?: PlannerBlockerRef[];
+    unlocks_count?: number;
+    contributes_to?: PlannerBlockerRef[];
+  }) | null;
+  today_plan: AutopilotDailyPlan;
+  blockers: PlannerBlocker[];
+  suggestions: PlannerSuggestion[];
+  progress_summary: PlannerProgressSummary;
+}
+
 // ─── Reflection Types ─────────────────────────────────────────────────────────
 
 export interface ReflectionAiSummary {
@@ -813,6 +861,7 @@ export const api = {
     apiPost<{ ok: boolean }>(`/api/objectives/proposal-drafts/${id}/review`, { action }),
   executeProposalDraft: (id: number) =>
     apiPost<{ ok: boolean }>(`/api/objectives/proposal-drafts/${id}/execute`, {}),
+  autopilotSnapshot: () => apiFetch<PlannerSnapshot>("/api/autopilot/snapshot"),
   autopilotDailyPlan: () => apiFetch<AutopilotDailyPlan>("/api/autopilot/daily-plan"),
   autopilotActionQueue: () => apiFetch<AutopilotActionQueue>("/api/autopilot/action-queue"),
   autopilotNextAction: () => apiFetch<AutopilotNextAction>("/api/autopilot/next-action"),

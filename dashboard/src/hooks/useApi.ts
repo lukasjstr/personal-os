@@ -105,6 +105,12 @@ export function useTodaySuggestions() {
   return useSWR("today-suggestions", () => api.todaySuggestions(), { refreshInterval: 300_000 });
 }
 
+export function useAutopilotSnapshot() {
+  return useSWR("autopilot-snapshot", () => api.autopilotSnapshot(), {
+    refreshInterval: 120_000,
+  });
+}
+
 export function useAutopilotDailyPlan() {
   return useSWR("autopilot-daily-plan", () => api.autopilotDailyPlan(), {
     refreshInterval: 300_000,
