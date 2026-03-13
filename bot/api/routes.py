@@ -4137,8 +4137,17 @@ def _build_deterministic_daily_plan(
     events: list,
     today: date,
     top_priorities: Optional[list] = None,
+    now_dt: Optional[datetime] = None,
+    graph_data: Optional[dict] = None,
 ) -> dict:
-    """Build a fully deterministic plan — no AI required."""
+    """Build a fully deterministic plan — no AI required.
+
+    Epic 2.2: suggested_blocks now use the calendar-aware free-slot planner.
+    New optional kwargs (now_dt, graph_data) are backward compatible — callers
+    that omit them get deterministic fallback behaviour identical to before.
+    """
+    from bot.core.free_slot_planner import plan_free_slots as _plan_slots
+
     # Score tasks
     scored: list[tuple[int, object]] = []
     for t in tasks:
@@ -4157,8 +4166,6 @@ def _build_deterministic_daily_plan(
             score = int(score * 1.5)
         scored.append((score, t))
     scored.sort(key=lambda x: -x[0])
-
-    today_str = today.isoformat()
 
     # Sections
     sections: list[dict] = []
@@ -4211,37 +4218,23 @@ def _build_deterministic_daily_plan(
     if event_items:
         sections.append({"id": "events", "title": "Events Today", "items": event_items})
 
-    # Suggested blocks: 1-hour task blocks in free time (08:00–21:00)
-    occupied: set[int] = set()
-    for e in events:
-        if not e.all_day:
-            h_start = e.start_time.hour
-            h_end = e.end_time.hour if e.end_time else h_start + 1
-            for hh in range(h_start, min(h_end + 1, 22)):
-                occupied.add(hh)
-
+    # ── Epic 2.2: Calendar-aware free-slot suggested blocks ───────────────────
+    # Use the free-slot planner; enrich block dicts with legacy "title"/"reason"
+    # fields so existing consumers continue to work unchanged.
+    slot_plan = _plan_slots(
+        events=events,
+        tasks=[t for _, t in scored],
+        today=today,
+        now_dt=now_dt,
+        graph_data=graph_data,
+    )
     suggested_blocks: list[dict] = []
-    cursor = 9
-    for sc, t in scored[:3]:
-        while cursor in occupied and cursor < 21:
-            cursor += 1
-        if cursor >= 21:
-            break
-        if t.due_date and t.due_date < today:
-            reason = "Overdue — tackle first"
-        elif t.due_date and t.due_date == today:
-            reason = "Due today"
-        else:
-            reason = "Top priority task"
-        suggested_blocks.append({
-            "start_time": f"{cursor:02d}:00",
-            "end_time": f"{cursor + 1:02d}:00",
-            "title": t.title,
-            "reason": reason,
-            "linked_task_id": t.id,
-        })
-        occupied.add(cursor)
-        cursor += 1
+    for blk in slot_plan["suggested_blocks"]:
+        enriched = dict(blk)
+        # Backward-compat aliases: "title" and "reason" expected by older consumers
+        enriched.setdefault("title", blk.get("task_title") or "")
+        enriched.setdefault("reason", blk.get("task_reason") or blk.get("slot_reason") or "")
+        suggested_blocks.append(enriched)
 
     # Summary sentence
     open_count = len(scored)
@@ -4258,7 +4251,19 @@ def _build_deterministic_daily_plan(
         parts.append(f"{len(event_items)} event{'s' if len(event_items) != 1 else ''} today")
     summary = " · ".join(parts) if parts else "Nothing scheduled — enjoy the free time!"
 
-    return {"summary": summary, "sections": sections, "suggested_blocks": suggested_blocks}
+    return {
+        "summary": summary,
+        "sections": sections,
+        "suggested_blocks": suggested_blocks,
+        # Epic 2.2: expose planner metadata for dashboard/mobile consumers
+        "free_slot_meta": {
+            "free_minutes_total": slot_plan["free_minutes_total"],
+            "free_minutes_used": slot_plan["free_minutes_used"],
+            "windows": slot_plan["windows"],
+            "fallback": slot_plan["fallback"],
+            "data_quality": slot_plan["data_quality"],
+        },
+    }
 
 
 # ─── P2.2: Explainability helpers ─────────────────────────────────────────────
@@ -4565,7 +4570,10 @@ async def get_autopilot_snapshot(
     if latest_ref and latest_ref.raw_answers:
         top_priorities = (latest_ref.raw_answers or {}).get("top_priorities") or None
 
-    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids_set, events, today, top_priorities)
+    plan = _build_deterministic_daily_plan(
+        tasks, routines, completed_routine_ids_set, events, today, top_priorities,
+        now_dt=now,
+    )
     generated_by = "deterministic"
 
     try:
@@ -4744,6 +4752,91 @@ async def get_autopilot_snapshot(
     }
 
 
+@router.get("/autopilot/free-slots")
+async def get_free_slots(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Epic 2.2 — Calendar-aware free-slot plan for today.
+
+    Returns:
+    - windows: all free time windows in working hours (08:00–21:00)
+    - suggested_blocks: best-fit tasks matched to realistic slots
+    - free_minutes_total / free_minutes_used: time budget overview
+    - fallback: true when calendar data is absent (suggestions are priority-only)
+    - data_quality: "good" | "no_events" | "no_tasks" | "poor"
+
+    Each suggested block includes:
+    - start_time / end_time / duration_minutes
+    - window_type: large/medium/small
+    - is_near_meeting: true when slot is adjacent to a calendar event
+    - task_id / task_title / task_priority
+    - slot_reason: why this slot fits
+    - task_reason: why this task was chosen (urgency, leverage, priority)
+    - confidence: "high" | "medium" | "low"
+
+    This endpoint is additive — existing /autopilot/* endpoints unchanged.
+    """
+    import asyncio as _asyncio
+    from datetime import timezone as _tz
+    from bot.core.calendar import get_todays_events as _get_events
+    from bot.core.free_slot_planner import plan_free_slots as _plan_slots
+
+    today = date.today()
+    now = datetime.now(tz=_tz.utc).replace(tzinfo=None)
+
+    tasks_result, events = await _asyncio.gather(
+        session.execute(
+            select(Task)
+            .where(and_(
+                Task.user_id == user.id,
+                Task.status.in_(["todo", "in_progress"]),
+                Task.category != "shopping",
+            ))
+            .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
+        ),
+        _get_events(session, user.id),
+    )
+    tasks = list(tasks_result.scalars().all())
+    task_ids = [t.id for t in tasks]
+
+    # ── Optional: enrich with graph leverage data ────────────────────────────
+    graph_data: dict[int, dict] = {}
+    if task_ids:
+        rel_res = await session.execute(
+            select(NodeRelation).where(and_(
+                NodeRelation.user_id == user.id,
+                NodeRelation.from_type == "task",
+                NodeRelation.from_id.in_(task_ids),
+            ))
+        )
+        rels = list(rel_res.scalars().all())
+        for rel in rels:
+            tid = rel.from_id
+            if tid not in graph_data:
+                graph_data[tid] = {"unlocks_count": 0, "contributes_to": []}
+            if rel.relation_type in ("unlocks", "blocks"):
+                graph_data[tid]["unlocks_count"] = graph_data[tid]["unlocks_count"] + 1
+            elif rel.relation_type == "contributes_to":
+                graph_data[tid]["contributes_to"].append({
+                    "type": rel.to_type,
+                    "id": rel.to_id,
+                })
+
+    slot_plan = _plan_slots(
+        events=events,
+        tasks=tasks,
+        today=today,
+        now_dt=now,
+        graph_data=graph_data,
+    )
+
+    return {
+        "date": today.isoformat(),
+        **slot_plan,
+    }
+
+
 @router.get("/autopilot/daily-plan")
 async def get_daily_plan(
     user: User = Depends(get_current_user),
@@ -4761,6 +4854,7 @@ async def get_daily_plan(
 
     _logger = _log.getLogger(__name__)
     today = date.today()
+    now = datetime.utcnow()
 
     # Fetch data in parallel
     tasks_result, routines_result, completed_ids, events = await _asyncio.gather(
@@ -4807,7 +4901,10 @@ async def get_daily_plan(
     if latest_ref and latest_ref.raw_answers:
         top_priorities = (latest_ref.raw_answers or {}).get("top_priorities") or None
 
-    plan = _build_deterministic_daily_plan(tasks, routines, completed_routine_ids, events, today, top_priorities)
+    plan = _build_deterministic_daily_plan(
+        tasks, routines, completed_routine_ids, events, today, top_priorities,
+        now_dt=now,
+    )
     generated_by = "deterministic"
 
     # Optional AI summary (non-blocking, 8s timeout)
