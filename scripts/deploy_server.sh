@@ -18,7 +18,9 @@ git checkout main
 git pull --ff-only origin main
 
 echo "==> Running DB migration"
-venv/bin/alembic upgrade head
+# Note: 'head' is ambiguous due to duplicate rev 010 (fix in Epic 3.1).
+# Explicitly target the latest revision until alembic hygiene is resolved.
+venv/bin/alembic upgrade 019
 
 echo "==> Restarting API"
 systemctl restart personal-os
