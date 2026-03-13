@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database.db import get_session
+from bot.database.connection import get_session
 from bot.database.models import CalendarEvent, User
 
 logger = logging.getLogger(__name__)
