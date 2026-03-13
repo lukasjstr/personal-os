@@ -1,7 +1,7 @@
 """Phase A3 — Add action_queue_items table
 
 Revision ID: 011
-Revises: 010
+Revises: 010c
 Create Date: 2026-03-05 00:00:00.000000
 
 Adds:
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "011"
-down_revision: Union[str, None] = "010"
+down_revision: Union[str, None] = "010c"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

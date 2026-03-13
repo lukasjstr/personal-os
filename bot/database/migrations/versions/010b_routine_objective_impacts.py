@@ -1,21 +1,24 @@
 """Phase B5 — Routine-Objective Impact Scoring
 
-Revision ID: 010
-Revises: 009
+Revision ID: 010b
+Revises: 010
 Create Date: 2026-03-05 00:00:00.000000
 
 Adds:
 - routine_objective_impacts table: M2M link between routines and objectives
   with an integer impact_score (1–5) and optional notes.
   Safe defaults; existing rows unaffected.
+
+NOTE: Was originally filed as duplicate revision "010". Renumbered to "010b"
+during Epic 3.1 alembic hygiene (2026-03-13).
 """
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "010"
-down_revision: Union[str, None] = "009"
+revision: str = "010b"
+down_revision: Union[str, None] = "010"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
