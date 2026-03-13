@@ -109,6 +109,17 @@ async function apiDelete<T>(path: string): Promise<T> {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface NodeRelation {
+  id: number;
+  relation_type: "blocks" | "depends_on" | "contributes_to" | "unlocks";
+  from_type: "task" | "objective" | "key_result";
+  from_id: number;
+  to_type: "task" | "objective" | "key_result";
+  to_id: number;
+  note: string | null;
+  created_at: string;
+}
+
 export interface KeyResult {
   id: number;
   title: string;
@@ -141,6 +152,7 @@ export interface Objective {
   created_at: string;
   key_results: KeyResult[];
   tasks: ObjectiveTask[];
+  relations?: NodeRelation[];
 }
 
 export interface Task {
@@ -160,6 +172,7 @@ export interface Task {
   key_result_title: string | null;
   objective_title: string | null;
   created_at: string;
+  relations?: NodeRelation[];
 }
 
 export interface Log {

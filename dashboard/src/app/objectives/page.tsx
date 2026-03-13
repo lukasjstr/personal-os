@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import useSWR from "swr";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
@@ -9,7 +9,7 @@ import { ToastContainer, useToast } from "@/components/Toast";
 import { useObjectives } from "@/hooks/useApi";
 import { CATEGORY_EMOJI, CATEGORY_COLORS, formatDate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Objective, ObjectiveTask, KeyResult, GoalMomentumResponse } from "@/lib/api";
+import type { Objective, ObjectiveTask, KeyResult, GoalMomentumResponse, NodeRelation } from "@/lib/api";
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch, Sparkles, Check, X } from "lucide-react";
 import type { ObjectiveAnalysis } from "@/lib/api";
 
@@ -389,8 +389,56 @@ function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
 
 // ─── Objective Card ───────────────────────────────────────────────────────────
 
+function objRelationChips(relations: NodeRelation[], objId: number, objectiveMap: Map<number, string>): React.ReactNode[] {
+  const chips: React.ReactNode[] = [];
+  for (const rel of relations) {
+    if (rel.relation_type === "blocks" && rel.to_type === "objective" && rel.to_id === objId) {
+      const title = objectiveMap.get(rel.from_id) ?? `#${rel.from_id}`;
+      chips.push(
+        <span key={`bl-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-900/30 text-red-400 border border-red-800/40">
+          🔒 blocked by: {title.length > 28 ? title.slice(0, 28) + "…" : title}
+        </span>
+      );
+    }
+    if (rel.relation_type === "depends_on" && rel.from_type === "objective" && rel.from_id === objId) {
+      const title = objectiveMap.get(rel.to_id) ?? `#${rel.to_id}`;
+      chips.push(
+        <span key={`dep-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-900/30 text-red-400 border border-red-800/40">
+          ⬆ needs: {title.length > 28 ? title.slice(0, 28) + "…" : title}
+        </span>
+      );
+    }
+    if (rel.relation_type === "blocks" && rel.from_type === "objective" && rel.from_id === objId) {
+      const title = objectiveMap.get(rel.to_id) ?? `#${rel.to_id}`;
+      chips.push(
+        <span key={`blk-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-orange-900/30 text-orange-400 border border-orange-800/40">
+          → blocks: {title.length > 28 ? title.slice(0, 28) + "…" : title}
+        </span>
+      );
+    }
+    if (rel.relation_type === "unlocks" && rel.from_id === objId) {
+      const title = rel.to_type === "objective" ? (objectiveMap.get(rel.to_id) ?? `#${rel.to_id}`) : `${rel.to_type} #${rel.to_id}`;
+      chips.push(
+        <span key={`ul-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-900/30 text-green-400 border border-green-800/40">
+          🔓 unlocks: {title.length > 28 ? title.slice(0, 28) + "…" : title}
+        </span>
+      );
+    }
+    if (rel.relation_type === "contributes_to" && rel.from_id === objId) {
+      const title = rel.to_type === "objective" ? (objectiveMap.get(rel.to_id) ?? `obj #${rel.to_id}`) : `${rel.to_type} #${rel.to_id}`;
+      chips.push(
+        <span key={`ct-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-purple-900/40 text-purple-300 border border-purple-700/40">
+          ↑ {title.length > 30 ? title.slice(0, 30) + "…" : title}
+        </span>
+      );
+    }
+  }
+  return chips;
+}
+
 function ObjectiveCard({
   obj,
+  objectiveMap,
   onEdit,
   onDelete,
   onAddKR,
@@ -398,6 +446,7 @@ function ObjectiveCard({
   onDeleteKR,
 }: {
   obj: Objective;
+  objectiveMap: Map<number, string>;
   onEdit: (obj: Objective) => void;
   onDelete: (obj: Objective) => void;
   onAddKR: (obj: Objective) => void;
@@ -455,6 +504,14 @@ function ObjectiveCard({
             {obj.description && (
               <p className="text-zinc-500 text-xs truncate">{obj.description}</p>
             )}
+            {obj.relations && obj.relations.length > 0 && (() => {
+              const chips = objRelationChips(obj.relations, obj.id, objectiveMap);
+              return chips.length > 0 ? (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {chips}
+                </div>
+              ) : null;
+            })()}
             {isLifeArea ? (
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-xs text-zinc-500 italic">Übergeordnetes Ziel — füge Key Results oder Unterziele hinzu</span>
@@ -779,6 +836,7 @@ function ObjectiveTreeNode({
   obj,
   childMap,
   depth,
+  objectiveMap,
   onEdit,
   onDelete,
   onAddKR,
@@ -789,6 +847,7 @@ function ObjectiveTreeNode({
   obj: Objective;
   childMap: Map<number, Objective[]>;
   depth: number;
+  objectiveMap: Map<number, string>;
   onEdit: (obj: Objective) => void;
   onDelete: (obj: Objective) => void;
   onAddKR: (obj: Objective) => void;
@@ -803,6 +862,7 @@ function ObjectiveTreeNode({
     <div className={cn(depth > 0 && "ml-6 border-l-2 border-zinc-700/50 pl-4")}>
       <ObjectiveCard
         obj={obj}
+        objectiveMap={objectiveMap}
         onEdit={onEdit}
         onDelete={onDelete}
         onAddKR={onAddKR}
@@ -826,6 +886,7 @@ function ObjectiveTreeNode({
               obj={child}
               childMap={childMap}
               depth={depth + 1}
+              objectiveMap={objectiveMap}
               onEdit={onEdit}
               onDelete={onDelete}
               onAddKR={onAddKR}
@@ -990,6 +1051,7 @@ export default function ObjectivesPage() {
   if (!data) return <LoadingSpinner />;
 
   const all = data?.objectives ?? [];
+  const objectiveMap = new Map(all.map((o) => [o.id, o.title]));
   // Build full tree from ALL objectives (not just those with KRs/tasks)
   const { roots: allRoots, childMap } = buildTree(all);
   // Filter which root objectives to show, but children always inherit
@@ -1097,6 +1159,7 @@ export default function ObjectivesPage() {
               obj={obj}
               childMap={childMap}
               depth={0}
+              objectiveMap={objectiveMap}
               onEdit={setEditingObj}
               onDelete={setDeletingObj}
               onAddKR={setAddingKRToObj}
@@ -1113,6 +1176,7 @@ export default function ObjectivesPage() {
             <ObjectiveCard
               key={obj.id}
               obj={obj}
+              objectiveMap={objectiveMap}
               onEdit={setEditingObj}
               onDelete={setDeletingObj}
               onAddKR={setAddingKRToObj}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -8,7 +8,7 @@ import { ToastContainer, useToast } from "@/components/Toast";
 import { useAllTasks, useObjectives } from "@/hooks/useApi";
 import { CATEGORY_COLORS, PRIORITY_LABEL, formatDate, formatTimeAgo, truncate, cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Task } from "@/lib/api";
+import type { Task, NodeRelation } from "@/lib/api";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
 const STATUS_SECTIONS = [
@@ -362,18 +362,75 @@ function CreateTaskModal({
   );
 }
 
+// ─── Relation Chips ───────────────────────────────────────────────────────────
+
+function relationChips(
+  relations: NodeRelation[],
+  nodeId: number,
+  nodeType: "task" | "objective",
+  taskMap: Map<number, Task>,
+  objectiveMap: Map<number, string>,
+): React.ReactNode[] {
+  const chips: React.ReactNode[] = [];
+  for (const rel of relations) {
+    if (rel.relation_type === "blocks" && rel.to_type === nodeType && rel.to_id === nodeId) {
+      const title = taskMap.get(rel.from_id)?.title ?? objectiveMap.get(rel.from_id) ?? `#${rel.from_id}`;
+      chips.push(
+        <span key={`bl-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-red-900/30 text-red-400 border border-red-800/40">
+          🔒 blocked by: {truncate(title, 24)}
+        </span>
+      );
+    }
+    if (rel.relation_type === "depends_on" && rel.from_type === nodeType && rel.from_id === nodeId) {
+      const title = rel.to_type === "task" ? (taskMap.get(rel.to_id)?.title ?? `#${rel.to_id}`) : (objectiveMap.get(rel.to_id) ?? `${rel.to_type} #${rel.to_id}`);
+      chips.push(
+        <span key={`dep-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-red-900/30 text-red-400 border border-red-800/40">
+          ⬆ needs: {truncate(title, 24)}
+        </span>
+      );
+    }
+    if (rel.relation_type === "blocks" && rel.from_type === nodeType && rel.from_id === nodeId) {
+      const title = rel.to_type === "task" ? (taskMap.get(rel.to_id)?.title ?? `#${rel.to_id}`) : (objectiveMap.get(rel.to_id) ?? `${rel.to_type} #${rel.to_id}`);
+      chips.push(
+        <span key={`blk-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-orange-900/30 text-orange-400 border border-orange-800/40">
+          → blocks: {truncate(title, 24)}
+        </span>
+      );
+    }
+    if (rel.relation_type === "unlocks" && rel.from_id === nodeId) {
+      const title = rel.to_type === "task" ? (taskMap.get(rel.to_id)?.title ?? `#${rel.to_id}`) : (objectiveMap.get(rel.to_id) ?? `${rel.to_type} #${rel.to_id}`);
+      chips.push(
+        <span key={`ul-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-green-900/30 text-green-400 border border-green-800/40">
+          🔓 unlocks: {truncate(title, 24)}
+        </span>
+      );
+    }
+    if (rel.relation_type === "contributes_to" && rel.from_id === nodeId) {
+      const title = rel.to_type === "objective" ? (objectiveMap.get(rel.to_id) ?? `obj #${rel.to_id}`) : `${rel.to_type} #${rel.to_id}`;
+      chips.push(
+        <span key={`ct-${rel.id}`} className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-purple-900/40 text-purple-300 border border-purple-700/40">
+          ↑ {truncate(title, 28)}
+        </span>
+      );
+    }
+  }
+  return chips;
+}
+
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
 function TaskCard({
   task,
   indent = 0,
   taskMap,
+  objectiveMap,
   onEdit,
   onDelete,
 }: {
   task: Task;
   indent?: number;
   taskMap: Map<number, Task>;
+  objectiveMap: Map<number, string>;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
 }) {
@@ -444,6 +501,8 @@ function TaskCard({
             </span>
           )}
 
+          {task.relations && task.relations.length > 0 && relationChips(task.relations, task.id, "task", taskMap, objectiveMap)}
+
           {task.parent_task_id && (
             <span className="text-xs text-zinc-600 shrink-0">↳ Sub-Task</span>
           )}
@@ -494,12 +553,14 @@ function KanbanSection({
   section,
   tasks,
   taskMap,
+  objectiveMap,
   onEdit,
   onDelete,
 }: {
   section: (typeof STATUS_SECTIONS)[0];
   tasks: Task[];
   taskMap: Map<number, Task>;
+  objectiveMap: Map<number, string>;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
 }) {
@@ -530,9 +591,9 @@ function KanbanSection({
         <div>
           {topLevel.map((task) => (
             <div key={task.id}>
-              <TaskCard task={task} taskMap={taskMap} onEdit={onEdit} onDelete={onDelete} />
+              <TaskCard task={task} taskMap={taskMap} objectiveMap={objectiveMap} onEdit={onEdit} onDelete={onDelete} />
               {(subTaskMap[task.id] ?? []).map((sub) => (
-                <TaskCard key={sub.id} task={sub} indent={1} taskMap={taskMap} onEdit={onEdit} onDelete={onDelete} />
+                <TaskCard key={sub.id} task={sub} indent={1} taskMap={taskMap} objectiveMap={objectiveMap} onEdit={onEdit} onDelete={onDelete} />
               ))}
             </div>
           ))}
@@ -629,6 +690,10 @@ export default function TasksPage() {
 
   const all = data?.tasks ?? [];
   const taskMap = useMemo(() => new Map(all.map((t) => [t.id, t])), [all]);
+  const objectiveMap = useMemo(
+    () => new Map((objData?.objectives ?? []).map((o) => [o.id, o.title])),
+    [objData]
+  );
 
   const objectiveOptions = useMemo(
     () =>
@@ -785,6 +850,7 @@ export default function TasksPage() {
               section={section}
               tasks={tasks.filter((t) => t.status === section.key)}
               taskMap={taskMap}
+              objectiveMap={objectiveMap}
               onEdit={setEditingTask}
               onDelete={setDeletingTask}
             />
