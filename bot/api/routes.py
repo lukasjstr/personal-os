@@ -23,8 +23,8 @@ from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
     DailySuggestion, FitnessSplit, KeyResult, Log, NodeRelation, Objective, ObjectiveTaskSuggestion,
-    OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ShoppingDefault, Task,
-    User, UserAchievement, WeeklyReflection,
+    OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
+    ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
     VALID_NODE_TYPES, VALID_RELATION_TYPES,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
