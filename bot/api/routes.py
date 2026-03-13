@@ -4263,13 +4263,31 @@ async def get_next_action_endpoint(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return next unblocked task with explainability reason (P2.2)."""
+    """Return next unblocked task with explainability metadata (Epic 1.2).
+
+    Response fields (backward compatible — only additions):
+    - task: full task dict including why_selected, blocked_by, unlocks_count, contributes_to
+    - reason: human-readable selection reason (P2.2, kept for compat)
+    - score: null (reserved)
+    - why_selected: same as task.why_selected, surfaced at top level for convenience
+    - blocked_by: list of blocking node refs (empty for the selected task)
+    - unlocks_count: how many tasks this selection unlocks
+    - contributes_to: list of objective/KR nodes this task contributes to
+    """
     from bot.core.completion_hooks import get_next_unblocked_action as _get_next
 
     today = date.today()
     t = await _get_next(session, user.id)
     if not t:
-        return {"task": None, "reason": None, "score": None}
+        return {
+            "task": None,
+            "reason": None,
+            "score": None,
+            "why_selected": None,
+            "blocked_by": [],
+            "unlocks_count": 0,
+            "contributes_to": [],
+        }
 
     # Enrich with objective title if needed
     obj_id = t.get("objective_id")
@@ -4279,7 +4297,16 @@ async def get_next_action_endpoint(
             t = {**t, "objective_title": obj_row.title}
 
     reason = _compute_next_action_reason(t, today)
-    return {"task": t, "reason": reason, "score": None}
+    return {
+        "task": t,
+        "reason": reason,
+        "score": None,
+        # Epic 1.2: top-level explainability fields
+        "why_selected": t.get("why_selected"),
+        "blocked_by": t.get("blocked_by", []),
+        "unlocks_count": t.get("unlocks_count", 0),
+        "contributes_to": t.get("contributes_to", []),
+    }
 
 
 @router.get("/autopilot/today")
