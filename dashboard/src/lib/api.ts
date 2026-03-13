@@ -4,11 +4,29 @@ const API_URL = (() => {
   return "http://localhost:8000";
 })();
 
+function normalizeToken(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/^['"`]+|['"`]+$/g, "");
+}
+
 export async function validateToken(token: string): Promise<boolean> {
+  const clean = normalizeToken(token);
   try {
-    const res = await fetch(`${API_URL}/api/auth/validate`, {
-      headers: { Authorization: `Bearer ${token}` },
+    let res = await fetch(`${API_URL}/api/auth/validate`, {
+      headers: { Authorization: `Bearer ${clean}` },
+      cache: "no-store",
     });
+    if (!res.ok) {
+      res = await fetch(`${API_URL}/api/auth/validate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${clean}` },
+        cache: "no-store",
+      });
+    }
     return res.ok;
   } catch {
     return false;

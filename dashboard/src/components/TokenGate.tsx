@@ -26,6 +26,7 @@ export default function TokenGate({ children }: Props) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showForceSave, setShowForceSave] = useState(false);
 
   useEffect(() => {
     const check = async () => {
@@ -49,9 +50,19 @@ export default function TokenGate({ children }: Props) {
     check();
   }, []);
 
+  const cleanToken = (raw: string) =>
+    raw
+      .trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/^['"`]+|['"`]+$/g, "");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = input.trim();
+    const token = cleanToken(input);
+    setInput(token);
+    setShowForceSave(false);
     if (!token) {
       setError("Bitte Token eingeben");
       return;
@@ -64,7 +75,8 @@ export default function TokenGate({ children }: Props) {
       setToken(token);
       setAuthed(true);
     } else {
-      setError("Token ungültig — schreib /token an den Bot");
+      setError("Token konnte nicht verifiziert werden. Wenn du sicher bist, dass er korrekt ist, speichere ihn trotzdem.");
+      setShowForceSave(true);
     }
   };
 
@@ -187,7 +199,7 @@ export default function TokenGate({ children }: Props) {
                 <>
                   <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
                   Prüfe Token...
                 </>
@@ -195,6 +207,21 @@ export default function TokenGate({ children }: Props) {
                 "Verbinden →"
               )}
             </button>
+
+            {showForceSave && (
+              <button
+                type="button"
+                onClick={() => {
+                  const token = cleanToken(input);
+                  if (!token) return;
+                  setToken(token);
+                  setAuthed(true);
+                }}
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg py-2.5 text-sm font-medium transition-colors"
+              >
+                Trotzdem speichern
+              </button>
+            )}
           </form>
         </div>
       </div>
