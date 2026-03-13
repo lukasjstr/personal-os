@@ -22,9 +22,13 @@ function NextActionCard() {
   if (error || !data || !data.task) return null;
 
   const { task, reason, score } = data;
+  // Epic 4.1: prefer the richer graph-aware why_selected over the simple reason
   const whyText =
+    data.why_selected ??
     reason ??
     (score != null ? `Priority score: ${score}` : task.is_blocked ? "Task is currently blocked" : "Top unblocked task");
+  const unlocksCount = data.unlocks_count ?? task.unlocks_count ?? 0;
+  const contributesTo = data.contributes_to ?? task.contributes_to ?? [];
 
   async function handleComplete() {
     setCompleting(true);
@@ -64,7 +68,23 @@ function NextActionCard() {
         <div className="text-xs text-zinc-500 mb-2">{task.category}</div>
       )}
 
-      <div className="text-xs text-zinc-600 mb-4">{whyText}</div>
+      <div className="text-xs text-zinc-600 mb-2">{whyText}</div>
+
+      {/* Epic 4.1: compact impact chips */}
+      {(unlocksCount > 0 || contributesTo.length > 0) && (
+        <div className="flex gap-1.5 flex-wrap mb-3">
+          {unlocksCount > 0 && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-400 border border-indigo-900/40">
+              Unlocks {unlocksCount} task{unlocksCount !== 1 ? "s" : ""}
+            </span>
+          )}
+          {contributesTo.slice(0, 2).map((c, i) => (
+            <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/40 truncate max-w-[160px]">
+              → {c.title ?? c.type}
+            </span>
+          ))}
+        </div>
+      )}
 
       {task.blocker_title && (
         <div className="text-xs bg-red-950/40 border border-red-900/40 rounded px-3 py-2 text-red-400 mb-3">
@@ -272,6 +292,16 @@ const ACTION_HINT_LABEL: Record<string, string> = {
   brain_dump: "Brain Dump",
 };
 
+// Epic 4.1: why-this label for suggestion types
+const SUGGESTION_TYPE_REASON: Record<string, string> = {
+  missed_routine: "Missed yesterday",
+  overdue_task: "Overdue",
+  stalled_objective: "No progress this week",
+  brain_dump_nudge: "Capture thoughts",
+  check_objective_drift: "Objective drift",
+  streak_risk: "Streak at risk",
+};
+
 function DailySuggestionsCard() {
   const { data, error } = useAutopilotSuggestions();
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
@@ -303,11 +333,19 @@ function DailySuggestionsCard() {
           <div key={i} className="flex items-center gap-3 text-sm">
             <div className="flex-1 min-w-0">
               <span className="text-zinc-200">{item.message}</span>
-              {item.action_hint && (
-                <span className="ml-2 text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
-                  {ACTION_HINT_LABEL[item.action_hint] ?? item.action_hint}
-                </span>
-              )}
+              <div className="flex gap-1.5 mt-1 flex-wrap">
+                {/* Epic 4.1: why-this reason badge */}
+                {item.type && SUGGESTION_TYPE_REASON[item.type] && (
+                  <span className="text-xs text-amber-600 bg-amber-950/30 px-1.5 py-0.5 rounded border border-amber-900/30">
+                    {SUGGESTION_TYPE_REASON[item.type]}
+                  </span>
+                )}
+                {item.action_hint && (
+                  <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
+                    {ACTION_HINT_LABEL[item.action_hint] ?? item.action_hint}
+                  </span>
+                )}
+              </div>
             </div>
             {item.notification_id != null && (
               <button

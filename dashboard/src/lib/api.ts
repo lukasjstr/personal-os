@@ -631,9 +631,17 @@ export interface AutopilotNextAction {
     objective_title?: string | null;
     is_blocked?: boolean;
     blocker_title?: string | null;
+    // Epic 4.1: graph-aware explainability fields
+    why_selected?: string | null;
+    unlocks_count?: number;
+    contributes_to?: Array<{ type: string; id: number; title?: string | null }>;
   };
   reason?: string | null;
   score?: number | null;
+  // Epic 4.1: top-level mirrors (same data, surfaced for convenience)
+  why_selected?: string | null;
+  unlocks_count?: number;
+  contributes_to?: Array<{ type: string; id: number; title?: string | null }>;
 }
 
 // ─── Autopilot Suggestions (P2.3) ────────────────────────────────────────────
