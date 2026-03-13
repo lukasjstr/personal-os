@@ -1,6 +1,8 @@
 const API_URL = (() => {
-  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  // In the browser, always prefer same-origin API calls via the nginx proxy.
+  // This avoids stale env builds, mixed http/https issues, and cert problems on devices.
   if (typeof window !== "undefined") return window.location.origin;
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
   return "http://localhost:8000";
 })();
 
