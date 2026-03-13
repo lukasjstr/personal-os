@@ -22,9 +22,10 @@ from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
-    DailySuggestion, FitnessSplit, KeyResult, Log, Objective, ObjectiveTaskSuggestion, OKRProposalDraft, Routine,
-    RoutineCompletion, RoutineObjectiveImpact, ShoppingDefault, Task, User, UserAchievement,
-    WeeklyReflection,
+    DailySuggestion, FitnessSplit, KeyResult, Log, NodeRelation, Objective, ObjectiveTaskSuggestion,
+    OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ShoppingDefault, Task,
+    User, UserAchievement, WeeklyReflection,
+    VALID_NODE_TYPES, VALID_RELATION_TYPES,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.core.okr_generator import OKRDraft, generate_okr_draft_fallback
@@ -477,6 +478,36 @@ async def list_objectives(
         .order_by(Objective.status, Objective.created_at)
     )
     objectives = result.scalars().all()
+
+    # Bulk-load all relations for this user's objectives in one query.
+    obj_ids = [o.id for o in objectives]
+    obj_relations: dict[int, list[dict]] = defaultdict(list)
+    if obj_ids:
+        rel_res = await session.execute(
+            select(NodeRelation).where(
+                NodeRelation.user_id == user.id,
+                or_(
+                    and_(NodeRelation.from_type == "objective", NodeRelation.from_id.in_(obj_ids)),
+                    and_(NodeRelation.to_type == "objective", NodeRelation.to_id.in_(obj_ids)),
+                ),
+            )
+        )
+        for rel in rel_res.scalars().all():
+            row = {
+                "id": rel.id,
+                "relation_type": rel.relation_type,
+                "from_type": rel.from_type,
+                "from_id": rel.from_id,
+                "to_type": rel.to_type,
+                "to_id": rel.to_id,
+                "note": rel.note,
+                "created_at": rel.created_at.isoformat(),
+            }
+            if rel.from_type == "objective":
+                obj_relations[rel.from_id].append(row)
+            if rel.to_type == "objective":
+                obj_relations[rel.to_id].append(row)
+
     return {
         "objectives": [
             {
@@ -489,6 +520,7 @@ async def list_objectives(
                 "parent_objective_id": o.parent_objective_id,
                 "target_date": o.target_date.isoformat() if o.target_date else None,
                 "created_at": o.created_at.isoformat(),
+                "relations": obj_relations.get(o.id, []),
                 "key_results": [
                     {
                         "id": kr.id,
@@ -567,6 +599,35 @@ async def list_tasks(
             return None
         return min(upcoming, key=lambda ce: ce.start_time)
 
+    # Bulk-load all node_relations touching these tasks in one query.
+    task_ids = [t.id for t in tasks]
+    task_relations: dict[int, list[dict]] = defaultdict(list)
+    if task_ids:
+        rel_res = await session.execute(
+            select(NodeRelation).where(
+                NodeRelation.user_id == user.id,
+                or_(
+                    and_(NodeRelation.from_type == "task", NodeRelation.from_id.in_(task_ids)),
+                    and_(NodeRelation.to_type == "task", NodeRelation.to_id.in_(task_ids)),
+                ),
+            )
+        )
+        for rel in rel_res.scalars().all():
+            row = {
+                "id": rel.id,
+                "relation_type": rel.relation_type,
+                "from_type": rel.from_type,
+                "from_id": rel.from_id,
+                "to_type": rel.to_type,
+                "to_id": rel.to_id,
+                "note": rel.note,
+                "created_at": rel.created_at.isoformat(),
+            }
+            if rel.from_type == "task":
+                task_relations[rel.from_id].append(row)
+            if rel.to_type == "task":
+                task_relations[rel.to_id].append(row)
+
     return {
         "tasks": [
             {
@@ -595,6 +656,7 @@ async def list_tasks(
                 "linked_event_id": _next_event(t).id if _next_event(t) else None,
                 "linked_event_title": _next_event(t).title if _next_event(t) else None,
                 "linked_event_start": _next_event(t).start_time.isoformat() if _next_event(t) else None,
+                "relations": task_relations.get(t.id, []),
             }
             for t in tasks
         ]
@@ -647,6 +709,158 @@ async def task_dependency_graph(
             })
 
     return {"nodes": nodes, "edges": edges}
+
+
+# ─── Epic 1.1 — Dependency Graph Relation Endpoints ──────────────────────────
+
+class _CreateNodeRelationBody(BaseModel):
+    from_type: str
+    from_id: int
+    to_type: str
+    to_id: int
+    relation_type: str
+    note: Optional[str] = None
+
+    @field_validator("from_type", "to_type")
+    @classmethod
+    def validate_node_type(cls, v: str) -> str:
+        if v not in VALID_NODE_TYPES:
+            raise ValueError(f"node_type must be one of {sorted(VALID_NODE_TYPES)}")
+        return v
+
+    @field_validator("relation_type")
+    @classmethod
+    def validate_relation_type(cls, v: str) -> str:
+        if v not in VALID_RELATION_TYPES:
+            raise ValueError(f"relation_type must be one of {sorted(VALID_RELATION_TYPES)}")
+        return v
+
+
+def _serialize_relation(rel: NodeRelation) -> dict:
+    return {
+        "id": rel.id,
+        "relation_type": rel.relation_type,
+        "from_type": rel.from_type,
+        "from_id": rel.from_id,
+        "to_type": rel.to_type,
+        "to_id": rel.to_id,
+        "note": rel.note,
+        "created_at": rel.created_at.isoformat(),
+    }
+
+
+@router.get("/relations")
+async def list_relations(
+    from_type: Optional[str] = Query(None),
+    from_id: Optional[int] = Query(None),
+    to_type: Optional[str] = Query(None),
+    to_id: Optional[int] = Query(None),
+    relation_type: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List all dependency graph relations for the current user, with optional filters."""
+    conditions = [NodeRelation.user_id == user.id]
+    if from_type:
+        conditions.append(NodeRelation.from_type == from_type)
+    if from_id is not None:
+        conditions.append(NodeRelation.from_id == from_id)
+    if to_type:
+        conditions.append(NodeRelation.to_type == to_type)
+    if to_id is not None:
+        conditions.append(NodeRelation.to_id == to_id)
+    if relation_type:
+        conditions.append(NodeRelation.relation_type == relation_type)
+    result = await session.execute(
+        select(NodeRelation).where(and_(*conditions)).order_by(NodeRelation.created_at)
+    )
+    relations = result.scalars().all()
+    return {"relations": [_serialize_relation(r) for r in relations]}
+
+
+@router.post("/relations")
+async def create_relation(
+    body: _CreateNodeRelationBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new dependency graph relation between two nodes."""
+    if body.from_type == body.to_type and body.from_id == body.to_id:
+        raise HTTPException(status_code=400, detail="A node cannot relate to itself.")
+    rel = NodeRelation(
+        user_id=user.id,
+        from_type=body.from_type,
+        from_id=body.from_id,
+        to_type=body.to_type,
+        to_id=body.to_id,
+        relation_type=body.relation_type,
+        note=body.note,
+    )
+    session.add(rel)
+    try:
+        await session.commit()
+        await session.refresh(rel)
+    except Exception:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="This relation already exists.")
+    return {"ok": True, "relation": _serialize_relation(rel)}
+
+
+@router.delete("/relations/{relation_id}")
+async def delete_relation(
+    relation_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a dependency graph relation by ID."""
+    result = await session.execute(
+        select(NodeRelation).where(
+            NodeRelation.id == relation_id,
+            NodeRelation.user_id == user.id,
+        )
+    )
+    rel = result.scalar_one_or_none()
+    if not rel:
+        raise HTTPException(status_code=404, detail="Relation not found.")
+    await session.delete(rel)
+    await session.commit()
+    return {"ok": True, "deleted_id": relation_id}
+
+
+@router.get("/nodes/{node_type}/{node_id}/relations")
+async def get_node_relations(
+    node_type: str,
+    node_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all relations where the given node appears as source or target."""
+    if node_type not in VALID_NODE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"node_type must be one of {sorted(VALID_NODE_TYPES)}",
+        )
+    result = await session.execute(
+        select(NodeRelation).where(
+            NodeRelation.user_id == user.id,
+            or_(
+                and_(NodeRelation.from_type == node_type, NodeRelation.from_id == node_id),
+                and_(NodeRelation.to_type == node_type, NodeRelation.to_id == node_id),
+            ),
+        ).order_by(NodeRelation.created_at)
+    )
+    relations = result.scalars().all()
+
+    outgoing = [r for r in relations if r.from_type == node_type and r.from_id == node_id]
+    incoming = [r for r in relations if r.to_type == node_type and r.to_id == node_id]
+
+    return {
+        "node_type": node_type,
+        "node_id": node_id,
+        "outgoing": [_serialize_relation(r) for r in outgoing],
+        "incoming": [_serialize_relation(r) for r in incoming],
+        "total": len(relations),
+    }
 
 
 @router.get("/shopping")

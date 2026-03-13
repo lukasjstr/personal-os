@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Float, ForeignKey,
-    Integer, String, Text, UniqueConstraint, func,
+    Index, Integer, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -67,6 +67,7 @@ class User(Base):
     action_queue_items: Mapped[list["ActionQueueItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     okr_proposal_drafts: Mapped[list["OKRProposalDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     proposal_calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    node_relations: Mapped[list["NodeRelation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -714,3 +715,64 @@ class ProposalCalendarSlot(Base):
 
     def __repr__(self) -> str:
         return f"<ProposalCalendarSlot id={self.id} draft={self.proposal_draft_id} status={self.status}>"
+
+
+# ─── Epic 1.1 — Dependency Graph Foundation ──────────────────────────────────
+
+VALID_NODE_TYPES = {"task", "objective", "key_result"}
+VALID_RELATION_TYPES = {"blocks", "depends_on", "contributes_to", "unlocks"}
+
+
+class NodeRelation(Base):
+    """Explicit directed edge in the dependency graph between any two nodes.
+
+    Supported node types: task, objective, key_result
+    Supported relation types: blocks, depends_on, contributes_to, unlocks
+
+    A→blocks→B   means A must be done before B can proceed.
+    A→depends_on→B means A cannot proceed until B is done.
+    A→contributes_to→B means A's completion pushes progress on B.
+    A→unlocks→B  means A's completion makes B available.
+    """
+    __tablename__ = "node_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Source node
+    from_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    from_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Target node
+    to_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Relation semantics
+    relation_type: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    # Optional human-readable note for auditability
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship(back_populates="node_relations")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "from_type", "from_id", "to_type", "to_id", "relation_type",
+            name="uq_node_relation",
+        ),
+        Index("ix_node_relations_from", "user_id", "from_type", "from_id"),
+        Index("ix_node_relations_to", "user_id", "to_type", "to_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<NodeRelation id={self.id} "
+            f"{self.from_type}:{self.from_id} -{self.relation_type}-> "
+            f"{self.to_type}:{self.to_id}>"
+        )
