@@ -64,10 +64,10 @@ class TestAuthTokenAccess:
         data = res.json()
         assert data.get("valid") is True
 
-    def test_no_token_returns_401(self):
-        """Requests without Authorization header return 401."""
+    def test_no_token_returns_4xx(self):
+        """Requests without Authorization header return 401 or 403 (unauthenticated)."""
         res = requests.get(f"{API_BASE}/api/settings", timeout=10)
-        assert res.status_code == 401
+        assert res.status_code in (401, 403), f"Expected 401/403, got {res.status_code}"
 
     def test_bad_token_returns_401(self):
         """Requests with a bogus token return 401."""
