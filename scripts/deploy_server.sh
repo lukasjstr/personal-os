@@ -18,7 +18,7 @@ git checkout main
 git pull --ff-only origin main
 
 echo "==> Running DB migration"
-venv/bin/alembic upgrade 018
+venv/bin/alembic upgrade head
 
 echo "==> Restarting API"
 systemctl restart personal-os
