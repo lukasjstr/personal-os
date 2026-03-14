@@ -27,6 +27,11 @@ function NextActionCard() {
     data.why_selected ??
     reason ??
     (score != null ? `Priority score: ${score}` : task.is_blocked ? "Task is currently blocked" : "Top unblocked task");
+  // Epic 4.2: trust/fallback clarity
+  const trustLabel = data.source_type === "ai" ? "AI" : "Fallback";
+  const trustClass = data.source_type === "ai"
+    ? "bg-indigo-900/50 text-indigo-300 border-indigo-800/50"
+    : "bg-zinc-800 text-zinc-400 border-zinc-700/50";
   const unlocksCount = data.unlocks_count ?? task.unlocks_count ?? 0;
   const contributesTo = data.contributes_to ?? task.contributes_to ?? [];
 
@@ -68,7 +73,18 @@ function NextActionCard() {
         <div className="text-xs text-zinc-500 mb-2">{task.category}</div>
       )}
 
+      <div className="flex gap-1.5 flex-wrap mb-2">
+        <span className={cn("text-xs px-1.5 py-0.5 rounded border", trustClass)}>{trustLabel}</span>
+        {data.confidence_level && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+            Confidence: {data.confidence_level}
+          </span>
+        )}
+      </div>
       <div className="text-xs text-zinc-600 mb-2">{whyText}</div>
+      {data.confidence_reason && (
+        <div className="text-[11px] text-zinc-700 mb-2">{data.confidence_reason}</div>
+      )}
 
       {/* Epic 4.1: compact impact chips */}
       {(unlocksCount > 0 || contributesTo.length > 0) && (
@@ -130,15 +146,28 @@ function DailyPlanCard() {
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">📅 Today&apos;s Plan</span>
-        <div className="flex items-center gap-2">
-          {data.generated_by === "ai" && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-400">AI</span>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <span className={cn(
+            "text-xs px-1.5 py-0.5 rounded border",
+            data.source_type === "ai"
+              ? "bg-indigo-900/50 text-indigo-300 border-indigo-800/50"
+              : "bg-zinc-800 text-zinc-400 border-zinc-700/50"
+          )}>
+            {data.source_type === "ai" ? "AI" : "Fallback"}
+          </span>
+          {data.confidence_level && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+              {data.confidence_level}
+            </span>
           )}
           <span className="text-xs text-zinc-600">{totalItems} items</span>
         </div>
       </div>
 
-      <p className="text-sm text-zinc-300 mb-4">{data.summary}</p>
+      <p className="text-sm text-zinc-300 mb-1">{data.summary}</p>
+      {data.confidence_reason && (
+        <p className="text-[11px] text-zinc-600 mb-4">{data.confidence_reason}</p>
+      )}
 
       {visibleSections.map((section) => (
         <div key={section.id} className="mb-3 last:mb-0">
@@ -338,6 +367,21 @@ function DailySuggestionsCard() {
                 {item.type && SUGGESTION_TYPE_REASON[item.type] && (
                   <span className="text-xs text-amber-600 bg-amber-950/30 px-1.5 py-0.5 rounded border border-amber-900/30">
                     {SUGGESTION_TYPE_REASON[item.type]}
+                  </span>
+                )}
+                {item.source_type && (
+                  <span className={cn(
+                    "text-xs px-1.5 py-0.5 rounded border",
+                    item.source_type === "ai"
+                      ? "bg-indigo-900/40 text-indigo-300 border-indigo-800/40"
+                      : "bg-zinc-800 text-zinc-400 border-zinc-700/40"
+                  )}>
+                    {item.source_type === "ai" ? "AI" : "Fallback"}
+                  </span>
+                )}
+                {item.confidence_level && (
+                  <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/40">
+                    {item.confidence_level}
                   </span>
                 )}
                 {item.action_hint && (

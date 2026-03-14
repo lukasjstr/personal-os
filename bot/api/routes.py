@@ -4316,6 +4316,10 @@ async def get_next_action_endpoint(
             "blocked_by": [],
             "unlocks_count": 0,
             "contributes_to": [],
+            # Epic 4.2 trust signals
+            "source_type": "deterministic_fallback",
+            "confidence_level": "low",
+            "confidence_reason": "Keine offene unblocked Aufgabe gefunden",
         }
 
     # Enrich with objective title if needed
@@ -4326,6 +4330,7 @@ async def get_next_action_endpoint(
             t = {**t, "objective_title": obj_row.title}
 
     reason = _compute_next_action_reason(t, today)
+    confidence_reason = "Regelbasiert aus unblocked Task-Graph" if t.get("why_selected") else "Regelbasiert nach Priorität/Fälligkeit"
     return {
         "task": t,
         "reason": reason,
@@ -4335,6 +4340,10 @@ async def get_next_action_endpoint(
         "blocked_by": t.get("blocked_by", []),
         "unlocks_count": t.get("unlocks_count", 0),
         "contributes_to": t.get("contributes_to", []),
+        # Epic 4.2 trust signals (additive)
+        "source_type": "deterministic_fallback",
+        "confidence_level": "high",
+        "confidence_reason": confidence_reason,
     }
 
 
@@ -4729,13 +4738,27 @@ async def get_autopilot_snapshot(
     routines_done = len(completed_routine_ids_set & {r.id for r in routines})
     routines_pending = len([r for r in routines if r.id not in completed_routine_ids_set])
 
+    source_type = "ai" if generated_by == "ai" else "deterministic_fallback"
+    confidence_level = "medium" if generated_by == "ai" else "high"
+    confidence_reason = (
+        "AI-Zusammenfassung auf deterministischem Plan" if generated_by == "ai"
+        else "Regelbasierter Snapshot aus Tasks, Routinen und Kalender"
+    )
+
     return {
         "date": today.isoformat(),
         "generated_by": generated_by,
+        # Epic 4.2 trust signals (additive)
+        "source_type": source_type,
+        "confidence_level": confidence_level,
+        "confidence_reason": confidence_reason,
         "next_action": next_action,
         "today_plan": {
             "date": today.isoformat(),
             "generated_by": generated_by,
+            "source_type": source_type,
+            "confidence_level": confidence_level,
+            "confidence_reason": confidence_reason,
             **plan,
         },
         "blockers": blockers,
@@ -4941,9 +4964,20 @@ async def get_daily_plan(
     except Exception as exc:
         _logger.debug("daily-plan AI summary skipped: %s", exc)
 
+    source_type = "ai" if generated_by == "ai" else "deterministic_fallback"
+    confidence_level = "medium" if generated_by == "ai" else "high"
+    confidence_reason = (
+        "AI-Zusammenfassung auf deterministischem Plan" if generated_by == "ai"
+        else "Regelbasierter Plan aus Tasks, Routinen und Kalender"
+    )
+
     return {
         "date": today.isoformat(),
         "generated_by": generated_by,
+        # Epic 4.2 trust signals (additive)
+        "source_type": source_type,
+        "confidence_level": confidence_level,
+        "confidence_reason": confidence_reason,
         **plan,
     }
 
@@ -4975,6 +5009,10 @@ async def get_autopilot_suggestions(
             "message": item["message"],
             "action_hint": item["action_hint"],
             "notification_id": notif.id if notif else None,
+            # Epic 4.2 trust signals (additive)
+            "source_type": "deterministic_fallback",
+            "confidence_level": "medium",
+            "confidence_reason": "Regelbasierter Nudge aus Verhaltensmustern",
         }
         result.append(entry)
 

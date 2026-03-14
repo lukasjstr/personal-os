@@ -598,6 +598,10 @@ export interface AutopilotDailyPlanSection {
 export interface AutopilotDailyPlan {
   date: string;
   generated_by: "ai" | "deterministic";
+  // Epic 4.2 trust signals (additive)
+  source_type?: "ai" | "deterministic_fallback";
+  confidence_level?: "high" | "medium" | "low" | null;
+  confidence_reason?: string | null;
   summary: string;
   sections: AutopilotDailyPlanSection[];
 }
@@ -644,6 +648,10 @@ export interface AutopilotNextAction {
   why_selected?: string | null;
   unlocks_count?: number;
   contributes_to?: Array<{ type: string; id: number; title?: string | null }>;
+  // Epic 4.2 trust signals (additive)
+  source_type?: "ai" | "deterministic_fallback";
+  confidence_level?: "high" | "medium" | "low" | null;
+  confidence_reason?: string | null;
 }
 
 // ─── Autopilot Suggestions (P2.3) ────────────────────────────────────────────
@@ -653,6 +661,10 @@ export interface AutopilotSuggestionItem {
   message: string;
   action_hint: string;
   notification_id: number | null;
+  // Epic 4.2 trust signals (additive)
+  source_type?: "ai" | "deterministic_fallback";
+  confidence_level?: "high" | "medium" | "low" | null;
+  confidence_reason?: string | null;
 }
 
 export interface AutopilotSuggestionsResponse {
@@ -694,6 +706,10 @@ export interface PlannerProgressSummary {
 export interface PlannerSnapshot {
   date: string;
   generated_by: "ai" | "deterministic";
+  // Epic 4.2 trust signals (additive)
+  source_type?: "ai" | "deterministic_fallback";
+  confidence_level?: "high" | "medium" | "low" | null;
+  confidence_reason?: string | null;
   next_action: (AutopilotNextAction["task"] & {
     type: "task";
     reason: string | null;
