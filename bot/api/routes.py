@@ -1909,6 +1909,43 @@ class _CreateFitnessSplitBody(BaseModel):
     order_in_rotation: Optional[int] = None
 
 
+def _load_fitness_protocol_splits() -> list[dict]:
+    """Load splits from the local protocol JSON as a fallback."""
+    import json
+    from pathlib import Path
+
+    protocol_path = Path(__file__).resolve().parents[2] / "docs" / "protocols" / "lukas_fitness_split.json"
+    if not protocol_path.exists():
+        return []
+    protocol = json.loads(protocol_path.read_text())
+    rotation: list[str] = protocol["meta"]["rotation"]
+    splits_data: dict = protocol["splits"]
+    anchor_str: str = protocol["meta"]["rotation_anchor_date"]
+
+    anchor = date.fromisoformat(anchor_str)
+    today = date.today()
+    days_elapsed = (today - anchor).days
+    today_idx = days_elapsed % len(rotation)
+    today_name = rotation[today_idx]
+
+    result = []
+    for order, name in enumerate(rotation, start=1):
+        split_def = splits_data[name]
+        exercises = [{"name": ex} for ex in split_def["exercises"]]
+        result.append({
+            "id": f"proto-{order}",
+            "name": name,
+            "exercises": exercises,
+            "day_of_week": None,
+            "order_in_rotation": order,
+            "created_at": anchor_str + "T00:00:00",
+            "workout_count": 0,
+            "last_used": None,
+            "is_next": name == today_name,
+        })
+    return result
+
+
 @router.get("/fitness/splits")
 async def get_fitness_splits(
     user: User = Depends(get_current_user),
@@ -1921,6 +1958,12 @@ async def get_fitness_splits(
         .order_by(FitnessSplit.order_in_rotation.nulls_last(), FitnessSplit.created_at)
     )
     splits = result.scalars().all()
+
+    # No splits in DB → fall back to protocol JSON so the page is never empty
+    if not splits:
+        proto_splits = _load_fitness_protocol_splits()
+        next_split_id = next((s["id"] for s in proto_splits if s["is_next"]), None)
+        return {"splits": proto_splits, "next_split_id": next_split_id, "from_protocol": True}
 
     # Recent logs to determine usage + last split used
     since_30 = datetime.utcnow() - timedelta(days=30)
@@ -1968,6 +2011,7 @@ async def get_fitness_splits(
             for s in splits
         ],
         "next_split_id": next_split_id,
+        "from_protocol": False,
     }
 
 

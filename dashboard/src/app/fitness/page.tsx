@@ -311,7 +311,8 @@ export default function FitnessPage() {
     volume: v.volume,
   }));
 
-  const isEmpty = exercises.length === 0 && prs.length === 0 && lastSessions.length === 0 && splits.length === 0;
+  const fromProtocol = !!(splitsData as { from_protocol?: boolean } | undefined)?.from_protocol;
+  const isEmpty = exercises.length === 0 && prs.length === 0 && lastSessions.length === 0 && splits.length === 0 && !fromProtocol;
 
   return (
     <div>
@@ -320,8 +321,31 @@ export default function FitnessPage() {
         subtitle={`${summary?.total_workout_days ?? 0} Trainingstage · ${exercises.length} Übungen · ${splits.length} Splits · ${prs.length} PRs`}
       />
 
+      {/* Onboarding: protocol splits loaded but no workouts logged yet */}
+      {fromProtocol && nextSplit && (
+        <div className="bg-gradient-to-r from-green-600/20 to-emerald-500/10 border border-green-500/40 rounded-xl p-5 mb-6">
+          <div className="flex items-start gap-3 mb-3">
+            <span className="text-2xl">🚀</span>
+            <div>
+              <div className="text-white font-bold text-base">Willkommen! Dein Split-Plan ist bereit.</div>
+              <div className="text-green-300/80 text-sm mt-0.5">
+                Noch keine Workouts geloggt. Logge dein erstes Training per Telegram-Bot, z. B.:
+              </div>
+              <code className="inline-block mt-2 bg-zinc-900/70 text-green-400 text-xs px-3 py-1.5 rounded-lg border border-zinc-700">
+                Beinpresse 80kg 3×10
+              </code>
+            </div>
+          </div>
+          <div className="text-zinc-400 text-xs mt-2">
+            Heute empfohlen: <span className="text-white font-semibold">{nextSplit.name}</span>
+            {" · "}
+            {nextSplit.exercises.map((e) => e.name).join(" · ")}
+          </div>
+        </div>
+      )}
+
       {/* Next workout recommendation */}
-      {nextSplit && <NextWorkoutBanner split={nextSplit} />}
+      {nextSplit && !fromProtocol && <NextWorkoutBanner split={nextSplit} />}
 
       {/* Workout Calendar Heatmap */}
       {workoutDays.length > 0 && <WorkoutCalendar workoutDays={workoutDays} />}
