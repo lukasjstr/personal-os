@@ -24,7 +24,7 @@ from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
     DailySuggestion, FitnessSplit, KeyResult, Log, NodeRelation, Objective, ObjectiveTaskSuggestion,
     OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
-    ShoppingDefault, Task, User, UserAchievement, WeeklyReflection,
+    ShoppingDefault, Task, User, UserAchievement, WeeklyReflection, WorkoutLog,
     VALID_NODE_TYPES, VALID_RELATION_TYPES,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
@@ -43,6 +43,77 @@ async def api_health(session: AsyncSession = Depends(get_db)) -> dict:
     from bot.core.monitoring import health_probe
     probe = await health_probe(session)
     return {"status": "ok", "version": "8.0.0", **probe}
+
+
+@router.get("/health/daily")
+async def get_daily_health(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return today's supplement stack + fitness split + last workout per exercise."""
+    today = date.today()
+
+    # Supplement stack
+    supplement_data: dict = {}
+    try:
+        from bot.core.supplement_protocol import generate_daily_checklist, load_protocol
+        protocol = load_protocol()
+        checklist = generate_daily_checklist(protocol, today)
+        supplement_data = {
+            "date": checklist["date"],
+            "slots": {
+                "morning": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["morning"]],
+                "midday": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["midday"]],
+                "evening": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["evening"]],
+                "daily": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["daily"]],
+            },
+            "hydration": checklist.get("hydration", {}),
+            "medical_disclaimer": checklist.get("medical_disclaimer", ""),
+        }
+    except Exception:
+        supplement_data = {"error": "Supplement protocol unavailable"}
+
+    # Fitness split
+    fitness_data: dict = {}
+    try:
+        from bot.core.fitness_protocol import get_today_split, load_fitness_protocol
+        protocol = load_fitness_protocol()
+        split = get_today_split(protocol, today)
+        fitness_data = {
+            "date": split["date"],
+            "is_rest_day": split.get("is_rest_day", False),
+            "split_name": split.get("split_name"),
+            "focus": split.get("focus"),
+            "exercises": split.get("exercises", []),
+        }
+    except Exception:
+        fitness_data = {"error": "Fitness protocol unavailable"}
+
+    # Last workout per exercise (from workout_logs, last 30 days)
+    since_30 = datetime.utcnow() - timedelta(days=30)
+    wl_result = await session.execute(
+        select(WorkoutLog)
+        .where(and_(WorkoutLog.user_id == user.id, WorkoutLog.logged_date >= since_30.date()))
+        .order_by(WorkoutLog.logged_date.desc(), WorkoutLog.created_at.desc())
+    )
+    wl_rows = wl_result.scalars().all()
+    last_per_exercise: dict = {}
+    for row in wl_rows:
+        if row.exercise not in last_per_exercise:
+            last_per_exercise[row.exercise] = {
+                "exercise": row.exercise,
+                "weight_kg": row.weight_kg,
+                "sets": row.sets,
+                "reps": row.reps,
+                "date": row.logged_date.isoformat(),
+            }
+
+    return {
+        "date": today.isoformat(),
+        "supplement_stack": supplement_data,
+        "fitness_split": fitness_data,
+        "last_weights": list(last_per_exercise.values()),
+    }
 
 
 @router.get("/admin/errors")

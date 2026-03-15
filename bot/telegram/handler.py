@@ -11,6 +11,7 @@ from bot.ai.client import process_message
 from bot.config import settings
 from bot.core.user_settings import get_or_create_user
 from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
+from bot.core.workout_tracker import handle_workout_message
 from bot.database.connection import get_session
 from bot.telegram.commands import (
     handle_help,
@@ -55,8 +56,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             reply = await handle_reflection_answer(session, user, reflection, text)
             await session.commit()
         else:
-            reply = await process_message(session, user, text, source="text")
-            await session.commit()
+            # Try workout pattern before sending to GPT
+            workout_reply = await handle_workout_message(session, user.id, text)
+            if workout_reply is not None:
+                reply = workout_reply
+                await session.commit()
+            else:
+                reply = await process_message(session, user, text, source="text")
+                await session.commit()
 
     await send_message(chat_id, reply)
 

@@ -68,6 +68,7 @@ class User(Base):
     okr_proposal_drafts: Mapped[list["OKRProposalDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     proposal_calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     node_relations: Mapped[list["NodeRelation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -470,6 +471,26 @@ class UserInsight(Base):
 
     def __repr__(self) -> str:
         return f"<UserInsight id={self.id} type={self.insight_type}>"
+
+
+# ─── Workout Tracking ─────────────────────────────────────────────────────────
+
+class WorkoutLog(Base):
+    __tablename__ = "workout_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    exercise: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sets: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    logged_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="workout_logs")
+
+    def __repr__(self) -> str:
+        return f"<WorkoutLog id={self.id} exercise={self.exercise!r} weight={self.weight_kg}>"
 
 
 # ─── Phase 5.3 — Fitness Splits ──────────────────────────────────────────────
