@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.config import settings
 from bot.core.free_slot_planner import plan_free_slots
 from bot.core.gamification import get_level_title
+from bot.core.supplement_protocol import generate_daily_checklist, load_protocol
 from bot.database.connection import get_session
 from bot.database.models import (
     CalendarEvent, DailyBrief, Log, Objective, Routine, Task, User,
@@ -197,6 +198,20 @@ async def _generate_brief_for_user(
         for r in routines:
             context_lines.append(f"  ☐ {r.title}")
 
+    supplement_view = None
+    try:
+        protocol = load_protocol()
+        supplement_view = generate_daily_checklist(protocol, today)
+        morning_count = len(supplement_view["slot_checklist"]["morning"])
+        midday_count = len(supplement_view["slot_checklist"]["midday"])
+        evening_count = len(supplement_view["slot_checklist"]["evening"])
+        context_lines.append(
+            "\nSUPPLEMENT-PROTOKOLL (heute aktiv): "
+            f"Morgen {morning_count} · Mittag {midday_count} · Abend {evening_count}"
+        )
+    except Exception:
+        logger.exception("Supplement protocol unavailable; continuing without it")
+
     if events:
         context_lines.append("\nTERMINE HEUTE:")
         for e in events:
@@ -237,6 +252,7 @@ Erstelle einen prägnanten Morning Brief auf Deutsch. Format:
 - 🔒 BLOCKER (nur wenn blockierte Tasks vorhanden: kurz erwähnen, was wartet)
 - 📊 STAGNATION (nur wenn stagnierte Ziele vorhanden: kurze Aufforderung zur Reaktivierung)
 - 📋 ROUTINEN HEUTE (alle auflisten mit ☐)
+- 🧪 SUPPLEMENTE HEUTE (nur wenn Daten vorhanden: kurze Slot-Zeile Morgen/Mittag/Abend)
 - 📅 KALENDER (nur wenn Events vorhanden)
 - 💡 REMINDER (nur wenn überfällige Tasks oder wichtige Hinweise vorhanden)
 - Kurzer motivierender Abschluss-Satz
@@ -278,11 +294,44 @@ Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei direkt und prägnan
             ai_lines.append(f"⚠️ Streak-Alarm: {streak_warn}")
         brief_text += "\n".join(ai_lines)
 
+    if supplement_view:
+        def _line(items: list[dict], label: str) -> str:
+            if not items:
+                return f"- {label}: (Cycle-Pause)"
+            names = ", ".join(x.get("name", "") for x in items[:5] if x.get("name"))
+            suffix = " …" if len(items) > 5 else ""
+            return f"- {label}: {names}{suffix}"
+
+        morning_items = supplement_view["slot_checklist"]["morning"]
+        midday_items = supplement_view["slot_checklist"]["midday"]
+        evening_items = supplement_view["slot_checklist"]["evening"]
+        hydration = supplement_view.get("hydration", {})
+        water_range = f"{hydration.get('water_l_min', '?')}-{hydration.get('water_l_max', '?')}L"
+
+        supplement_lines = [
+            "\n\n🧪 Supplement-Plan heute",
+            _line(morning_items, "Morgen"),
+            _line(midday_items, "Mittag"),
+            _line(evening_items, "Abend"),
+            f"- Hydration: {water_range} Wasser + Elektrolyte tracken",
+            f"⚕️ {supplement_view['medical_disclaimer']}",
+        ]
+        brief_text += "\n".join(supplement_lines)
+
     # Priorities snapshot stored in DailyBrief for evening drift detection
     priorities_snapshot = [
         {"id": t.id, "title": t.title, "priority": t.priority}
         for t in tasks[:5]
     ]
+    if supplement_view:
+        priorities_snapshot.append(
+            {
+                "id": "supplement-stack",
+                "title": "Supplement-Stack (Morgen/Mittag/Abend)",
+                "priority": 2,
+                "type": "protocol",
+            }
+        )
     return brief_text, priorities_snapshot
 
 
