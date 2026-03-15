@@ -50,57 +50,61 @@ async def get_daily_health(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Return today's supplement stack + fitness split + last workout per exercise."""
+    """Return today's supplement stack, fitness split, macros, and last weights."""
     today = date.today()
 
-    # Supplement stack
-    supplement_data: dict = {}
+    # Supplement stacks (with cycle gating)
+    supplements: dict = {"morning": [], "midday": [], "evening": []}
+    macros: dict = {}
     try:
         from bot.core.supplement_protocol import generate_daily_checklist, load_protocol
         protocol = load_protocol()
         checklist = generate_daily_checklist(protocol, today)
-        supplement_data = {
-            "date": checklist["date"],
-            "slots": {
-                "morning": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["morning"]],
-                "midday": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["midday"]],
-                "evening": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["evening"]],
-                "daily": [{"name": s.get("name"), "dose": s.get("dose")} for s in checklist["slot_checklist"]["daily"]],
-            },
-            "hydration": checklist.get("hydration", {}),
-            "medical_disclaimer": checklist.get("medical_disclaimer", ""),
+        for slot in ("morning", "midday", "evening"):
+            supplements[slot] = [
+                {"name": s.get("name", ""), "dose": s.get("dose", "")}
+                for s in checklist["slot_checklist"][slot]
+                if s.get("name")
+            ]
+        mt = protocol.get("macro_targets", {})
+        hyd = protocol.get("hydration", {})
+        water_str = f"{hyd.get('water_l_min', 2.5)}-{hyd.get('water_l_max', 3.5)}L"
+        macros = {
+            "calories": mt.get("calories_kcal", 0),
+            "protein": mt.get("protein_g", 0),
+            "carbs": mt.get("net_carbs_max_g", 0),
+            "fat": mt.get("fat_g", 0),
+            "water": water_str,
         }
     except Exception:
-        supplement_data = {"error": "Supplement protocol unavailable"}
+        pass
 
-    # Fitness split
-    fitness_data: dict = {}
+    # Fitness split (config-driven rotation)
+    fitness: dict = {"split": None, "focus": None, "exercises": [], "is_rest_day": False}
     try:
         from bot.core.fitness_protocol import get_today_split, load_fitness_protocol
-        protocol = load_fitness_protocol()
-        split = get_today_split(protocol, today)
-        fitness_data = {
-            "date": split["date"],
-            "is_rest_day": split.get("is_rest_day", False),
-            "split_name": split.get("split_name"),
+        fp = load_fitness_protocol()
+        split = get_today_split(fp, today)
+        fitness = {
+            "split": split.get("split_name"),
             "focus": split.get("focus"),
             "exercises": split.get("exercises", []),
+            "is_rest_day": split.get("is_rest_day", False),
         }
     except Exception:
-        fitness_data = {"error": "Fitness protocol unavailable"}
+        pass
 
-    # Last workout per exercise (from workout_logs, last 30 days)
-    since_30 = datetime.utcnow() - timedelta(days=30)
+    # Last logged weight per exercise (workout_logs, last 30 days)
+    since_30 = (datetime.utcnow() - timedelta(days=30)).date()
     wl_result = await session.execute(
         select(WorkoutLog)
-        .where(and_(WorkoutLog.user_id == user.id, WorkoutLog.logged_date >= since_30.date()))
+        .where(and_(WorkoutLog.user_id == user.id, WorkoutLog.logged_date >= since_30))
         .order_by(WorkoutLog.logged_date.desc(), WorkoutLog.created_at.desc())
     )
-    wl_rows = wl_result.scalars().all()
-    last_per_exercise: dict = {}
-    for row in wl_rows:
-        if row.exercise not in last_per_exercise:
-            last_per_exercise[row.exercise] = {
+    last_weights: dict = {}
+    for row in wl_result.scalars().all():
+        if row.exercise not in last_weights:
+            last_weights[row.exercise] = {
                 "exercise": row.exercise,
                 "weight_kg": row.weight_kg,
                 "sets": row.sets,
@@ -110,9 +114,10 @@ async def get_daily_health(
 
     return {
         "date": today.isoformat(),
-        "supplement_stack": supplement_data,
-        "fitness_split": fitness_data,
-        "last_weights": list(last_per_exercise.values()),
+        "supplements": supplements,
+        "fitness": fitness,
+        "macros": macros,
+        "last_weights": list(last_weights.values()),
     }
 
 

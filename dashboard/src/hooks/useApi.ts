@@ -134,3 +134,7 @@ export function useAutopilotSuggestions() {
     refreshInterval: 300_000,
   });
 }
+
+export function useHealthDaily() {
+  return useSWR("health-daily", () => api.healthDaily(), { refreshInterval: 300_000 });
+}

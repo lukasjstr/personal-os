@@ -724,6 +724,42 @@ export interface PlannerSnapshot {
   progress_summary: PlannerProgressSummary;
 }
 
+// ─── Health Daily ─────────────────────────────────────────────────────────────
+
+export interface SupplementItem {
+  name: string;
+  dose: string;
+}
+
+export interface DailyHealthData {
+  date: string;
+  supplements: {
+    morning: SupplementItem[];
+    midday: SupplementItem[];
+    evening: SupplementItem[];
+  };
+  fitness: {
+    split: string | null;
+    focus: string | null;
+    exercises: string[];
+    is_rest_day: boolean;
+  };
+  macros: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    water: string;
+  };
+  last_weights: Array<{
+    exercise: string;
+    weight_kg: number | null;
+    sets: number | null;
+    reps: number | null;
+    date: string;
+  }>;
+}
+
 // ─── Reflection Types ─────────────────────────────────────────────────────────
 
 export interface ReflectionAiSummary {
@@ -927,4 +963,6 @@ export const api = {
   analyzeObjectives: () => apiFetch<ObjectiveAnalysis>("/api/objectives/ai-analysis"),
   setObjectiveParent: (id: number, parentId: number | null) =>
     apiPost<{ ok: boolean }>(`/api/objectives/${id}/set-parent`, { parent_objective_id: parentId }),
+  // Health daily
+  healthDaily: () => apiFetch<DailyHealthData>("/api/health/daily"),
 };

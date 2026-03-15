@@ -22,6 +22,7 @@ import {
 import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
 import PatternsCard from "@/components/PatternsCard";
 import ConfidenceCard from "@/components/ConfidenceCard";
+import HealthCard from "@/components/HealthCard";
 import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
 import type { DailySuggestionsResponse, Log } from "@/lib/api";
 
@@ -385,6 +386,9 @@ export default function DashboardPage() {
 
       {/* Autopilot Intelligence Cards (D1) */}
       <AutopilotIntelligenceCards />
+
+      {/* Health Card — Fitness Split + Supplements + Macros */}
+      <HealthCard />
 
       {/* Quick Access Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
