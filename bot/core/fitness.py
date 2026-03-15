@@ -5,6 +5,7 @@ from typing import Any, Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.core.fitness_protocol import format_split_text, get_today_split, load_fitness_protocol
 from bot.database.models import FitnessSplit, Log
 
 DAYS_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
@@ -41,10 +42,20 @@ async def get_fitness_plan(session: AsyncSession, user_id: int) -> str:
     splits = result.scalars().all()
 
     if not splits:
-        return (
-            "Noch keine Fitness-Splits definiert. "
-            "Erstelle z.B. einen Push/Pull/Leg-Split mit create_fitness_split."
-        )
+        try:
+            protocol = load_fitness_protocol()
+            today_view = get_today_split(protocol)
+            fallback = [
+                "Noch keine individuellen Fitness-Splits in der DB definiert.",
+                "Ich nutze deinen hinterlegten 3er-Split aus dem Protocol:",
+                format_split_text(today_view),
+            ]
+            return "\n".join(fallback)
+        except Exception:
+            return (
+                "Noch keine Fitness-Splits definiert. "
+                "Erstelle z.B. einen Push/Pull/Leg-Split mit create_fitness_split."
+            )
 
     # Determine last used split from recent workout logs
     since = datetime.utcnow() - timedelta(days=14)

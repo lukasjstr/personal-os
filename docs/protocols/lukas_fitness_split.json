@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "owner": "Lukas Stratmann",
+    "name": "3er Split",
+    "version": 1,
+    "rotation_anchor_date": "2026-03-16",
+    "rotation": ["Beine", "Pull", "Push"],
+    "rest_days": []
+  },
+  "splits": {
+    "Beine": {
+      "focus": "Lower body + Skill Technik",
+      "exercises": [
+        "Muscle Up – Technik",
+        "Pike – Technik",
+        "Front Lever – Technik",
+        "Beinpresse – Pendulum",
+        "Beinstrecker",
+        "Beinbeuger"
+      ]
+    },
+    "Pull": {
+      "focus": "Rücken + Zug + Bizeps",
+      "exercises": [
+        "Klimmzüge (Pull)",
+        "Rudern",
+        "CA Pushups / Überzüge",
+        "Breites Rudern",
+        "Unterer Rücken",
+        "Bizeps Maschine"
+      ]
+    },
+    "Push": {
+      "focus": "Brust + Schulter + Trizeps",
+      "exercises": [
+        "Dips",
+        "Brustpresse",
+        "Butterfly",
+        "Seitheben (+ Schulter)",
+        "Trizeps Kabel",
+        "Bauch"
+      ]
+    }
+  },
+  "notes": [
+    "Technik-Übungen (Muscle Up/Pike/Front Lever) kontrolliert und sauber priorisieren",
+    "Volumen und Intensität an Schlaf/Stress/Regeneration anpassen"
+  ]
+}

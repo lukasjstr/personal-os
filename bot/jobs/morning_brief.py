@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import settings
+from bot.core.fitness_protocol import get_today_split, load_fitness_protocol
 from bot.core.free_slot_planner import plan_free_slots
 from bot.core.gamification import get_level_title
 from bot.core.supplement_protocol import generate_daily_checklist, load_protocol
@@ -212,6 +213,18 @@ async def _generate_brief_for_user(
     except Exception:
         logger.exception("Supplement protocol unavailable; continuing without it")
 
+    fitness_view = None
+    try:
+        fitness_view = get_today_split(load_fitness_protocol(), today)
+        if fitness_view.get("is_rest_day"):
+            context_lines.append("\nFITNESS HEUTE: Rest / aktive Regeneration")
+        else:
+            context_lines.append(
+                f"\nFITNESS HEUTE: {fitness_view.get('split_name')} ({fitness_view.get('focus', '')})"
+            )
+    except Exception:
+        logger.exception("Fitness protocol unavailable; continuing without it")
+
     if events:
         context_lines.append("\nTERMINE HEUTE:")
         for e in events:
@@ -253,6 +266,7 @@ Erstelle einen prägnanten Morning Brief auf Deutsch. Format:
 - 📊 STAGNATION (nur wenn stagnierte Ziele vorhanden: kurze Aufforderung zur Reaktivierung)
 - 📋 ROUTINEN HEUTE (alle auflisten mit ☐)
 - 🧪 SUPPLEMENTE HEUTE (nur wenn Daten vorhanden: kurze Slot-Zeile Morgen/Mittag/Abend)
+- 🏋️ FITNESS HEUTE (nur wenn Daten vorhanden: heutiger Split + kurze Empfehlung)
 - 📅 KALENDER (nur wenn Events vorhanden)
 - 💡 REMINDER (nur wenn überfällige Tasks oder wichtige Hinweise vorhanden)
 - Kurzer motivierender Abschluss-Satz
@@ -318,6 +332,20 @@ Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei direkt und prägnan
         ]
         brief_text += "\n".join(supplement_lines)
 
+    if fitness_view:
+        split_name = fitness_view.get("split_name", "Training")
+        focus = fitness_view.get("focus", "")
+        ex_preview = ", ".join(fitness_view.get("exercises", [])[:4])
+        if len(fitness_view.get("exercises", [])) > 4:
+            ex_preview += " …"
+        fitness_lines = [
+            "\n\n🏋️ Fitness-Plan heute",
+            f"- Split: {split_name}" + (f" ({focus})" if focus else ""),
+        ]
+        if ex_preview:
+            fitness_lines.append(f"- Fokus-Übungen: {ex_preview}")
+        brief_text += "\n".join(fitness_lines)
+
     # Priorities snapshot stored in DailyBrief for evening drift detection
     priorities_snapshot = [
         {"id": t.id, "title": t.title, "priority": t.priority}
@@ -328,6 +356,15 @@ Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei direkt und prägnan
             {
                 "id": "supplement-stack",
                 "title": "Supplement-Stack (Morgen/Mittag/Abend)",
+                "priority": 2,
+                "type": "protocol",
+            }
+        )
+    if fitness_view and not fitness_view.get("is_rest_day"):
+        priorities_snapshot.append(
+            {
+                "id": "fitness-split",
+                "title": f"Workout: {fitness_view.get('split_name', 'Training')}",
                 "priority": 2,
                 "type": "protocol",
             }
