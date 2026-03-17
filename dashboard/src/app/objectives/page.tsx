@@ -29,11 +29,19 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 const KR_TYPE_LABEL: Record<string, string> = {
-  percentage: "%",
-  number: "#",
-  boolean: "✓",
-  streak: "🔥",
-  checklist: "☑",
+  percentage: "Prozent",
+  number: "Anzahl",
+  boolean: "Ja/Nein",
+  streak: "Streak",
+  checklist: "Checkliste",
+};
+
+const KR_TYPE_COLOR: Record<string, string> = {
+  percentage: "text-blue-400 bg-blue-900/40",
+  number: "text-violet-400 bg-violet-900/40",
+  boolean: "text-green-400 bg-green-900/40",
+  streak: "text-orange-400 bg-orange-900/40",
+  checklist: "text-zinc-400 bg-zinc-800",
 };
 
 const CATEGORIES = [
@@ -557,7 +565,7 @@ function AreaObjectiveCard({
   onDeleteKR: (obj: Objective, kr: KeyResult) => void;
 }) {
   const [expanded, setExpanded] = useState(
-    obj.status === "active" && obj.key_results.length > 0
+    obj.status === "active" && (obj.key_results.length > 0 || obj.tasks.length > 0)
   );
 
   const pct = avgProgress(obj);
@@ -586,27 +594,19 @@ function AreaObjectiveCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
             <span className="text-white font-medium text-sm leading-snug">{obj.title}</span>
-            <span
-              className={cn(
-                "text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0",
-                STATUS_STYLE[obj.status] ?? "bg-zinc-800 text-zinc-400"
-              )}
-            >
-              {STATUS_LABEL[obj.status] ?? obj.status}
-            </span>
-            <span
-              className="text-xs px-1.5 py-0.5 rounded-full font-medium border shrink-0"
-              style={{
-                color: catColor.hex,
-                borderColor: catColor.hex + "50",
-                backgroundColor: catColor.hex + "15",
-              }}
-            >
-              {obj.category}
-            </span>
+            {obj.status !== "active" && (
+              <span
+                className={cn(
+                  "text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0",
+                  STATUS_STYLE[obj.status] ?? "bg-zinc-800 text-zinc-400"
+                )}
+              >
+                {STATUS_LABEL[obj.status] ?? obj.status}
+              </span>
+            )}
             {obj.target_date && (
               <span className="text-xs text-zinc-500 shrink-0">
-                bis {formatDate(obj.target_date)}
+                📅 {formatDate(obj.target_date)}
               </span>
             )}
           </div>
@@ -646,39 +646,31 @@ function AreaObjectiveCard({
                 <div className="flex items-center gap-3 px-4 py-2.5 group/kr">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded font-medium shrink-0">
+                      <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium shrink-0", KR_TYPE_COLOR[kr.metric_type] ?? "text-zinc-400 bg-zinc-800")}>
                         {KR_TYPE_LABEL[kr.metric_type] ?? kr.metric_type}
                       </span>
-                      <span className="text-sm text-zinc-300 truncate">{kr.title}</span>
+                      <span className="text-sm text-zinc-200 flex-1 min-w-0">{kr.title}</span>
                       {kr.status === "completed" && (
-                        <span className="text-green-400 text-xs shrink-0">✓</span>
+                        <span className="text-green-400 text-xs shrink-0 font-medium">✓ Done</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+                      <div className="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-500 rounded-full transition-all duration-500"
                           style={{ width: `${kr.progress_pct}%` }}
                         />
                       </div>
-                      <span className="text-xs text-zinc-500 shrink-0 w-8 text-right">
-                        {kr.progress_pct}%
+                      <span className="text-xs text-zinc-400 shrink-0 font-medium tabular-nums">
+                        {kr.current_value}{kr.unit ? ` ${kr.unit}` : ""} / {kr.target_value}{kr.unit ? ` ${kr.unit}` : ""}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0 w-20">
-                    <div className="text-sm text-white font-medium">
-                      {kr.current_value}
-                      {kr.unit ? ` ${kr.unit}` : ""}
-                      {kr.target_value != null && (
-                        <span className="text-zinc-500 font-normal">
-                          {" / "}
-                          {kr.target_value}
-                          {kr.unit ? ` ${kr.unit}` : ""}
-                        </span>
-                      )}
-                    </div>
+                  <div className="shrink-0">
+                    <span className="text-sm font-bold tabular-nums" style={{ color: progressColor(kr.progress_pct) }}>
+                      {kr.progress_pct}%
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/kr:opacity-100 transition-opacity">
@@ -834,15 +826,19 @@ function AreaSection({
       : 0;
 
   const dotClass = momentumDot(avgPct);
-  const areaLabel = category.charAt(0).toUpperCase() + category.slice(1);
+  const AREA_LABELS: Record<string, string> = {
+    health: "Gesundheit", fitness: "Fitness", business: "Business",
+    personal: "Persönlich", finance: "Finanzen", learning: "Lernen",
+    relationships: "Beziehungen",
+  };
+  const areaLabel = AREA_LABELS[category] ?? (category.charAt(0).toUpperCase() + category.slice(1));
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl mb-4 overflow-hidden">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl mb-4 overflow-hidden" style={{ borderLeft: `3px solid ${catColor.hex}` }}>
       {/* Area header bar */}
       <button
         onClick={() => setCollapsed((v) => !v)}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/40 transition-colors text-left"
-        style={{ borderLeft: `3px solid ${catColor.hex}` }}
       >
         <span className="text-xl shrink-0">{emoji}</span>
         <span className="text-white font-semibold text-sm uppercase tracking-wide">
@@ -895,7 +891,7 @@ function AreaSection({
               onClick={() => onCreateInArea(category)}
               className="flex items-center gap-1 text-xs text-zinc-500 hover:text-blue-400 transition-colors"
             >
-              <Plus size={12} /> Neues Ziel in {areaLabel}
+              <Plus size={12} /> Neues Ziel in <span style={{ color: catColor.hex }}>{areaLabel}</span>
             </button>
           </div>
         </>
