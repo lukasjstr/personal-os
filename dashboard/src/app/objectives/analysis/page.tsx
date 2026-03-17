@@ -16,6 +16,7 @@ interface GoalGroup {
   objectives: number[];
   insight: string;
   momentum_label: string;
+  key_leverage?: number;
 }
 
 interface GoalSynergy {
@@ -23,6 +24,7 @@ interface GoalSynergy {
   type: "reinforcing" | "sequential" | "shared_habit";
   title: string;
   description: string;
+  action_tip?: string;
 }
 
 interface GoalDependency {
@@ -46,6 +48,16 @@ interface GoalInsight {
   objective_id?: number;
 }
 
+interface ClarifyingQuestion {
+  question: string;
+  why: string;
+}
+
+interface KeyObjective {
+  id: number;
+  reason: string;
+}
+
 interface GoalAnalysis {
   groups: GoalGroup[];
   synergies: GoalSynergy[];
@@ -54,6 +66,8 @@ interface GoalAnalysis {
   insights: GoalInsight[];
   overall_momentum: "growing" | "stable" | "at_risk";
   motivational_message: string;
+  key_objective?: KeyObjective | null;
+  clarifying_questions?: ClarifyingQuestion[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -130,6 +144,15 @@ function SynergyCard({
         </span>
       </div>
       <p className="text-zinc-400 text-xs leading-relaxed">{synergy.description}</p>
+
+      {/* Action tip */}
+      {synergy.action_tip && (
+        <div className="flex items-start gap-2 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-3 py-2 mt-1">
+          <span className="text-sm shrink-0">💡</span>
+          <p className="text-zinc-300 text-xs leading-relaxed">{synergy.action_tip}</p>
+        </div>
+      )}
+
       {involvedObjs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           {involvedObjs.map((obj) => (
@@ -174,12 +197,23 @@ function GroupCard({
         <div className="space-y-2 pt-1">
           {groupObjs.map((obj) => {
             const progress = avgKrProgress(obj);
+            const isKeyLeverage = group.key_leverage === obj.id;
             return (
               <div key={obj.id} className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-300 text-xs truncate flex-1 pr-2">
-                    {CATEGORY_EMOJI[obj.category] ?? "🎯"} {obj.title}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-2">
+                    <span className="text-zinc-300 text-xs truncate">
+                      {CATEGORY_EMOJI[obj.category] ?? "🎯"} {obj.title}
+                    </span>
+                    {isKeyLeverage && (
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-800/50 shrink-0"
+                        title="Schlüssel-Hebelpunkt in dieser Gruppe"
+                      >
+                        🔑
+                      </span>
+                    )}
+                  </div>
                   <span className="text-zinc-500 text-xs shrink-0">{progress}%</span>
                 </div>
                 <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
@@ -274,11 +308,13 @@ export default function ObjectivesAnalysisPage() {
   const [addingTaskIdx, setAddingTaskIdx] = useState<number | null>(null);
   const [addedTasks, setAddedTasks] = useState<Set<number>>(new Set());
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
 
   const { data: objectivesData } = useSWR("objectives", () => api.objectives(), {
     refreshInterval: 0,
   });
 
+  // api.objectives() returns { objectives: [...] }
   const objectives: Objective[] = objectivesData?.objectives ?? [];
 
   const handleRunAnalysis = async () => {
@@ -300,6 +336,7 @@ export default function ObjectivesAnalysisPage() {
       }
       const data: GoalAnalysis = await result.json();
       setAnalysis(data);
+      setQuestionAnswers({});
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unbekannter Fehler");
     } finally {
@@ -325,13 +362,17 @@ export default function ObjectivesAnalysisPage() {
   };
 
   const momentumStyle = analysis ? MOMENTUM_STYLE[analysis.overall_momentum] : null;
-
-  // Group insights by type for ordered display
   const warnings = analysis?.insights.filter((i) => i.type === "warning") ?? [];
   const opportunities = analysis?.insights.filter((i) => i.type === "opportunity") ?? [];
   const milestones = analysis?.insights.filter((i) => i.type === "milestone") ?? [];
 
   const objMap = new Map(objectives.map((o) => [o.id, o]));
+
+  const keyObjTitle = analysis?.key_objective
+    ? (objMap.get(analysis.key_objective.id)?.title ?? `Ziel #${analysis.key_objective.id}`)
+    : null;
+
+  const clarifyingQuestions = analysis?.clarifying_questions ?? [];
 
   return (
     <div>
@@ -364,13 +405,12 @@ export default function ObjectivesAnalysisPage() {
         </Link>
       </div>
 
-      {/* Error */}
+      {/* Errors */}
       {error && (
         <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-3 mb-5 text-red-400 text-sm">
           {error}
         </div>
       )}
-
       {taskError && (
         <div className="bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-3 mb-5 text-red-400 text-sm">
           {taskError}
@@ -384,7 +424,8 @@ export default function ObjectivesAnalysisPage() {
           <div>
             <div className="text-white font-semibold text-base">Analyse starten</div>
             <div className="text-zinc-500 text-sm mt-1 max-w-sm mx-auto">
-              Die KI analysiert deine Ziele auf Synergien, Gruppen, Abhängigkeiten und schlägt neue Tasks vor.
+              Die KI analysiert deine Ziele auf Synergien, Gruppen, Abhängigkeiten und schlägt neue
+              Tasks vor.
             </div>
           </div>
           <button
@@ -412,7 +453,7 @@ export default function ObjectivesAnalysisPage() {
           {/* Overall Momentum */}
           {momentumStyle && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-white font-semibold text-sm">Gesamt-Momentum</span>
                 <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium", momentumStyle.badge)}>
                   {momentumStyle.label}
@@ -422,6 +463,20 @@ export default function ObjectivesAnalysisPage() {
                 <p className="text-zinc-300 text-sm leading-relaxed italic">
                   &ldquo;{analysis.motivational_message}&rdquo;
                 </p>
+              )}
+
+              {/* Key Objective highlight */}
+              {analysis.key_objective && keyObjTitle && (
+                <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl px-4 py-3 space-y-1 mt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🔑</span>
+                    <span className="text-amber-300 font-semibold text-sm">Schlüsselziel</span>
+                  </div>
+                  <div className="text-white text-sm font-medium pl-6">{keyObjTitle}</div>
+                  <p className="text-amber-200/70 text-xs leading-relaxed pl-6">
+                    {analysis.key_objective.reason}
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -453,7 +508,9 @@ export default function ObjectivesAnalysisPage() {
           {/* Cross-objective tasks */}
           {analysis.cross_objective_tasks.length > 0 && (
             <div>
-              <SectionHeader title={`✅ Neue Task-Vorschläge (${analysis.cross_objective_tasks.length})`} />
+              <SectionHeader
+                title={`✅ Neue Task-Vorschläge (${analysis.cross_objective_tasks.length})`}
+              />
               <div className="space-y-3">
                 {analysis.cross_objective_tasks.map((task, i) => (
                   <CrossTaskCard
@@ -524,6 +581,44 @@ export default function ObjectivesAnalysisPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Clarifying Questions */}
+          {clarifyingQuestions.length > 0 && (
+            <div>
+              <SectionHeader title={`❓ Klärende Fragen (${clarifyingQuestions.length})`} />
+              <div className="space-y-3">
+                {clarifyingQuestions.map((q, i) => (
+                  <div
+                    key={i}
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-white text-sm font-medium">{q.question}</p>
+                      <p className="text-zinc-500 text-xs leading-relaxed">{q.why}</p>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={questionAnswers[i] ?? ""}
+                      onChange={(e) =>
+                        setQuestionAnswers((prev) => ({ ...prev, [i]: e.target.value }))
+                      }
+                      placeholder="Deine Antwort…"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleRunAnalysis}
+                        disabled={loading}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                      >
+                        Antwort senden & erneut analysieren
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
