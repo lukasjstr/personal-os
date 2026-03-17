@@ -8688,3 +8688,23 @@ async def submit_learning_review(
     result = await review_item(session, user.id, item_id, body.quality)
     await session.commit()
     return result
+
+
+class ProcessMessageBody(BaseModel):
+    message: str
+    source: str = "api"
+
+
+@router.post("/process")
+async def process_user_message(
+    body: ProcessMessageBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Process a free-text message through the full GPT-4o 8-dimension pipeline.
+    Same as sending a message via Telegram — creates tasks, routines, shopping items etc.
+    """
+    from bot.ai.client import process_message
+    reply = await process_message(session, user, body.message, source=body.source)
+    await session.commit()
+    return {"ok": True, "reply": reply}
