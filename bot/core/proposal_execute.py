@@ -164,7 +164,7 @@ async def execute_accepted_proposal(
             objective_id=objective.id,
             user_id=draft_row.user_id,
             title=kr_title,
-            type=metric_type,
+            metric_type=metric_type,
             current_value=current_value,
             target_value=target_value,
             unit=unit,

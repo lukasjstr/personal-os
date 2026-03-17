@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import Header from "@/components/Header";
 import LoadingSpinner, { ErrorState, EmptyState } from "@/components/LoadingSpinner";
@@ -1094,9 +1095,17 @@ export default function ObjectivesPage() {
         title="🎯 Objectives"
         subtitle={`${counts.active} aktiv · ${counts.completed} abgeschlossen`}
         action={
-          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors">
-            <Plus size={14} /> Neues Objective
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/objectives/analysis"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+            >
+              🔍 Zielanalyse
+            </Link>
+            <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition-colors">
+              <Plus size={14} /> Neues Objective
+            </button>
+          </div>
         }
       />
 

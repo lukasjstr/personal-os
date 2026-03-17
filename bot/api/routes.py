@@ -6506,6 +6506,204 @@ Regeln: 3-5 KRs, 5-8 Tasks, Wochenplan nur bei Habit/Sport."""
     return {"draft_id": draft.id, "plan": plan}
 
 
+class GoalAnalysisRefreshBody(BaseModel):
+    pass
+
+
+@router.post("/goals/analysis")
+async def goal_analysis(
+    body: GoalAnalysisRefreshBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Analyse all active objectives with GPT-4o-mini and return structured insights."""
+    import json as _json
+    from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+    today = _date.today()
+    fourteen_ago = _datetime.combine(today - _timedelta(days=14), _datetime.min.time())
+    thirty_ago = _datetime.combine(today - _timedelta(days=30), _datetime.min.time())
+
+    # Load active objectives with key results and tasks
+    obj_res = await session.execute(
+        select(Objective)
+        .options(
+            selectinload(Objective.key_results),
+            selectinload(Objective.tasks),
+        )
+        .where(and_(
+            Objective.user_id == user.id,
+            Objective.status == "active",
+        ))
+        .order_by(Objective.created_at)
+    )
+    objectives = obj_res.scalars().all()
+
+    if not objectives:
+        return {
+            "groups": [],
+            "synergies": [],
+            "dependencies": [],
+            "cross_objective_tasks": [],
+            "insights": [],
+            "overall_momentum": "stable",
+            "motivational_message": "Noch keine aktiven Ziele vorhanden. Erstelle dein erstes Ziel!",
+        }
+
+    # Compute momentum scores for each objective (same formula as /gamification/momentum)
+    momentum_by_id: dict[int, dict] = {}
+    for obj in objectives:
+        tasks_res = await session.execute(
+            select(func.count()).select_from(Task).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.completed_at >= fourteen_ago,
+            ))
+        )
+        tasks_done_14d = tasks_res.scalar() or 0
+
+        last_task_res = await session.execute(
+            select(Task.completed_at).where(and_(
+                Task.objective_id == obj.id,
+                Task.status == "done",
+                Task.completed_at >= thirty_ago,
+            ))
+            .order_by(Task.completed_at.desc())
+            .limit(1)
+        )
+        last_row = last_task_res.scalar_one_or_none()
+        days_since = (today - last_row.date()).days if last_row else 30
+
+        score = min(100, max(0,
+            tasks_done_14d * 10
+            - days_since * 2
+            + (10 if tasks_done_14d > 0 else 0)
+        ))
+        momentum_label = "high" if score >= 60 else "medium" if score >= 30 else "low"
+        momentum_by_id[obj.id] = {"score": score, "label": momentum_label}
+
+    portfolio_avg = int(sum(v["score"] for v in momentum_by_id.values()) / len(momentum_by_id)) if momentum_by_id else 0
+
+    # Build objectives summary for the prompt
+    objs_for_prompt = []
+    for o in objectives:
+        kr_list = [
+            {
+                "title": kr.title,
+                "metric_type": kr.metric_type,
+                "current_value": kr.current_value,
+                "target_value": kr.target_value,
+                "unit": kr.unit,
+                "status": kr.status,
+                "progress_pct": (
+                    min(100, int((kr.current_value / kr.target_value) * 100))
+                    if kr.target_value and kr.target_value > 0
+                    else 0
+                ),
+            }
+            for kr in o.key_results
+        ]
+        task_summary = {
+            "total": len(o.tasks),
+            "done": sum(1 for t in o.tasks if t.status == "done"),
+            "open": sum(1 for t in o.tasks if t.status != "done"),
+        }
+        objs_for_prompt.append({
+            "id": o.id,
+            "title": o.title,
+            "description": o.description,
+            "category": o.category,
+            "target_date": o.target_date.isoformat() if o.target_date else None,
+            "key_results": kr_list,
+            "task_summary": task_summary,
+            "momentum_score": momentum_by_id[o.id]["score"],
+            "momentum_label": momentum_by_id[o.id]["label"],
+        })
+
+    objectives_json = _json.dumps(objs_for_prompt, ensure_ascii=False)
+
+    system = (
+        "Du bist ein strategischer Life-Coach und OKR-Experte. Analysiere die aktiven Ziele des Nutzers "
+        "ganzheitlich und erkenne Muster, Synergien, Risiken und Chancen. "
+        "Antworte ausschließlich auf Deutsch, ausschließlich als valides JSON."
+    )
+    prompt = f"""Heute: {today.isoformat()}
+Portfolio-Momentum: {portfolio_avg}/100
+
+Aktive Ziele des Nutzers:
+{objectives_json}
+
+Analysiere alle Ziele gemeinsam und antworte NUR als JSON mit dieser exakten Struktur:
+{{
+  "groups": [
+    {{
+      "area": "Lebensbereich (z.B. Gesundheit, Karriere, Finanzen)",
+      "emoji": "passendes Emoji",
+      "objectives": [<Liste der Objective-IDs als Integer>],
+      "insight": "1-2 Sätze strategische Einschätzung dieses Bereichs",
+      "momentum_label": "high|medium|low"
+    }}
+  ],
+  "synergies": [
+    {{
+      "objective_ids": [<int>, <int>],
+      "type": "reinforcing|sequential|shared_habit",
+      "title": "Kurzer Titel der Synergie (max 60 Zeichen)",
+      "description": "Wie diese Ziele sich gegenseitig stärken (1-2 Sätze)"
+    }}
+  ],
+  "dependencies": [
+    {{
+      "from_objective_id": <int>,
+      "to_objective_id": <int>,
+      "description": "Warum Ziel A von Ziel B abhängt oder es ermöglicht (1 Satz)"
+    }}
+  ],
+  "cross_objective_tasks": [
+    {{
+      "title": "Aufgaben-Titel (max 80 Zeichen)",
+      "category": "Kategorie",
+      "priority": <1-3 als Integer>,
+      "impacts_objective_ids": [<int>, ...],
+      "why": "Warum diese Aufgabe mehrere Ziele voranbringt (1 Satz)"
+    }}
+  ],
+  "insights": [
+    {{
+      "type": "warning|opportunity|milestone",
+      "title": "Kurzer Titel (max 60 Zeichen)",
+      "description": "Konkreter Hinweis (1-2 Sätze)",
+      "objective_id": <int oder null>
+    }}
+  ],
+  "overall_momentum": "growing|stable|at_risk",
+  "motivational_message": "Persönliche motivierende Nachricht 2-3 Sätze"
+}}
+
+Regeln:
+- Gruppiere alle Ziele in sinnvolle Lebensbereiche (1-4 Gruppen)
+- Synergien nur wenn wirklich vorhanden (0-4 Synergien)
+- Dependencies nur bei echten Abhängigkeiten (0-3 Dependencies)
+- 2-4 cross_objective_tasks die WIRKLICH mindestens 2 Ziele betreffen
+- 3-5 insights (Mischung aus warning, opportunity, milestone)
+- overall_momentum: "growing" wenn portfolio >= 60, "at_risk" wenn <= 20, sonst "stable"
+- Alle Integer-IDs müssen aus der obigen Zielliste stammen"""
+
+    client = _goal_openai_client()
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        analysis = _json.loads(resp.choices[0].message.content)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"KI-Analyse fehlgeschlagen: {exc}") from exc
+
+    return analysis
+
+
 # ─── iCal / Google Calendar Sync ─────────────────────────────────────────────
 
 class SetIcalBody(BaseModel):
