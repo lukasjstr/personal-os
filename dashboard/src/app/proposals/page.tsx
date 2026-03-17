@@ -46,7 +46,12 @@ async function fetchDrafts(): Promise<ProposalDraft[]> {
     },
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    let detail = "";
+    try { const j = await res.json(); detail = j.detail || ""; } catch { detail = await res.text().catch(() => ""); }
+    throw new Error(`${res.status}${detail ? `: ${detail}` : ""}`);
+  }
   return res.json();
 }
 

@@ -965,4 +965,9 @@ export const api = {
     apiPost<{ ok: boolean }>(`/api/objectives/${id}/set-parent`, { parent_objective_id: parentId }),
   // Health daily
   healthDaily: () => apiFetch<DailyHealthData>("/api/health/daily"),
+  // Protocol editors
+  getSupplementProtocol: () => apiFetch<unknown>("/api/protocols/supplements"),
+  updateSupplementProtocol: (data: unknown) => apiPut<{ ok: boolean }>("/api/protocols/supplements", data),
+  getFitnessProtocol: () => apiFetch<unknown>("/api/protocols/fitness"),
+  updateFitnessProtocol: (data: unknown) => apiPut<{ ok: boolean }>("/api/protocols/fitness", data),
 };

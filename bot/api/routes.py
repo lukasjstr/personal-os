@@ -3,6 +3,7 @@ import dataclasses
 import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6098,6 +6099,58 @@ Antworte NUR mit JSON:
         }
 
 
+# ─── Protocol Endpoints ───────────────────────────────────────────────────────
+
+_SUPPLEMENT_PROTOCOL_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "protocols" / "lukas_keto_supplements.json"
+)
+_FITNESS_PROTOCOL_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "protocols" / "lukas_fitness_split.json"
+)
+
+
+@router.get("/protocols/supplements")
+async def get_supplement_protocol(user: User = Depends(get_current_user)) -> dict:
+    """Return the supplement protocol JSON."""
+    import json as _json
+    try:
+        return _json.loads(_SUPPLEMENT_PROTOCOL_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Supplement-Protokoll nicht gefunden")
+
+
+@router.put("/protocols/supplements")
+async def update_supplement_protocol(
+    payload: dict,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Overwrite the supplement protocol JSON."""
+    import json as _json
+    _SUPPLEMENT_PROTOCOL_PATH.write_text(_json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
+@router.get("/protocols/fitness")
+async def get_fitness_protocol(user: User = Depends(get_current_user)) -> dict:
+    """Return the fitness split protocol JSON."""
+    import json as _json
+    try:
+        return _json.loads(_FITNESS_PROTOCOL_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Fitness-Protokoll nicht gefunden")
+
+
+@router.put("/protocols/fitness")
+async def update_fitness_protocol(
+    payload: dict,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Overwrite the fitness split protocol JSON."""
+    import json as _json
+    _FITNESS_PROTOCOL_PATH.write_text(_json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
 # ─── Goal Coach (AI-powered Goal Wizard) ─────────────────────────────────────
 
 class GoalClarifyBody(BaseModel):
@@ -6216,19 +6269,22 @@ Regeln: 3-5 KRs (echte Zahlen), 5-8 Tasks, Wochenplan nur bei Habit/Sport-Zielen
 
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     if not openai_key:
-        raise HTTPException(status_code=500, detail="OpenAI API Key nicht konfiguriert")
+        raise HTTPException(status_code=503, detail="OpenAI API Key fehlt auf dem Server. Bitte in der .env konfigurieren.")
 
-    client = AsyncOpenAI(api_key=openai_key)
-    resp = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
-    plan = _json.loads(resp.choices[0].message.content)
+    try:
+        client = AsyncOpenAI(api_key=openai_key)
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        plan = _json.loads(resp.choices[0].message.content)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"KI-Generierung fehlgeschlagen: {exc}") from exc
 
     # Save as OKRProposalDraft for later execution
     draft = OKRProposalDraft(

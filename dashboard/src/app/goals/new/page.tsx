@@ -18,7 +18,11 @@ async function apiCall(path: string, body: unknown) {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.detail || j.message || msg; } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -102,8 +106,8 @@ export default function NewGoalPage() {
       setEditedPlan(JSON.parse(JSON.stringify(data.plan)));
       setDraftId(data.draft_id);
       setStep(3);
-    } catch (e) {
-      setError("Fehler beim Generieren. Bitte nochmal versuchen.");
+    } catch (e: unknown) {
+      setError("Fehler: " + (e instanceof Error ? e.message : "Unbekannt"));
     } finally {
       setLoadingPlan(false);
     }
