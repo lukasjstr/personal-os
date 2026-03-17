@@ -3933,6 +3933,49 @@ async def get_behavioral_patterns(
     }
 
 
+@router.get("/autopilot/pattern-insights")
+async def get_pattern_insights(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get stored pattern insights + consistency score for this user."""
+    from bot.core.pattern_engine import _compute_consistency_score
+    from bot.core.insights import get_active_insights
+
+    insights = await get_active_insights(session, user.id)
+    consistency = await _compute_consistency_score(session, user.id, date.today())
+
+    return {
+        "insights": [
+            {
+                "id": ins.id,
+                "type": ins.insight_type,
+                "title": ins.title,
+                "description": ins.description,
+                "created_at": ins.created_at.isoformat(),
+            }
+            for ins in insights
+        ],
+        "consistency_score": consistency,
+    }
+
+
+@router.post("/autopilot/pattern-insights/refresh")
+async def refresh_pattern_insights(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Trigger a fresh pattern analysis run on demand."""
+    from bot.core.pattern_engine import run_pattern_analysis
+    result = await run_pattern_analysis(session, user.id)
+    await session.commit()
+    return {
+        "ok": True,
+        "insights_generated": len(result.get("insights", [])),
+        "consistency_score": result.get("consistency_score"),
+    }
+
+
 # ─── E4: Adaptive Suggestion Timing ───────────────────────────────────────────
 
 @router.get("/autopilot/active-hours")
@@ -6451,6 +6494,10 @@ Generiere NUR JSON:
   "reminders": [
     {{"title": "Erinnerung", "message": "Push-Text max 80 Zeichen", "day_offset": 1, "time": "08:00", "kr_title": "Zugehöriger KR-Titel"}}
   ],
+  "routines": [
+    {{"title": "Routine-Titel z.B. 'Tägliches Workout'", "frequency": "täglich|wöchentlich|3x pro Woche", "time_of_day": "morning|evening|anytime", "duration_min": 30, "kr_title": "Zugehöriger KR-Titel"}}
+  ],
+  "shopping_items": ["Artikel 1", "Artikel 2"],
   "synergies": [
     {{"existing_goal": "Titel des bestehenden Ziels", "connection": "Wie hängt es zusammen"}}
   ],
@@ -6462,7 +6509,9 @@ Regeln:
 - 5-8 Tasks die DIREKT auf die KRs einzahlen, jeder Task hat kr_title gesetzt
 - Wochenplan nur bei regelmäßigen Aktivitäten
 - 2-4 Erinnerungen als Push-Benachrichtigungen für die wichtigsten Meilensteine
-- Synergien nur wenn wirklich relevant"""
+- Synergien nur wenn wirklich relevant
+- Routinen: 1-3 wiederkehrende Gewohnheiten die das Ziel unterstützen (nicht optional — IMMER ausfüllen wenn sinnvoll)
+- Shopping-Items: nur konkrete Einkäufe die wirklich nötig sind (z.B. Sportgeräte, Bücher, Zutaten) — leer lassen wenn nicht relevant"""
     else:
         # Legacy flow: generate everything
         user_prompt = f"""Heute: {today}
@@ -6477,11 +6526,13 @@ Generiere vollständigen OKR-Plan als JSON:
   "key_results": [{{"title": "...", "metric_type": "number|percentage|boolean|streak", "target_value": 10, "current_value": 0, "unit": "...", "why": "...", "recommended": true, "difficulty": "medium"}}],
   "tasks": [{{"title": "...", "priority": 1, "due_days": 7, "category": "..."}}],
   "weekly_schedule": [{{"day": "Montag", "activity": "...", "duration_min": 60}}],
+  "routines": [{{"title": "...", "frequency": "täglich|wöchentlich", "time_of_day": "morning|evening|anytime", "duration_min": 30, "kr_title": "..."}}],
+  "shopping_items": ["Artikel 1"],
   "synergies": [{{"existing_goal": "...", "connection": "..."}}],
   "motivation_message": "...",
   "first_step": "..."
 }}
-Regeln: 3-5 KRs, 5-8 Tasks, Wochenplan nur bei Habit/Sport."""
+Regeln: 3-5 KRs, 5-8 Tasks mit due_days (1-90 Tage), Wochenplan + Routinen bei Habit/Sport."""
 
     client = _goal_openai_client()
     try:
@@ -7340,6 +7391,73 @@ async def get_productivity_patterns(
     return patterns
 
 
+@router.get("/intelligence/day-schedule")
+async def get_day_schedule(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get today's auto-scheduled time blocks."""
+    from datetime import date as _date, datetime as _dt, time as _time
+    today = _date.today()
+    day_start = _dt.combine(today, _time(0, 0))
+    day_end = _dt.combine(today, _time(23, 59))
+
+    res = await session.execute(
+        select(CalendarEvent).where(and_(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.start_time >= day_start,
+            CalendarEvent.start_time <= day_end,
+            CalendarEvent.event_type == "work_block",
+        )).order_by(CalendarEvent.start_time)
+    )
+    blocks = res.scalars().all()
+
+    return {
+        "date": today.isoformat(),
+        "blocks": [
+            {
+                "id": b.id,
+                "title": b.title,
+                "start_time": b.start_time.strftime("%H:%M"),
+                "end_time": b.end_time.strftime("%H:%M") if b.end_time else None,
+                "task_id": b.linked_task_id,
+                "routine_id": b.linked_routine_id,
+            }
+            for b in blocks
+        ],
+        "count": len(blocks),
+    }
+
+
+@router.post("/intelligence/day-schedule/generate")
+async def trigger_day_schedule(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Manually trigger day schedule generation for today."""
+    from bot.core.day_scheduler import generate_day_schedule
+    schedule, daily_focus = await generate_day_schedule(session, user)
+    await session.commit()
+    return {
+        "generated": len(schedule),
+        "daily_focus": daily_focus,
+        "schedule": schedule,
+    }
+
+
+@router.get("/intelligence/next-action")
+async def get_next_action_intelligence(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Sprint 5: Single best next action with context (dashboard use)."""
+    from bot.core.next_action import get_next_action
+    action = await get_next_action(session, user)
+    if not action:
+        return {"action": None, "message": "Keine offenen Tasks"}
+    return {"action": action}
+
+
 # ─── iCal / Google Calendar Sync ─────────────────────────────────────────────
 
 class SetIcalBody(BaseModel):
@@ -7376,3 +7494,309 @@ async def set_ical_url(
             return {"ok": True, "synced": 0, "message": f"URL gespeichert, Sync fehlgeschlagen: {e}"}
 
     return {"ok": True, "synced": 0, "message": "iCal URL entfernt"}
+
+# ─── Finance Routes ───────────────────────────────────────────────────────────
+
+@router.get("/finance/summary")
+async def get_finance_summary(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Monthly financial summary: income, expenses by category, budget status."""
+    from bot.core.finance import get_financial_summary
+    return await get_financial_summary(session, user.id)
+
+
+@router.get("/finance/transactions")
+async def list_transactions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    type: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 50,
+):
+    """List financial transactions with optional filters."""
+    from bot.database.models import FinancialTransaction
+    from sqlalchemy import extract
+    today = date.today()
+    q = select(FinancialTransaction).where(FinancialTransaction.user_id == user.id)
+    if month:
+        q = q.where(extract("month", FinancialTransaction.transaction_date) == month)
+    if year:
+        q = q.where(extract("year", FinancialTransaction.transaction_date) == year)
+    else:
+        q = q.where(extract("year", FinancialTransaction.transaction_date) == today.year)
+    if type:
+        q = q.where(FinancialTransaction.type == type)
+    if category:
+        q = q.where(FinancialTransaction.category == category)
+    q = q.order_by(FinancialTransaction.transaction_date.desc()).limit(limit)
+    result = await session.execute(q)
+    txs = result.scalars().all()
+    return [
+        {
+            "id": t.id, "amount": t.amount, "type": t.type, "category": t.category,
+            "description": t.description, "date": str(t.transaction_date),
+            "is_recurring": t.is_recurring,
+        }
+        for t in txs
+    ]
+
+
+@router.post("/finance/transactions")
+async def create_transaction(
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Manually create a financial transaction."""
+    from bot.core.finance import log_expense, log_income
+    tx_type = body.get("type", "expense")
+    tx_date = None
+    if body.get("date"):
+        try:
+            tx_date = date.fromisoformat(body["date"])
+        except ValueError:
+            pass
+    if tx_type == "income":
+        result = await log_income(session, user.id, float(body["amount"]), body.get("source", ""), tx_date)
+    else:
+        result = await log_expense(
+            session, user.id, float(body["amount"]),
+            body.get("category", "sonstiges"), body.get("description", ""),
+            tx_date, body.get("is_recurring", False),
+        )
+    await session.commit()
+    return result
+
+
+@router.delete("/finance/transactions/{tx_id}")
+async def delete_transaction(
+    tx_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Delete a financial transaction."""
+    from bot.database.models import FinancialTransaction
+    result = await session.execute(
+        select(FinancialTransaction).where(
+            FinancialTransaction.id == tx_id,
+            FinancialTransaction.user_id == user.id,
+        )
+    )
+    tx = result.scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    await session.delete(tx)
+    await session.commit()
+    return {"deleted": True}
+
+
+@router.get("/finance/budgets")
+async def list_budgets(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """List all budget limits."""
+    from bot.database.models import Budget
+    result = await session.execute(select(Budget).where(Budget.user_id == user.id))
+    budgets = result.scalars().all()
+    return [{"id": b.id, "category": b.category, "monthly_limit": b.monthly_limit} for b in budgets]
+
+
+@router.put("/finance/budgets/{category}")
+async def upsert_budget(
+    category: str,
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Create or update a monthly budget."""
+    from bot.core.finance import set_budget
+    result = await set_budget(session, user.id, category, float(body["monthly_limit"]))
+    await session.commit()
+    return result
+
+
+# ─── Health Sync Routes ───────────────────────────────────────────────────────
+
+@router.post("/health/sync")
+async def sync_health_data(
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Universal health sync endpoint.
+
+    Accepts JSON with any combination of:
+    {
+        "sleep_hours": 7.5,
+        "sleep_quality": 8,
+        "steps": 9200,
+        "hrv": 52,
+        "weight_kg": 78.5,
+        "calories": 2100,
+        "active_minutes": 45,
+        "resting_heart_rate": 58,
+        "spo2": 98.5,
+        "stress_score": 25,
+        "metric_date": "2026-03-17"  // optional, default today
+    }
+
+    Can be called from iOS Shortcuts, Huawei Health automation, or any HTTP client.
+    """
+    from bot.core.health_sync import sync_health_metrics
+    result = await sync_health_metrics(session, user, body, source=body.get("source", "api"))
+    await session.commit()
+    return {"ok": True, **result}
+
+
+@router.post("/health/import/huawei")
+async def import_huawei_export(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    request: None = None,
+):
+    """
+    Import Huawei Health ZIP export file.
+
+    Send raw ZIP bytes as request body.
+    Parses sleep, steps, HRV from Huawei Health CSV files inside the ZIP.
+    """
+    from fastapi import Request as FastAPIRequest
+    from bot.core.health_sync import parse_huawei_export, sync_health_metrics
+    # We need the raw body — use a workaround via dependency
+    raise HTTPException(status_code=501, detail="Use the /health/import/huawei-upload endpoint")
+
+
+@router.post("/health/import/huawei-upload")
+async def import_huawei_upload(
+    request_obj: None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Placeholder — actual implementation reads raw body via Request."""
+    raise HTTPException(status_code=501, detail="Send ZIP as raw body to /health/import/huawei-raw")
+
+
+from fastapi import Request as _Request
+
+
+@router.post("/health/import/huawei-raw")
+async def import_huawei_raw(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Import Huawei Health ZIP export file.
+
+    Send raw ZIP bytes as request body with Content-Type: application/zip.
+    Parses sleep, steps, HRV from Huawei Health CSV files inside the ZIP.
+    """
+    from bot.core.health_sync import parse_huawei_export, sync_health_metrics
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="No file data received")
+
+    daily_metrics = await parse_huawei_export(body)
+
+    if not daily_metrics:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse Huawei Health export. Ensure you export from Huawei Health app as ZIP.",
+        )
+
+    imported = 0
+    for day_data in daily_metrics:
+        result = await sync_health_metrics(session, user, day_data, source="huawei_export")
+        if result.get("stored"):
+            imported += 1
+
+    await session.commit()
+    return {
+        "ok": True,
+        "days_imported": imported,
+        "total_days_in_file": len(daily_metrics),
+    }
+
+
+@router.get("/health/metrics")
+async def get_health_metrics(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    days: int = 30,
+):
+    """Return health metrics history (sleep, steps, HRV, weight) for the last N days."""
+    since = datetime.utcnow() - timedelta(days=days)
+
+    result = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type.in_(["sleep", "steps", "hrv", "weight", "health_metrics"]),
+            Log.logged_at >= since,
+        )).order_by(Log.logged_at.desc())
+    )
+    logs = result.scalars().all()
+
+    metrics = []
+    for log in logs:
+        entry = {
+            "id": log.id,
+            "type": log.log_type,
+            "date": log.logged_at.strftime("%Y-%m-%d"),
+            **(log.data or {}),
+        }
+        metrics.append(entry)
+
+    return {"metrics": metrics, "days": days}
+
+
+@router.get("/health/shortcut-setup")
+async def get_shortcut_setup(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Return iOS Shortcut setup instructions and the endpoint URL/token.
+    The iOS Shortcut should:
+    1. Read Health data (sleep, steps, HRV) from Apple Health
+    2. POST to this API with the user's token
+    """
+    base_url = str(request.base_url).rstrip("/")
+    token = user.api_token or ""
+
+    shortcut_payload_example = {
+        "sleep_hours": "{{Health: Sleep Analysis (hours)}}",
+        "steps": "{{Health: Step Count}}",
+        "hrv": "{{Health: Heart Rate Variability (ms)}}",
+        "metric_date": "{{Current Date YYYY-MM-DD}}",
+    }
+
+    return {
+        "endpoint": f"{base_url}/api/health/sync",
+        "method": "POST",
+        "headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        "payload_example": shortcut_payload_example,
+        "instructions": [
+            "1. Öffne die Kurzbefehle-App auf deinem iPhone",
+            "2. Erstelle einen neuen Kurzbefehl",
+            "3. Füge 'Gesundheit: Schlafanalyse abrufen' hinzu",
+            "4. Füge 'Gesundheit: Schritte abrufen' hinzu",
+            "5. Füge 'URL-Inhalt abrufen' hinzu mit POST, URL oben, Bearer Token im Header",
+            "6. Stelle den Kurzbefehl auf tägliche Ausführung (07:00) ein",
+            "Für Huawei Honor Watch: Stelle sicher dass Huawei Health → Apple Health Sync aktiviert ist",
+        ],
+        "huawei_instructions": [
+            "1. Öffne die Huawei Health App",
+            "2. Gehe zu 'Ich' → 'Einstellungen' → 'Datenverwaltung'",
+            "3. Tippe auf 'Daten exportieren' → ZIP herunterladen",
+            "4. Sende die ZIP-Datei an: POST /api/health/import/huawei-raw",
+            "   mit deinem API-Token im Authorization-Header",
+            "Oder: Aktiviere 'Apple Health' Sync in Huawei Health für automatischen täglichen Sync",
+        ],
+    }

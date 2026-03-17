@@ -73,10 +73,11 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "**Termine:**\n"
         "  'Mittwoch 14 Uhr Zahnarzt' → Kalender\n\n"
         "**Befehle:**\n"
+        "  /next — Bester nächster Schritt\n"
+        "  /status — Tagesübersicht\n"
         "  /settings — Einstellungen\n"
         "  /toggle priorities|review|proactive|reflection\n"
         "  /times morning HH:MM | /times evening HH:MM\n"
-        "  /status — Tagesübersicht\n"
         "  /shopping — Einkaufsliste\n"
         "  /ical — Kalender-Feed URL\n"
     )
@@ -379,6 +380,20 @@ async def handle_organize(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if len(report["details"]) > 15:
             lines.append(f"  … und {len(report['details']) - 15} weitere")
     await send_message(chat_id, "\n".join(lines))
+
+
+async def handle_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /next command — show single best next action with inline done/skip buttons."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        await session.commit()
+
+        from bot.core.next_action import send_next_action
+        await send_next_action(context.bot, user, session)
 
 
 async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

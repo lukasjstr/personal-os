@@ -20,13 +20,23 @@ from bot.core.daily_intelligence import (
     handle_ctx_focus,
     handle_ctx_time,
 )
+from bot.core.kr_updater import (
+    handle_kr_cancel,
+    handle_kr_confirm,
+    send_kr_confirmation,
+)
+from bot.core.next_action import (
+    handle_next_done,
+    handle_next_skip,
+    send_next_action,
+)
 from bot.core.user_settings import get_or_create_user
 from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
-from bot.core.workout_tracker import handle_workout_message
 from bot.database.connection import get_session
 from bot.telegram.commands import (
     handle_help,
     handle_ical,
+    handle_next,
     handle_organize,
     handle_settings,
     handle_shopping,
@@ -101,6 +111,105 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     text="📋 Nutze /status oder frage mich nach deinen Tasks für dieses Ziel.",
                 )
 
+            # /next: mark done
+            elif data.startswith("next_done_"):
+                task_id = int(data.split("_")[-1])
+                await handle_next_done(bot, user, session, task_id)
+
+            # /next: skip to next task
+            elif data.startswith("next_skip_"):
+                task_id = int(data.split("_")[-1])
+                await handle_next_skip(bot, user, session, task_id)
+
+            # KR update: confirm
+            elif data.startswith("kr_confirm_"):
+                parts = data.split("_")
+                kr_id = int(parts[2])
+                new_value_encoded = int(parts[3])
+                await handle_kr_confirm(bot, user, session, kr_id, new_value_encoded)
+
+            # KR update: cancel
+            elif data == "kr_cancel":
+                await handle_kr_cancel(bot, user)
+
+            # Daily prompt callbacks
+            elif data == "prompt_skip":
+                from bot.core.smart_detector import clear_pending_prompt
+                clear_pending_prompt(user.id)
+                await bot.send_message(
+                    chat_id=tg_user.id,
+                    text="👍 Kein Problem — bis morgen!",
+                )
+
+            elif data == "prompt_journal_open":
+                from bot.core.smart_detector import set_pending_prompt
+                set_pending_prompt(user.id, "journal")
+                await bot.send_message(
+                    chat_id=tg_user.id,
+                    text="✍️ Los geht's — schreib deinen Journal-Eintrag:",
+                )
+
+            elif data == "prompt_gratitude_open":
+                from bot.core.smart_detector import set_pending_prompt
+                set_pending_prompt(user.id, "gratitude")
+                await bot.send_message(
+                    chat_id=tg_user.id,
+                    text="🙏 Schreib deine 3 Dinge — wofür bist du heute dankbar?",
+                )
+
+            # Post-event follow-up: "yes" responses → forward to AI as text input
+            elif any(data.startswith(p) for p in [
+                "followup_workout_done_", "followup_cardio_done_", "followup_supp_done_",
+                "followup_learn_done_", "followup_routine_done_", "followup_deadline_done_",
+                "followup_meeting_good_",
+            ]):
+                event_id = data.split("_")[-1]
+                label_map = {
+                    "followup_workout_done": "Training gemacht",
+                    "followup_cardio_done": "Cardio gemacht",
+                    "followup_supp_done": "Supplemente genommen",
+                    "followup_learn_done": "Lerneinheit gemacht",
+                    "followup_routine_done": "Routine erledigt",
+                    "followup_deadline_done": "Deadline abgegeben",
+                    "followup_meeting_good": "Meeting war produktiv",
+                    "followup_food_log": "Mahlzeit loggen",
+                }
+                prefix = "_".join(data.split("_")[:-1])
+                label = label_map.get(prefix, "Erledigt")
+                synthetic = f"✅ {label} (Kalender-Event #{event_id})"
+                await process_message(user, synthetic, session)
+                await session.commit()
+
+            # Post-event follow-up: "food log" → set pending prompt
+            elif data.startswith("followup_food_log_"):
+                from bot.core.smart_detector import set_pending_prompt
+                set_pending_prompt(user.id, "food")
+                await bot.send_message(
+                    chat_id=tg_user.id,
+                    text="🍽️ Was hast du gegessen? Beschreib kurz deine Mahlzeit:",
+                )
+
+            # Post-event follow-up: "no/skip" responses → acknowledge
+            elif any(data.startswith(p) for p in [
+                "followup_workout_skip_", "followup_cardio_skip_", "followup_supp_skip_",
+                "followup_learn_skip_", "followup_routine_skip_", "followup_food_skip_",
+                "followup_meeting_notes_", "followup_sleep_good_", "followup_sleep_bad_",
+                "followup_deadline_open_",
+            ]):
+                if "meeting_notes" in data:
+                    await bot.send_message(
+                        chat_id=tg_user.id,
+                        text="📝 Schreib deine Meeting-Notizen — ich speichere sie im Tagebuch:",
+                    )
+                    from bot.core.smart_detector import set_pending_prompt
+                    set_pending_prompt(user.id, "journal")
+                elif "sleep_bad" in data:
+                    await bot.send_message(chat_id=tg_user.id, text="😴 Notiert — schlaf heute früher!")
+                elif "deadline_open" in data:
+                    await bot.send_message(chat_id=tg_user.id, text="⚠️ Noch offen — soll ich eine Erinnerung setzen?")
+                else:
+                    await bot.send_message(chat_id=tg_user.id, text="👍 Kein Problem — kein Eintrag gespeichert.")
+
             else:
                 logger.debug("Unhandled callback query data: %s", data)
 
@@ -141,14 +250,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             reply = await handle_reflection_answer(session, user, reflection, text)
             await session.commit()
         else:
-            # Try workout pattern before sending to GPT
-            workout_reply = await handle_workout_message(session, user.id, text)
-            if workout_reply is not None:
-                reply = workout_reply
-                await session.commit()
-            else:
-                reply = await process_message(session, user, text, source="text")
-                await session.commit()
+            reply = await process_message(session, user, text, source="text")
+            await session.commit()
 
     await send_message(chat_id, reply)
 
@@ -186,8 +289,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await send_message(chat_id, reply)
 
 
-async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle a voice message — transcribe with Whisper, then process."""
+async def _transcribe_audio(file_id: str, suffix: str, tg_bot) -> str:
+    """Download a Telegram audio file and transcribe it with Whisper. Returns transcript."""
+    file = await tg_bot.get_file(file_id)
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        await file.download_to_drive(tmp_path)
+        with open(tmp_path, "rb") as audio_file:
+            transcription = await openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                # No language param → Whisper auto-detects (German, English, mixed)
+            )
+        return transcription.text.strip()
+    finally:
+        os.unlink(tmp_path)
+
+
+async def _handle_audio_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    file_id: str,
+    suffix: str,
+    duration_seconds: int = 0,
+) -> None:
+    """Shared handler for voice, video_note, and audio file inputs."""
     if not update.message or not update.effective_user:
         return
 
@@ -196,40 +323,63 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await send_typing(chat_id)
 
-    voice = update.message.voice
-    tg_bot = context.bot
-    file = await tg_bot.get_file(voice.file_id)
-
-    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-        tmp_path = tmp.name
-
     try:
-        await file.download_to_drive(tmp_path)
+        text = await _transcribe_audio(file_id, suffix, context.bot)
+    except Exception:
+        logger.exception("Whisper transcription failed")
+        await send_message(chat_id, "❌ Transkription fehlgeschlagen — bitte nochmal versuchen.")
+        return
 
-        with open(tmp_path, "rb") as audio_file:
-            transcription = await openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                language="de",
-            )
-        text = transcription.text.strip()
-        if not text:
-            await send_message(chat_id, "Konnte die Sprachnachricht nicht verstehen. Bitte nochmal.")
-            return
+    if not text:
+        await send_message(chat_id, "🎙 Konnte nichts verstehen — bitte deutlicher sprechen.")
+        return
 
-        async with get_session() as session:
-            user = await get_or_create_user(
-                session,
-                tg_user.id,
-                tg_user.username,
-                tg_user.first_name,
-            )
+    dur = f" ({duration_seconds}s)" if duration_seconds else ""
+    await send_message(chat_id, f"🎙 Verstanden{dur}: _{text}_")
+    await send_typing(chat_id)
+
+    async with get_session() as session:
+        user = await get_or_create_user(
+            session,
+            tg_user.id,
+            tg_user.username,
+            tg_user.first_name,
+        )
+
+        # Check active reflection session
+        reflection = await get_active_reflection(session, user.id)
+        if reflection:
+            reply = await handle_reflection_answer(session, user, reflection, text)
+        else:
             reply = await process_message(session, user, text, source="voice")
-            await session.commit()
+        await session.commit()
 
-        await send_message(chat_id, f"🎙 _{text}_\n\n{reply}")
-    finally:
-        os.unlink(tmp_path)
+    await send_message(chat_id, reply)
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle a voice message — transcribe with Whisper, then process."""
+    if not update.message or not update.message.voice:
+        return
+    voice = update.message.voice
+    await _handle_audio_input(update, context, voice.file_id, ".ogg", voice.duration)
+
+
+async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle round video messages (video notes) — transcribe audio track with Whisper."""
+    if not update.message or not update.message.video_note:
+        return
+    vn = update.message.video_note
+    await _handle_audio_input(update, context, vn.file_id, ".mp4", vn.duration)
+
+
+async def handle_audio_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle audio file uploads — transcribe with Whisper."""
+    if not update.message or not update.message.audio:
+        return
+    audio = update.message.audio
+    duration = audio.duration or 0
+    await _handle_audio_input(update, context, audio.file_id, ".mp3", duration)
 
 
 def setup_handlers(application: Application) -> None:
@@ -245,6 +395,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("ical", handle_ical))
     application.add_handler(CommandHandler("token", handle_token))
     application.add_handler(CommandHandler("organize", handle_organize))
+    application.add_handler(CommandHandler("next", handle_next))
 
     # Inline button callbacks (daily intelligence flows)
     application.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -253,3 +404,5 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    application.add_handler(MessageHandler(filters.VIDEO_NOTE, handle_video_note))
+    application.add_handler(MessageHandler(filters.AUDIO, handle_audio_file))

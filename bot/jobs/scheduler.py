@@ -15,6 +15,10 @@ from bot.jobs.morning_brief import send_morning_brief
 from bot.jobs.reminders import process_reminders
 from bot.jobs.weekly_reflection_trigger import check_and_trigger_reflections
 from bot.jobs.weekly_auto_plan import send_weekly_auto_plan
+from bot.jobs.daily_prompts import send_journal_prompts, send_gratitude_prompts
+from bot.jobs.day_planner_job import run_day_planner
+from bot.jobs.post_event_followup import process_post_event_followups
+from bot.jobs.pattern_analysis import run_weekly_pattern_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +139,57 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # Day planner: generate time-blocked schedule at 06:00 (before morning brief)
+    _scheduler.add_job(
+        run_day_planner,
+        CronTrigger(hour=6, minute=0, timezone="Europe/Berlin"),
+        id="day_planner",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Journal prompt: daily 07:30
+    _scheduler.add_job(
+        send_journal_prompts,
+        CronTrigger(hour=7, minute=30, timezone="Europe/Berlin"),
+        id="journal_prompt",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Gratitude prompt: daily 21:15
+    _scheduler.add_job(
+        send_gratitude_prompts,
+        CronTrigger(hour=21, minute=15, timezone="Europe/Berlin"),
+        id="gratitude_prompt",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Post-event follow-up: every 15 minutes
+    _scheduler.add_job(
+        process_post_event_followups,
+        "interval",
+        minutes=15,
+        id="post_event_followup",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Pattern analysis: Sundays at 08:30 (after weekly reflection trigger)
+    _scheduler.add_job(
+        run_weekly_pattern_analysis,
+        CronTrigger(hour=8, minute=30, day_of_week="sun", timezone="Europe/Berlin"),
+        id="pattern_analysis",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 12 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 17 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
-        "evening_checkin, streak_risk_check_intelligence"
+        "evening_checkin, streak_risk_check_intelligence, day_planner, "
+        "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis"
     )
     return _scheduler

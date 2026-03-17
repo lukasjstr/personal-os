@@ -35,6 +35,7 @@ const NAV = [
   { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/routines", label: "Routinen", icon: RefreshCw },
   { href: "/fitness", label: "Fitness", icon: Dumbbell },
+  { href: "/finance", label: "💰 Finanzen", icon: LayoutDashboard },
   { href: "/calendar", label: "Kalender", icon: Calendar },
   { href: "/brain-dumps", label: "Brain Dumps", icon: Brain },
   { href: "/shopping", label: "Einkauf", icon: ShoppingCart, badge: "shopping_items" },

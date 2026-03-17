@@ -878,6 +878,84 @@ export interface ObjectiveAnalysis {
   summary: string;
 }
 
+export interface FinanceTransaction {
+  id: number;
+  amount: number;
+  type: "income" | "expense";
+  category: string;
+  description: string;
+  date: string;
+  is_recurring: boolean;
+}
+
+export interface FinanceBudget {
+  id: number;
+  category: string;
+  monthly_limit: number;
+}
+
+export interface FinanceSummary {
+  month: string;
+  total_income: number;
+  total_expenses: number;
+  balance: number;
+  savings_rate: number;
+  by_category: Record<string, number>;
+  category_lines: string[];
+  recent_transactions: FinanceTransaction[];
+}
+
+// ─── Health Sync Types ────────────────────────────────────────────────────────
+
+export interface HealthMetric {
+  id: number;
+  type: string;
+  date: string;
+  hours?: number;
+  count?: number;
+  score?: number;
+  kg?: number;
+  quality?: number;
+  resting_heart_rate?: number;
+  spo2?: number;
+  source?: string;
+}
+
+export interface HealthShortcutSetup {
+  endpoint: string;
+  method: string;
+  headers: Record<string, string>;
+  payload_example: Record<string, string>;
+  instructions: string[];
+  huawei_instructions: string[];
+}
+
+// ─── Pattern Insights Types ───────────────────────────────────────────────────
+
+export interface PatternInsight {
+  id: number;
+  type: string;
+  title: string;
+  description: string;
+  created_at: string;
+}
+
+export interface ConsistencyScore {
+  score: number;
+  label: string;
+  emoji: string;
+  components: {
+    routine_rate: number;
+    task_rate: number;
+    logging_rate: number;
+  };
+}
+
+export interface PatternInsightsResponse {
+  insights: PatternInsight[];
+  consistency_score: ConsistencyScore | null;
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -1036,4 +1114,24 @@ export const api = {
   updateSupplementProtocol: (data: unknown) => apiPut<{ ok: boolean }>("/api/protocols/supplements", data),
   getFitnessProtocol: () => apiFetch<unknown>("/api/protocols/fitness"),
   updateFitnessProtocol: (data: unknown) => apiPut<{ ok: boolean }>("/api/protocols/fitness", data),
+  // Finance
+  financeSummary: () => apiFetch<FinanceSummary>("/api/finance/summary"),
+  financeTransactions: (month?: number, year?: number, type?: string) => {
+    const params = new URLSearchParams();
+    if (month) params.set("month", String(month));
+    if (year) params.set("year", String(year));
+    if (type) params.set("type", type);
+    const qs = params.toString();
+    return apiFetch<FinanceTransaction[]>(`/api/finance/transactions${qs ? `?${qs}` : ""}`);
+  },
+  financeBudgets: () => apiFetch<FinanceBudget[]>("/api/finance/budgets"),
+  upsertBudget: (category: string, monthly_limit: number) =>
+    apiPut<{ ok: boolean }>(`/api/finance/budgets/${category}`, { monthly_limit }),
+  deleteFinanceTransaction: (id: number) => apiDelete<{ deleted: boolean }>(`/api/finance/transactions/${id}`),
+  patternInsights: () => apiFetch<PatternInsightsResponse>("/api/autopilot/pattern-insights"),
+  refreshPatternInsights: () => apiPost<{ ok: boolean; insights_generated: number; consistency_score: unknown }>("/api/autopilot/pattern-insights/refresh", {}),
+  // Health Sync
+  healthMetrics: (days = 30) => apiFetch<{ metrics: HealthMetric[] }>(`/api/health/metrics?days=${days}`),
+  syncHealth: (data: Record<string, unknown>) => apiPost<{ ok: boolean; stored: string[] }>("/api/health/sync", data),
+  healthShortcutSetup: () => apiFetch<HealthShortcutSetup>("/api/health/shortcut-setup"),
 };

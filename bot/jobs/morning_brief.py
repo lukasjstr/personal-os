@@ -105,6 +105,13 @@ async def _generate_brief_for_user(
     )
     routines = routine_result.scalars().all()
 
+    # Auto-generate top-5 (autopilot)
+    from bot.core.autopilot_planner import generate_top5, format_top5_for_telegram
+    try:
+        top5 = await generate_top5(session, user, today)
+    except Exception:
+        top5 = []
+
     # --- Calendar events today ---
     cal_result = await session.execute(
         select(CalendarEvent).where(and_(
@@ -114,6 +121,17 @@ async def _generate_brief_for_user(
         )).order_by(CalendarEvent.start_time)
     )
     events = cal_result.scalars().all()
+
+    # Load today's auto-scheduled work blocks (from day scheduler)
+    work_blocks_res = await session.execute(
+        select(CalendarEvent).where(and_(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.start_time >= today_start,
+            CalendarEvent.start_time <= today_end,
+            CalendarEvent.event_type == "work_block",
+        )).order_by(CalendarEvent.start_time)
+    )
+    work_blocks = work_blocks_res.scalars().all()
 
     # --- Overdue tasks ---
     overdue_result = await session.execute(
@@ -179,6 +197,11 @@ async def _generate_brief_for_user(
             overdue_flag = " ⚠️ ÜBERFÄLLIG" if t.due_date and t.due_date < today else ""
             context_lines.append(f"  P{t.priority}: {t.title}{due}{overdue_flag}")
 
+    if top5:
+        context_lines.append("\nAUTOPILOT TOP-5 FÜR HEUTE (bereits ausgewählt):")
+        for i, t in enumerate(top5, 1):
+            context_lines.append(f"  {i}. P{t['priority']}: {t['title']} ({t['reason']})")
+
     if blocked_tasks:
         context_lines.append("\nBLOCKIERT (warten auf Abhängigkeiten):")
         for t in blocked_tasks[:3]:
@@ -241,6 +264,13 @@ async def _generate_brief_for_user(
             time_str = e.start_time.strftime("%H:%M") if not e.all_day else "ganztägig"
             context_lines.append(f"  {time_str}: {e.title}")
 
+    if work_blocks:
+        context_lines.append("\nAUTOMATISCH GEPLANTE BLÖCKE HEUTE:")
+        for b in work_blocks[:8]:
+            time_str = b.start_time.strftime("%H:%M")
+            end_str = b.end_time.strftime("%H:%M") if b.end_time else "?"
+            context_lines.append(f"  ⏱ {time_str}–{end_str}: {b.title}")
+
     if overdue:
         context_lines.append(f"\nÜBERFÄLLIGE TASKS: {len(overdue)}")
         for t in overdue[:3]:
@@ -270,8 +300,8 @@ VERFÜGBARE DATEN:
 
 Erstelle einen prägnanten Morning Brief auf Deutsch. Format:
 - Kurze Begrüßung (1 Satz)
-- 🎯 TOP 3 PRIORITÄTEN (wähle die 3 wichtigsten Tasks)
-- ⏱ FREIE SLOTS (nur wenn vorhanden: 1-2 konkrete Zeitfenster mit empfohlenem Task)
+- ⚡ TOP 5 HEUTE (nutze die AUTOPILOT TOP-5 wenn vorhanden, sonst wähle selbst)
+- ⏱ TAGESPLAN (wenn AUTO-GEPLANTE BLÖCKE vorhanden: zeige die wichtigsten 4-5 Zeitblöcke als kompakten Stundenplan)
 - 🔒 BLOCKER (nur wenn blockierte Tasks vorhanden: kurz erwähnen, was wartet)
 - 📊 STAGNATION (nur wenn stagnierte Ziele vorhanden: kurze Aufforderung zur Reaktivierung)
 - 📋 ROUTINEN HEUTE (alle auflisten mit ☐)

@@ -302,6 +302,25 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Document Store Tool ──────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "store_document_entry",
+            "description": "Speichert einen Eintrag in ein UserDocument (Journal, Dankbarkeit, etc.) und aktualisiert das zugehörige KR. Nutze für: Journal-Einträge → document='Tagebuch', Dankbarkeits-Einträge → document='Dankbarkeit'. Aktualisiert automatisch das passende KR.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document": {
+                        "type": "string",
+                        "description": "Name des Dokuments: 'Tagebuch' für Journal, 'Dankbarkeit' für Gratitude. Kann auch ein anderer Name sein.",
+                    },
+                    "content": {"type": "string", "description": "Der zu speichernde Text/Eintrag"},
+                },
+                "required": ["document", "content"],
+            },
+        },
+    },
     # ─── Brain Dump Tool ──────────────────────────────────────────────────────
     {
         "type": "function",
@@ -498,6 +517,122 @@ TOOLS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {},
                 "required": [],
+            },
+        },
+    },
+    # ─── Finance Tools ────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "log_expense",
+            "description": "Loggt eine Ausgabe. Nutze wenn User etwas kauft, bezahlt oder Geld ausgibt: 'Kaffee 4€', 'Gym-Abo 30€/Monat', 'Supermarkt 45€', 'Tanken 60€'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "number", "description": "Betrag in Euro (positiv)"},
+                    "category": {
+                        "type": "string",
+                        "enum": ["essen", "fitness", "bildung", "abonnements", "transport", "unterhaltung", "shopping", "gesundheit", "wohnen", "sonstiges"],
+                        "description": "Kategorie der Ausgabe",
+                    },
+                    "description": {"type": "string", "description": "Kurze Beschreibung (z.B. 'Kaffee beim Bäcker', 'Gym-Abo Juli')"},
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (optional, default: heute)"},
+                    "is_recurring": {"type": "boolean", "description": "True bei monatlichen Abos/Fixkosten"},
+                },
+                "required": ["amount", "category", "description"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_income",
+            "description": "Loggt eine Einnahme. Nutze wenn User Geld bekommt: 'Gehalt 2800€', 'Freiberuflich 500€', 'Rückzahlung 50€'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "number", "description": "Betrag in Euro (positiv)"},
+                    "source": {"type": "string", "description": "Quelle (z.B. 'Gehalt', 'Freelance', 'Erstattung')"},
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (optional, default: heute)"},
+                },
+                "required": ["amount", "source"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_financial_summary",
+            "description": "Zeigt die finanzielle Übersicht: Einnahmen, Ausgaben, Sparquote, Budget-Status pro Kategorie. Nutze bei 'Finanzübersicht', 'Wie viel habe ich ausgegeben', 'Budget Status', 'Sparquote'.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_monthly_budget",
+            "description": "Setzt ein monatliches Budget für eine Ausgaben-Kategorie. Nutze bei 'Ich will max X€ für Y ausgeben' oder 'Budget für Essen 300€'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["essen", "fitness", "bildung", "abonnements", "transport", "unterhaltung", "shopping", "gesundheit", "wohnen", "sonstiges"],
+                    },
+                    "monthly_limit": {"type": "number", "description": "Monatliches Budget in Euro"},
+                },
+                "required": ["category", "monthly_limit"],
+            },
+        },
+    },
+    # ─── Health Tracking Tools ────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "log_sleep",
+            "description": "Loggt Schlafstunden. Nutze wenn User über Schlaf spricht: '7h geschlafen', 'schlecht geschlafen 5 Stunden', 'war um 23 Uhr im Bett, um 6 wach'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hours": {"type": "number", "description": "Schlafstunden (z.B. 7.5)"},
+                    "quality": {"type": "integer", "description": "Schlafqualität 1-10 (optional)", "minimum": 1, "maximum": 10},
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute/gestern je nach Kontext)"},
+                },
+                "required": ["hours"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_steps",
+            "description": "Loggt tägliche Schritte. Nutze wenn User Schritte nennt: '9200 Schritte', 'bin 8km gelaufen', 'Schrittziel erreicht'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "description": "Anzahl Schritte"},
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute)"},
+                },
+                "required": ["count"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_hrv",
+            "description": "Loggt HRV-Wert (Heart Rate Variability). Nutze wenn User HRV oder Erholungswert nennt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "score": {"type": "integer", "description": "HRV in ms"},
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute)"},
+                },
+                "required": ["score"],
             },
         },
     },

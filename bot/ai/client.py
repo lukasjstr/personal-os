@@ -136,12 +136,91 @@ async def _execute_tool(
                 if d.get("sets") and d["sets"] > 1:
                     result += f" ×{d['sets']}Sätze"
             await _notify_achievements(session, user)
+
+            # Auto-update Trainingsplan document
+            try:
+                from bot.core.smart_detector import _get_or_create_document, _append_to_document
+                tp_doc = await _get_or_create_document(session, user.id, "Trainingsplan", "🏋️")
+                entry_parts = [d.get("exercise", "?")]
+                if d.get("weight"):
+                    entry_parts.append(f"{d['weight']}kg")
+                if d.get("sets") and d.get("reps"):
+                    entry_parts.append(f"{d['sets']}×{d['reps']}")
+                if d.get("duration_minutes"):
+                    entry_parts.append(f"{d['duration_minutes']}min")
+                if d.get("notes"):
+                    entry_parts.append(f"({d['notes']})")
+                await _append_to_document(tp_doc, " ".join(entry_parts), "workout")
+            except Exception as _e:
+                logger.debug("Trainingsplan doc update failed: %s", _e)
+
+            # Suggest progressive overload based on previous session
+            try:
+                from bot.database.models import Log as _Log
+                _prev_logs = (await session.execute(
+                    select(_Log).where(and_(
+                        _Log.user_id == user.id,
+                        _Log.log_type == "workout",
+                        _Log.id != log.id,
+                    )).order_by(_Log.logged_at.desc()).limit(50)
+                )).scalars().all()
+                _ex_lower = d.get("exercise", "").lower()
+                for _pl in _prev_logs:
+                    if _ex_lower in (_pl.data.get("exercise") or "").lower():
+                        _pw = _pl.data.get("weight")
+                        _pr = _pl.data.get("reps")
+                        _ps = _pl.data.get("sets")
+                        if _pw:
+                            _next_w = round(_pw + 2.5, 1)
+                            _cur_w = d.get("weight")
+                            if _cur_w and _cur_w >= _pw:
+                                result += f"\n📈 Letztes Mal: {_pw}kg → Nächstes Mal: {_next_w}kg probieren"
+                            else:
+                                result += f"\n💡 Referenz: {_pl.logged_at.strftime('%d.%m')}: {_pw}kg × {_ps or '?'}×{_pr or '?'}"
+                        break
+            except Exception as _e:
+                logger.debug("Progression suggestion failed: %s", _e)
+
             return result
 
         elif name == "log_water":
             total = await log_water(session, user.id, args["amount_liters"])
             await _notify_achievements(session, user)
-            return f"💧 {args['amount_liters']}L geloggt. Gesamt heute: {total:.1f}L"
+            result = f"💧 {args['amount_liters']}L geloggt. Gesamt heute: {total:.1f}L"
+
+            # Auto-check: if daily water total meets streak KR target → increment streak (once per day)
+            from datetime import date as _date
+            from bot.database.models import KeyResult as _KR, Log as _Log
+            _today_start = datetime.combine(_date.today(), datetime.min.time())
+            _water_krs = (await session.execute(
+                select(_KR).where(and_(
+                    _KR.user_id == user.id,
+                    _KR.status == "active",
+                    _KR.metric_type == "streak",
+                ))
+            )).scalars().all()
+            for _kr in _water_krs:
+                if "wasser" not in _kr.title.lower() and "water" not in _kr.title.lower():
+                    continue
+                if _kr.target_value and total < _kr.target_value:
+                    continue  # day goal not met yet
+                # Check: not already updated today
+                _already = (await session.execute(
+                    select(_Log).where(and_(
+                        _Log.user_id == user.id,
+                        _Log.log_type == "progress",
+                        _Log.key_result_id == _kr.id,
+                        _Log.logged_at >= _today_start,
+                    ))
+                )).scalar_one_or_none()
+                if _already:
+                    continue
+                _kr.current_value = (_kr.current_value or 0) + 1
+                if _kr.target_value and _kr.current_value >= _kr.target_value:
+                    _kr.status = "completed"
+                await session.flush()
+                result += f"\n🎯 Tagesziel {_kr.target_value}L erreicht! {_kr.title}: {int(_kr.current_value)}/{int(_kr.target_value or 0)} Tage ✅"
+            return result
 
         elif name == "log_mood":
             await log_mood(session, user.id, args["score"], args.get("notes", ""))
@@ -170,11 +249,34 @@ async def _execute_tool(
             return f"✅ Routine #{routine.id} erstellt: *{routine.title}* ({routine.frequency_human})"
 
         elif name == "complete_routine":
-            comp = await complete_routine(session, user.id, args["routine_id"], args.get("notes"))
+            routine_id = args["routine_id"]
+            # Load routine before completing to get linked KR info
+            from bot.database.models import Routine as RoutineModel
+            routine_obj = (await session.execute(
+                select(RoutineModel).where(RoutineModel.id == routine_id)
+            )).scalar_one_or_none()
+
+            comp = await complete_routine(session, user.id, routine_id, args.get("notes"))
             if not comp:
-                return f"Routine #{args['routine_id']} nicht gefunden."
+                return f"Routine #{routine_id} nicht gefunden."
             await _notify_achievements(session, user)
-            return f"✅ Routine #{args['routine_id']} für heute erledigt!"
+
+            result = f"✅ *{routine_obj.title if routine_obj else f'Routine #{routine_id}'}* erledigt!"
+            if routine_obj and routine_obj.linked_key_result_id:
+                from bot.database.models import KeyResult as KRModel
+                kr = (await session.execute(
+                    select(KRModel).where(KRModel.id == routine_obj.linked_key_result_id)
+                )).scalar_one_or_none()
+                if kr:
+                    bar = ""
+                    if kr.target_value and kr.target_value > 0:
+                        pct = min(100, int((kr.current_value / kr.target_value) * 100))
+                        filled = pct // 10
+                        bar = f" [{('█' * filled) + ('░' * (10 - filled))}] {pct}%"
+                    completed_flag = " 🎉 Ziel erreicht!" if kr.status == "completed" else ""
+                    result += f"\n📈 {kr.title}: {int(kr.current_value)}/{int(kr.target_value or 0)}{bar}{completed_flag}"
+                    result += f"\n   ↳ KR#{kr.id} wurde automatisch aktualisiert — kein log_progress nötig"
+            return result
 
         # ─── Calendar ─────────────────────────────────────────────────────────
         elif name == "create_calendar_event":
@@ -182,6 +284,46 @@ async def _execute_tool(
             return (
                 f"📅 Kalender-Event erstellt: *{event.title}*\n"
                 f"   {event.start_time.strftime('%d.%m.%Y %H:%M')}"
+            )
+
+        # ─── Document Store ───────────────────────────────────────────────────
+        elif name == "store_document_entry":
+            from bot.core.smart_detector import (
+                _get_or_create_document,
+                _append_to_document,
+                _update_kr_streak,
+            )
+            doc_name = args["document"]
+            content = args["content"]
+
+            # Determine emoji based on document type
+            emoji_map = {"tagebuch": "📓", "dankbarkeit": "🙏"}
+            emoji = emoji_map.get(doc_name.lower(), "📄")
+
+            doc = await _get_or_create_document(session, user.id, doc_name, emoji)
+            await _append_to_document(doc, content, doc_name.lower())
+
+            # Update matching KR streak based on document type
+            kr_keywords_map = {
+                "tagebuch": ["journal", "tagebuch"],
+                "dankbarkeit": ["dankbar", "gratitude"],
+            }
+            kr_keywords = kr_keywords_map.get(doc_name.lower(), [doc_name.lower()])
+            kr = await _update_kr_streak(session, user.id, kr_keywords)
+
+            xp_map = {"tagebuch": 5, "dankbarkeit": 3}
+            xp = xp_map.get(doc_name.lower(), 3)
+            user.xp = (user.xp or 0) + xp
+
+            kr_msg = ""
+            if kr:
+                kr_msg = f"\n📈 {kr.title}: {int(kr.current_value)}/{int(kr.target_value or 0)}"
+                if kr.status == "completed":
+                    kr_msg += " 🎉 Ziel erreicht!"
+
+            return (
+                f"{emoji} *{doc_name}* gespeichert! +{xp} XP{kr_msg}\n"
+                f"_{content[:100]}{'...' if len(content) > 100 else ''}_"
             )
 
         # ─── Brain Dump ───────────────────────────────────────────────────────
@@ -238,7 +380,9 @@ async def _execute_tool(
             ) or "Keine offenen Tasks"
 
             routines_text = "\n".join(
-                f"- {r.title}" + (" ✅ erledigt" if r.id in completed_ids else "")
+                f"- [Routine#{r.id}, {r.time_of_day}] {r.title}"
+                + (" ✅ erledigt" if r.id in completed_ids else "")
+                + (f" → KR#{r.linked_key_result_id}" if r.linked_key_result_id else "")
                 for r in routines
             ) or "Keine Routinen"
 
@@ -249,11 +393,28 @@ async def _execute_tool(
                 for e in events
             ) or "Keine Termine"
 
+            # Load fitness split for today
+            fitness_info = ""
+            try:
+                from bot.core.fitness_protocol import get_today_split, load_fitness_protocol
+                fv = get_today_split(load_fitness_protocol(), date_cls.fromisoformat(plan_date_str))
+                if fv.get("is_rest_day"):
+                    fitness_info = "\nFITNESS HEUTE: Ruhetag"
+                else:
+                    exs = ", ".join(fv.get("exercises", [])[:4])
+                    fitness_info = (
+                        f"\nFITNESS HEUTE: {fv.get('split_name')} ({fv.get('focus', '')})"
+                        f"\n→ Trainingsblock Titel: '💪 {fv.get('split_name')}: {exs}'"
+                    )
+            except Exception:
+                pass
+
             plan_prompt = (
                 f"Erstelle einen JSON-Tagesplan für {plan_date_str} ({work_start}–{work_end}).\n\n"
                 f"OFFENE TASKS (Priorität 1=hoch):\n{tasks_text}\n\n"
-                f"ROUTINEN:\n{routines_text}\n\n"
-                f"BESTEHENDE TERMINE (diese Zeiten freilassen!):\n{events_text}\n\n"
+                f"ROUTINEN (mit IDs und Tageszeit):\n{routines_text}\n\n"
+                f"BESTEHENDE TERMINE (diese Zeiten freilassen!):\n{events_text}"
+                f"{fitness_info}\n\n"
                 "Erstelle einen JSON-Array mit Zeitblöcken:\n"
                 '[{"title":"...","start":"HH:MM","end":"HH:MM","type":"work|training|routine|meeting|break","focus":"optionaler Fokus-Hinweis"}]\n\n'
                 "Regeln:\n"
@@ -261,6 +422,8 @@ async def _execute_tool(
                 "- Fokusblöcke 45–90 Min, dann 15 Min Pause\n"
                 "- Höchstpriorität-Tasks zuerst planen\n"
                 "- Mahlzeiten einplanen (Frühstück ~08:00, Mittag ~12:30, Abend ~18:30)\n"
+                "- Routine-Blöcke: exakten Routine-Titel verwenden (z.B. 'Morgendliche Meditation')\n"
+                "- Training: vollständigen Split-Titel mit Top-3-Übungen verwenden (s.o.)\n"
                 "- Nur JSON-Array zurückgeben, kein anderer Text"
             )
 
@@ -384,6 +547,113 @@ async def _execute_tool(
             if not added:
                 return "🛒 Alle Standard-Items sind bereits auf der Einkaufsliste."
             return f"🛒 {len(added)} Standard-Items zur Einkaufsliste hinzugefügt:\n" + "\n".join(f"  ☐ {t}" for t in added)
+
+        # ─── Finance ──────────────────────────────────────────────────────────
+        elif name == "log_expense":
+            from bot.core.finance import log_expense as _log_expense
+            tx_date = None
+            if args.get("date"):
+                from datetime import date as _date
+                try:
+                    tx_date = _date.fromisoformat(args["date"])
+                except ValueError:
+                    pass
+            result = await _log_expense(
+                session,
+                user.id,
+                amount=float(args["amount"]),
+                category=args.get("category", "sonstiges"),
+                description=args["description"],
+                transaction_date=tx_date,
+                is_recurring=args.get("is_recurring", False),
+            )
+            lines = [f"💸 Ausgabe geloggt: {result['amount']:.2f}€ [{result['category']}] — {result['description']}"]
+            if result.get("budget_status"):
+                lines.append(f"📊 Budget {result['category']}: {result['budget_status']}")
+            if result.get("budget_warning"):
+                lines.append(result["budget_warning"])
+            return "\n".join(lines)
+
+        elif name == "log_income":
+            from bot.core.finance import log_income as _log_income
+            tx_date = None
+            if args.get("date"):
+                from datetime import date as _date
+                try:
+                    tx_date = _date.fromisoformat(args["date"])
+                except ValueError:
+                    pass
+            result = await _log_income(
+                session,
+                user.id,
+                amount=float(args["amount"]),
+                source=args["source"],
+                transaction_date=tx_date,
+            )
+            return f"💰 Einnahme geloggt: {result['amount']:.2f}€ — {result['source']}"
+
+        elif name == "get_financial_summary":
+            from bot.core.finance import get_financial_summary as _get_fin
+            summary = await _get_fin(session, user.id)
+            if summary["total_income"] == 0 and summary["total_expenses"] == 0:
+                return "Noch keine Finanzdaten für diesen Monat. Starte mit 'Kaffee 3€' oder 'Gehalt 2800€'."
+            lines = [f"📊 Finanzen {summary['month']}:"]
+            lines.append(f"  Einnahmen: {summary['total_income']:.0f}€")
+            lines.append(f"  Ausgaben: {summary['total_expenses']:.0f}€")
+            lines.append(f"  Balance: {summary['balance']:+.0f}€")
+            if summary["total_income"] > 0:
+                lines.append(f"  Sparquote: {summary['savings_rate']:.0f}%")
+            if summary["category_lines"]:
+                lines.append("  Kategorien:")
+                lines.extend(f"    {l}" for l in summary["category_lines"])
+            return "\n".join(lines)
+
+        elif name == "set_monthly_budget":
+            from bot.core.finance import set_budget as _set_budget
+            result = await _set_budget(
+                session,
+                user.id,
+                category=args["category"],
+                monthly_limit=float(args["monthly_limit"]),
+            )
+            action = "aktualisiert" if result.get("updated") else "erstellt"
+            return f"✅ Budget {action}: {result['category']} = {result['monthly_limit']:.0f}€/Monat"
+
+        # ─── Health Tracking ──────────────────────────────────────────────────
+        elif name == "log_sleep":
+            from bot.core.health_sync import sync_health_metrics
+            tx_date = args.get("date")
+            result = await sync_health_metrics(session, user, {
+                "sleep_hours": float(args["hours"]),
+                "sleep_quality": args.get("quality"),
+                "metric_date": tx_date,
+            }, source="telegram")
+            hours = float(args["hours"])
+            emoji = "✅" if hours >= 7 else "⚠️"
+            quality_str = f" (Qualität: {args['quality']}/10)" if args.get("quality") else ""
+            kr_str = f"\n{result['kr_updates'][0]}" if result.get("kr_updates") else ""
+            return f"{emoji} Schlaf geloggt: {hours:.1f}h{quality_str}{kr_str}"
+
+        elif name == "log_steps":
+            from bot.core.health_sync import sync_health_metrics
+            steps = int(args["count"])
+            result = await sync_health_metrics(session, user, {
+                "steps": steps,
+                "metric_date": args.get("date"),
+            }, source="telegram")
+            emoji = "✅" if steps >= 8000 else "🚶"
+            kr_str = f"\n{result['kr_updates'][0]}" if result.get("kr_updates") else ""
+            return f"{emoji} Schritte geloggt: {steps:,}{kr_str}"
+
+        elif name == "log_hrv":
+            from bot.core.health_sync import sync_health_metrics
+            hrv = int(args["score"])
+            await sync_health_metrics(session, user, {
+                "hrv": hrv,
+                "metric_date": args.get("date"),
+            }, source="telegram")
+            quality = "sehr gut" if hrv > 60 else "gut" if hrv > 45 else "mittel" if hrv > 30 else "niedrig"
+            return f"💓 HRV geloggt: {hrv}ms ({quality})"
 
         # ─── Settings ─────────────────────────────────────────────────────────
         elif name == "update_user_settings":

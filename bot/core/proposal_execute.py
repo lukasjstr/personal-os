@@ -195,14 +195,18 @@ async def execute_accepted_proposal(
                     break
         if linked_kr_id is None:
             linked_kr_id = default_kr_id
+        from datetime import date as _date, timedelta as _timedelta
+        due_days = _safe_int(t.get("due_days"), 0)
+        task_due_date = (_date.today() + _timedelta(days=due_days)) if due_days > 0 else None
         task = Task(
             user_id=draft_row.user_id,
             title=t_title,
             category=str(t.get("category") or category),
             priority=_safe_int(t.get("priority"), 2),
-            status="open",
+            status="todo",
             objective_id=objective.id,
             key_result_id=linked_kr_id,
+            due_date=task_due_date,
         )
         session.add(task)
         await session.flush()
@@ -304,6 +308,16 @@ async def execute_accepted_proposal(
     draft_row.executed_at = datetime.utcnow()
     draft_row.executed_objective_id = objective.id
     await session.commit()
+
+    # Derive life artifacts (routines, shopping, calendar milestones)
+    try:
+        from bot.core.life_planner import derive_life_artifacts
+        await derive_life_artifacts(
+            session, draft_row.user_id, draft_row.draft_payload, objective.id, kr_title_to_id
+        )
+        await session.commit()
+    except Exception:
+        logger.exception("Life artifact derivation failed for draft %d (non-fatal)", draft_row.id)
 
     return ExecuteResult(
         objective_id=objective.id,

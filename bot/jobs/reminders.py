@@ -41,19 +41,23 @@ async def process_reminders() -> None:
                 # 1. Calendar event reminders (run every time)
                 await _check_calendar_reminders(session, user, now_berlin, today_start)
 
-                # 2. Overdue task summary (once per day after 8:00)
+                # 2. Due-today task push with inline buttons (09:00–16:00)
+                if 9 <= now_berlin.hour < 16:
+                    await _check_due_today_tasks(session, user, today, today_start)
+
+                # 3. Overdue task summary (once per day after 8:00)
                 if now_berlin.hour >= 8:
                     await _check_overdue_tasks(session, user, today, today_start)
 
-                # 3. Midday routine reminder (once per day 11:30–13:30)
+                # 4. Midday routine reminder (once per day 11:30–13:30)
                 if 11 <= now_berlin.hour < 14:
                     await _check_midday_routine_reminders(session, user, today, today_start)
 
-                # 4. Evening routine reminder (once per day after 18:00)
+                # 5. Evening routine reminder (once per day after 18:00)
                 if now_berlin.hour >= 18:
                     await _check_routine_reminders(session, user, today, today_start)
 
-                # 5. Stale task/objective nudge (once per day after 10:00)
+                # 6. Stale task/objective nudge (once per day after 10:00)
                 if now_berlin.hour >= 10:
                     await _check_stale_nudges(session, user, today, today_start)
 
@@ -96,6 +100,61 @@ async def _check_calendar_reminders(
         await send_message(user.telegram_id, msg)
         await _mark_reminder(session, user.id, reminder_type, msg)
         logger.info("Calendar reminder sent to user %s for event %s", user.id, event.id)
+
+
+async def _check_due_today_tasks(
+    session: AsyncSession, user: User, today: date, today_start: datetime
+) -> None:
+    """Send push reminders for tasks due today — with inline ✅/⏭ buttons."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot.telegram.sender import get_bot
+
+    if await _already_reminded(session, user.id, "due_today", today_start):
+        return
+
+    result = await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.due_date == today,
+            Task.category != "shopping",
+        )).order_by(Task.priority.asc()).limit(5)
+    )
+    due_today = result.scalars().all()
+
+    if not due_today:
+        return
+
+    bot = get_bot()
+    sent = 0
+    for task in due_today[:3]:  # max 3 inline pushes
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Erledigt", callback_data=f"next_done_{task.id}"),
+            InlineKeyboardButton("⏭ Verschieben", callback_data=f"next_skip_{task.id}"),
+        ]])
+        msg = (
+            f"📌 *Heute fällig:*\n"
+            f"{task.title}\n"
+            f"_Priorität {task.priority} · {'→ Ziel verknüpft' if task.objective_id else 'kein Ziel'}_"
+        )
+        try:
+            await bot.send_message(
+                chat_id=user.telegram_id,
+                text=msg,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+            sent += 1
+        except Exception:
+            logger.exception("Due-today push failed for task %s user %s", task.id, user.id)
+
+    if sent:
+        remaining = len(due_today) - sent
+        if remaining > 0:
+            extra_msg = f"📋 +{remaining} weitere Tasks heute fällig — nutze /next für die vollständige Liste."
+            await send_message(user.telegram_id, extra_msg)
+        await _mark_reminder(session, user.id, "due_today", f"{sent} due-today tasks pushed")
+        logger.info("Due-today push sent to user %s (%d tasks)", user.id, sent)
 
 
 async def _check_overdue_tasks(

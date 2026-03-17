@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database.models import WorkoutLog
+from bot.database.models import User, WorkoutLog
 
 # Pattern: "Beinpresse 80kg 3x10" or "Bankdrücken 100 kg 4x8"
 _WORKOUT_RE = re.compile(
@@ -194,6 +194,19 @@ async def handle_workout_message(
             reply += (
                 f"\n💡 Beim nächsten Mal: *{info['suggested_weight']}kg* (+{AUTO_PROGRESSION_KG}kg)"
             )
+
+        # Sync workout to fitness KR
+        try:
+            from bot.core.fitness_kr_sync import sync_workout_to_kr
+            user_res = await session.execute(select(User).where(User.id == user_id))
+            user_obj = user_res.scalar_one_or_none()
+            if user_obj:
+                kr_update_msg = await sync_workout_to_kr(session, user_obj, entry)
+                if kr_update_msg:
+                    reply = reply + "\n\n" + kr_update_msg
+        except Exception:
+            pass  # non-fatal
+
         return reply
 
     return None

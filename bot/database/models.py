@@ -71,6 +71,8 @@ class User(Base):
     workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_contexts: Mapped[list["DailyContext"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     evening_checkins: Mapped[list["EveningCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    financial_transactions: Mapped[list["FinancialTransaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    budgets: Mapped[list["Budget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -845,3 +847,50 @@ class EveningCheckin(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "date", name="uq_evening_checkin_user_date"),
     )
+
+
+# ─── Financial Dimension ─────────────────────────────────────────────────────
+
+FINANCE_CATEGORIES = [
+    "essen", "fitness", "bildung", "abonnements", "transport",
+    "unterhaltung", "shopping", "gesundheit", "wohnen", "sonstiges",
+]
+
+
+class FinancialTransaction(Base):
+    __tablename__ = "financial_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)  # always positive
+    type: Mapped[str] = mapped_column(String(10), nullable=False)  # income | expense
+    category: Mapped[str] = mapped_column(String(60), nullable=False, default="sonstiges")
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    transaction_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    is_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="financial_transactions")
+
+    def __repr__(self) -> str:
+        return f"<FinancialTransaction id={self.id} type={self.type} amount={self.amount}>"
+
+
+class Budget(Base):
+    __tablename__ = "budgets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    monthly_limit: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="budgets")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_budget_user_category"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Budget id={self.id} category={self.category} limit={self.monthly_limit}>"

@@ -1,4 +1,5 @@
-"""Phase 3: User insights — pattern detection and reflection-derived learnings."""
+"""User insights — pattern detection and reflection-derived learnings."""
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import UserInsight
@@ -13,28 +14,34 @@ async def create_insight(
     source: str,
     data_basis: dict | None = None,
 ) -> UserInsight:
-    """Create a new user insight.
-
-    Phase 3: insight_type is one of: productivity_pattern, habit, blocker, strength, preference.
-    source is one of: reflection, auto_detected, user_stated.
-    """
-    raise NotImplementedError("Phase 3")
+    """Create a new user insight."""
+    insight = UserInsight(
+        user_id=user_id,
+        insight_type=insight_type,
+        title=title,
+        description=description,
+        source=source,
+        active=True,
+        data_basis=data_basis or {},
+    )
+    session.add(insight)
+    await session.flush()
+    return insight
 
 
 async def get_active_insights(session: AsyncSession, user_id: int) -> list[UserInsight]:
-    """Get all active insights for a user.
-
-    Phase 3: Returns insights with active=True, ordered by created_at desc.
-    These are included in morning briefs for personalized advice.
-    """
-    raise NotImplementedError("Phase 3")
+    """Get all active insights for a user, newest first."""
+    result = await session.execute(
+        select(UserInsight).where(and_(
+            UserInsight.user_id == user_id,
+            UserInsight.active == True,  # noqa: E712
+        )).order_by(UserInsight.created_at.desc()).limit(10)
+    )
+    return list(result.scalars().all())
 
 
 async def detect_patterns(session: AsyncSession, user_id: int) -> list[dict]:
-    """Auto-detect behavioral patterns from logs and completions.
-
-    Phase 3: Analyzes mood correlations, productive time-of-day,
-    streak patterns, and completion rate trends.
-    Returns list of detected pattern dicts to create insights from.
-    """
-    raise NotImplementedError("Phase 3")
+    """Run pattern analysis and return detected patterns."""
+    from bot.core.pattern_engine import run_pattern_analysis
+    result = await run_pattern_analysis(session, user_id)
+    return result.get("insights", [])

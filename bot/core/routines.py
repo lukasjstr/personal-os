@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database.models import Routine, RoutineCompletion
+from bot.database.models import KeyResult, Routine, RoutineCompletion, RoutineObjectiveImpact
 
 
 async def create_routine(
@@ -60,6 +60,37 @@ async def complete_routine(
     )
     session.add(completion)
     await session.flush()
+
+    # Auto-cascade: update directly linked KR
+    if routine.linked_key_result_id:
+        kr_res = await session.execute(
+            select(KeyResult).where(KeyResult.id == routine.linked_key_result_id)
+        )
+        kr = kr_res.scalar_one_or_none()
+        if kr and kr.status == "active":
+            kr.current_value = (kr.current_value or 0) + 1
+            if kr.target_value and kr.current_value >= kr.target_value:
+                kr.status = "completed"
+            await session.flush()
+
+    # Cascade through RoutineObjectiveImpact (secondary KRs)
+    impacts_res = await session.execute(
+        select(RoutineObjectiveImpact).where(
+            RoutineObjectiveImpact.routine_id == routine_id
+        )
+    )
+    impacts = impacts_res.scalars().all()
+    for impact in impacts:
+        # Each impact row can optionally link to a secondary_kr_id
+        if hasattr(impact, "secondary_kr_id") and impact.secondary_kr_id:
+            kr_res = await session.execute(
+                select(KeyResult).where(KeyResult.id == impact.secondary_kr_id)
+            )
+            kr = kr_res.scalar_one_or_none()
+            if kr and kr.status == "active" and kr.id != routine.linked_key_result_id:
+                kr.current_value = (kr.current_value or 0) + (impact.impact_score / 10.0)
+                await session.flush()
+
     return completion
 
 

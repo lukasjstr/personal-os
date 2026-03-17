@@ -149,6 +149,37 @@ async def build_context(session: AsyncSession, user: User) -> str:
                 lines.append(f"  [{ts}] 📝 {log.log_type}: {log.raw_input or str(log.data)[:60]}")
         lines.append("")
 
+    # ─── Workout Progression Memory ───────────────────────────────────────────
+    # Load last 30 workout logs and build per-exercise history for progression
+    workout_result = await session.execute(
+        select(Log).where(and_(
+            Log.user_id == user.id,
+            Log.log_type == "workout",
+        )).order_by(Log.logged_at.desc()).limit(30)
+    )
+    workout_history = list(workout_result.scalars().all())
+    if workout_history:
+        lines.append("=== TRAININGS-GEDÄCHTNIS (letzte Gewichte pro Übung) ===")
+        seen_exercises: set[str] = set()
+        for wl in workout_history:
+            ex = wl.data.get("exercise", "?")
+            if ex in seen_exercises:
+                continue
+            seen_exercises.add(ex)
+            parts = [f"  {ex} [{wl.logged_at.strftime('%d.%m.%y')}]"]
+            w = wl.data.get("weight")
+            r = wl.data.get("reps")
+            s = wl.data.get("sets")
+            if w:
+                parts.append(f"{w}kg")
+            if s and r:
+                parts.append(f"{s}×{r}")
+            if w:
+                next_w = round(w + 2.5, 1)
+                parts.append(f"→ heute: {next_w}kg probieren")
+            lines.append(" ".join(parts))
+        lines.append("")
+
     # ─── Today's Water Total ──────────────────────────────────────────────────
     water_result = await session.execute(
         select(Log).where(and_(
@@ -177,6 +208,68 @@ async def build_context(session: AsyncSession, user: User) -> str:
         scores = [str(l.data.get("score", "?")) for l in mood_logs]
         lines.append(f"😊 Mood (7 Tage): {', '.join(scores)}")
         lines.append("")
+
+    # ─── Today's Fitness Split ────────────────────────────────────────────────
+    try:
+        from bot.core.fitness_protocol import get_today_split, load_fitness_protocol
+        fitness_view = get_today_split(load_fitness_protocol(), today)
+        if fitness_view.get("is_rest_day"):
+            lines.append("=== FITNESS HEUTE ===")
+            lines.append("  Ruhetag / aktive Regeneration")
+        else:
+            lines.append("=== FITNESS HEUTE ===")
+            lines.append(f"  Split: {fitness_view.get('split_name')} ({fitness_view.get('focus', '')})")
+            exercises = fitness_view.get("exercises", [])
+            if exercises:
+                lines.append(f"  Übungen: {', '.join(exercises[:6])}")
+            lines.append(f"  → Trainingsblock benennen als: '💪 {fitness_view.get('split_name')}: {', '.join(exercises[:3])}'")
+        lines.append("")
+    except Exception:
+        pass
+
+    # ─── Health Metrics (yesterday) ───────────────────────────────────────────
+    try:
+        from bot.core.health_sync import get_health_context
+        health_ctx = await get_health_context(session, user.id)
+        if health_ctx:
+            lines.append(health_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
+    # ─── Financial Summary ─────────────────────────────────────────────────────
+    try:
+        from bot.core.finance import build_finance_context
+        fin_ctx = await build_finance_context(session, user.id)
+        if fin_ctx:
+            lines.append(fin_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
+    # ─── Pattern Insights ─────────────────────────────────────────────────────
+    try:
+        from bot.core.pattern_engine import get_pattern_summary
+        pattern_ctx = await get_pattern_summary(session, user.id)
+        if pattern_ctx:
+            lines.append(pattern_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
+    # ─── Pending Prompt State ─────────────────────────────────────────────────
+    try:
+        from bot.core.smart_detector import get_pending_prompt
+        pending = get_pending_prompt(user.id)
+        if pending:
+            doc_map = {"journal": "Tagebuch", "gratitude": "Dankbarkeit"}
+            doc = doc_map.get(pending, pending)
+            lines.append(f"⚡ AKTIVER PROMPT: Nutzer wurde gerade für '{pending}' aufgefordert.")
+            lines.append(f"  → Die nächste Texteingabe als {pending.upper()}-Eintrag behandeln.")
+            lines.append(f"  → SOFORT store_document_entry(document='{doc}', content=...) aufrufen.")
+            lines.append("")
+    except Exception:
+        pass
 
     # ─── User Settings ────────────────────────────────────────────────────────
     s = user.settings or {}
