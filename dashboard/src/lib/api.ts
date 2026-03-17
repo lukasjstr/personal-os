@@ -1134,4 +1134,16 @@ export const api = {
   healthMetrics: (days = 30) => apiFetch<{ metrics: HealthMetric[] }>(`/api/health/metrics?days=${days}`),
   syncHealth: (data: Record<string, unknown>) => apiPost<{ ok: boolean; stored: string[] }>("/api/health/sync", data),
   healthShortcutSetup: () => apiFetch<HealthShortcutSetup>("/api/health/shortcut-setup"),
+  // Onboarding
+  onboardingStatus: () => apiFetch<{ completed: boolean }>("/api/onboarding/status"),
+  completeOnboarding: (body: {
+    name?: string;
+    selected_areas?: string[];
+    first_goal?: string | null;
+    wakeup_time?: string;
+    morning_routines?: string[];
+  }) => apiPost<{ ok: boolean; created: Record<string, unknown> }>("/api/onboarding", body),
+  // Tasks with category filter
+  tasksByCategory: (category: string) =>
+    apiFetch<{ tasks: Task[] }>(`/api/tasks?category=${encodeURIComponent(category)}`),
 };

@@ -23,13 +23,14 @@ export function formatTime(iso: string): string {
 }
 
 export const CATEGORY_EMOJI: Record<string, string> = {
-  health: "🏥",
-  fitness: "💪",
+  health: "💊",
+  fitness: "🏋️",
   business: "💼",
-  personal: "🧠",
+  personal: "🎯",
   finance: "💰",
-  learning: "📚",
-  relationships: "❤️",
+  learning: "🧠",
+  relationships: "🤝",
+  mindset: "🧘",
   default: "🎯",
 };
 

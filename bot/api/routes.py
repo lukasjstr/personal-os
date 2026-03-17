@@ -8708,3 +8708,119 @@ async def process_user_message(
     reply = await process_message(session, user, body.message, source=body.source)
     await session.commit()
     return {"ok": True, "reply": reply}
+
+
+# ─── Onboarding ───────────────────────────────────────────────────────────────
+
+_AREA_TO_CATEGORY: dict[str, str] = {
+    "fitness": "fitness",
+    "learning": "learning",
+    "finance": "finance",
+    "relationships": "relationships",
+    "health": "health",
+    "productivity": "personal",
+    "mindset": "mindset",
+    "personal": "personal",
+}
+
+_MORNING_ROUTINE_TITLES: dict[str, str] = {
+    "frueh_aufstehen": "Früh aufstehen",
+    "journaling": "Journaling",
+    "meditation": "Meditation",
+    "sport": "Morgentraining",
+    "gesundes_fruehstueck": "Gesundes Frühstück",
+}
+
+
+class OnboardingBody(BaseModel):
+    name: Optional[str] = None
+    selected_areas: list[str] = []
+    first_goal: Optional[str] = None
+    wakeup_time: str = "07:00"
+    morning_routines: list[str] = []
+
+
+@router.get("/onboarding/status")
+async def get_onboarding_status(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Check if user has completed onboarding (has at least 1 objective and 1 routine, or flag set)."""
+    settings = user.settings or {}
+    if settings.get("onboarding_completed", False):
+        return {"completed": True}
+
+    obj_result = await session.execute(
+        select(func.count()).select_from(Objective).where(Objective.user_id == user.id)
+    )
+    obj_count = obj_result.scalar() or 0
+
+    routine_result = await session.execute(
+        select(func.count()).select_from(Routine).where(Routine.user_id == user.id)
+    )
+    routine_count = routine_result.scalar() or 0
+
+    completed = obj_count > 0 and routine_count > 0
+    return {"completed": completed, "objectives": obj_count, "routines": routine_count}
+
+
+@router.post("/onboarding")
+async def complete_onboarding(
+    body: OnboardingBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Complete onboarding: set name, create first objective, create morning routines."""
+    created: dict = {}
+
+    # 1. Update user name
+    if body.name:
+        stripped = body.name.strip()
+        if stripped:
+            user.first_name = stripped
+            created["name"] = stripped
+
+    # 2. Create first objective
+    if body.first_goal:
+        category = "personal"
+        for area in body.selected_areas:
+            if area in _AREA_TO_CATEGORY:
+                category = _AREA_TO_CATEGORY[area]
+                break
+
+        obj = Objective(
+            user_id=user.id,
+            title=body.first_goal.strip(),
+            category=category,
+            status="active",
+        )
+        session.add(obj)
+        await session.flush()
+        created["objective_id"] = obj.id
+        created["objective_title"] = obj.title
+
+    # 3. Create morning routines
+    created_routines = []
+    for key in body.morning_routines:
+        title = _MORNING_ROUTINE_TITLES.get(key, key)
+        routine = Routine(
+            user_id=user.id,
+            title=title,
+            frequency_human="Täglich",
+            time_of_day="morning",
+            status="active",
+        )
+        session.add(routine)
+        created_routines.append(title)
+    if created_routines:
+        created["routines"] = created_routines
+
+    # 4. Update settings
+    settings = dict(user.settings or {})
+    settings["onboarding_completed"] = True
+    if body.wakeup_time:
+        settings["wakeup_time"] = body.wakeup_time
+    user.settings = settings
+
+    await session.commit()
+    return {"ok": True, "created": created}

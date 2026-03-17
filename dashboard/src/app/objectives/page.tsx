@@ -593,7 +593,21 @@ function AreaObjectiveCard({
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
+            {/* Category badge */}
+            <span
+              className={cn(
+                "text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 border",
+                catColor.bg,
+                catColor.text,
+                catColor.border
+              )}
+            >
+              {CATEGORY_EMOJI[obj.category] ?? "🎯"} {obj.category}
+            </span>
             <span className="text-white font-medium text-sm leading-snug">{obj.title}</span>
+            {obj.parent_objective_id != null && (
+              <span className="text-xs text-zinc-600 shrink-0">↳ Sub-Ziel</span>
+            )}
             {obj.status !== "active" && (
               <span
                 className={cn(

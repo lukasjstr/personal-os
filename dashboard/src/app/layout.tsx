@@ -4,6 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import TokenGate from "@/components/TokenGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PWARegister from "@/components/PWARegister";
+import OnboardingGuard from "@/components/OnboardingGuard";
 
 export const metadata: Metadata = {
   title: "Personal OS",
@@ -26,16 +27,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-zinc-950 text-white min-h-screen">
         <PWARegister />
         <TokenGate>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 md:ml-56 min-h-screen overflow-y-auto">
-              <div className="max-w-5xl mx-auto px-4 md:px-6 pb-6 pt-[72px] md:pt-6">
-                <ErrorBoundary>
-                  {children}
-                </ErrorBoundary>
-              </div>
-            </main>
-          </div>
+          <OnboardingGuard>
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <main className="flex-1 md:ml-56 min-h-screen overflow-y-auto">
+                <div className="max-w-5xl mx-auto px-4 md:px-6 pb-6 pt-[72px] md:pt-6 md:pb-6 pb-20">
+                  <ErrorBoundary>
+                    {children}
+                  </ErrorBoundary>
+                </div>
+              </main>
+            </div>
+          </OnboardingGuard>
         </TokenGate>
       </body>
     </html>
