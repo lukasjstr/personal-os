@@ -7393,6 +7393,53 @@ async def get_productivity_patterns(
     return patterns
 
 
+@router.get("/intelligence/correlations")
+async def get_correlations(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return health/behavior correlation insights."""
+    from bot.core.correlation_engine import run_correlation_analysis
+    insights = await run_correlation_analysis(session, user.id)
+    return {"correlations": insights, "analysis_days": 30}
+
+
+@router.post("/intelligence/correlations/refresh")
+async def refresh_correlations(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Re-run correlation analysis and store as UserInsight rows."""
+    from bot.core.correlation_engine import run_correlation_analysis
+    insights = await run_correlation_analysis(session, user.id)
+
+    # Store as UserInsight rows
+    from bot.database.models import UserInsight
+    # Deactivate old correlation insights
+    old = await session.execute(
+        select(UserInsight).where(and_(
+            UserInsight.user_id == user.id,
+            UserInsight.insight_type == "correlation",
+            UserInsight.source == "auto_detected",
+        ))
+    )
+    for old_ins in old.scalars().all():
+        old_ins.active = False
+
+    for ins in insights:
+        session.add(UserInsight(
+            user_id=user.id,
+            insight_type="correlation",
+            title=ins["title"],
+            description=ins["description"],
+            source="auto_detected",
+            active=True,
+            data_basis=ins.get("data"),
+        ))
+    await session.commit()
+    return {"ok": True, "correlations": insights, "count": len(insights)}
+
+
 @router.get("/intelligence/day-schedule")
 async def get_day_schedule(
     user: User = Depends(get_current_user),
@@ -7724,6 +7771,110 @@ async def import_huawei_raw(
         "days_imported": imported,
         "total_days_in_file": len(daily_metrics),
     }
+
+
+@router.post("/health/import/apple-health")
+async def import_apple_health(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Import Apple Health export ZIP (contains export.xml).
+
+    Send raw ZIP bytes as request body.
+    """
+    from bot.core.health_sync import parse_apple_health_export, sync_health_metrics
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="No file data received")
+
+    daily_metrics = parse_apple_health_export(body)
+
+    if not daily_metrics:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse Apple Health export. Ensure you export from Apple Health as ZIP.",
+        )
+
+    imported = 0
+    kr_updates = []
+    for day_data in daily_metrics:
+        result = await sync_health_metrics(session, user, day_data, source="apple_health")
+        if result.get("stored"):
+            imported += 1
+        kr_updates.extend(result.get("kr_updates", []))
+
+    await session.commit()
+    return {
+        "ok": True,
+        "days_imported": imported,
+        "total_days_in_file": len(daily_metrics),
+        "kr_updates": kr_updates,
+    }
+
+
+@router.post("/health/import/csv")
+async def import_health_csv(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Import health data from CSV file.
+
+    Supports two formats:
+    - Wide: date,steps,sleep_hours,weight_kg,...
+    - Long: date,metric,value
+    """
+    from bot.core.health_sync import parse_generic_csv, sync_health_metrics
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="No file data received")
+
+    content = body.decode("utf-8", errors="ignore")
+    daily_metrics = parse_generic_csv(content)
+
+    if not daily_metrics:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse CSV. Expected columns: date + metric columns (steps, sleep_hours, etc.) or date/metric/value format.",
+        )
+
+    imported = 0
+    kr_updates = []
+    for day_data in daily_metrics:
+        result = await sync_health_metrics(session, user, day_data, source="csv_import")
+        if result.get("stored"):
+            imported += 1
+        kr_updates.extend(result.get("kr_updates", []))
+
+    await session.commit()
+    return {
+        "ok": True,
+        "days_imported": imported,
+        "total_days_in_file": len(daily_metrics),
+        "kr_updates": kr_updates,
+    }
+
+
+@router.post("/health/import/quick")
+async def import_health_quick(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Quick health data import — simple JSON POST for iOS Shortcuts.
+
+    Body: {"steps": 8500, "sleep_hours": 7.2, "weight_kg": 75.5, ...}
+    All fields optional. See sync_health_metrics for full list.
+    """
+    from bot.core.health_sync import sync_health_metrics
+    body = await request.json()
+    if not body or not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Expected JSON object with health metrics")
+
+    result = await sync_health_metrics(session, user, body, source="ios_shortcut")
+    await session.commit()
+    return {"ok": True, **result}
 
 
 @router.get("/health/metrics")
@@ -8824,3 +8975,102 @@ async def complete_onboarding(
 
     await session.commit()
     return {"ok": True, "created": created}
+
+
+# ─── Push Notifications ──────────────────────────────────────────────────────
+
+
+@router.get("/push/vapid-key")
+async def get_vapid_key(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return the VAPID public key for client-side subscription."""
+    from bot.config import settings as app_settings
+    if not app_settings.vapid_public_key:
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+    return {"publicKey": app_settings.vapid_public_key}
+
+
+class PushSubscribeBody(BaseModel):
+    endpoint: str
+    keys: dict  # {"p256dh": "...", "auth": "..."}
+    userAgent: Optional[str] = None
+
+
+@router.post("/push/subscribe")
+async def push_subscribe(
+    body: PushSubscribeBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Save a web push subscription for the current user."""
+    from bot.database.models import PushSubscription
+
+    p256dh = body.keys.get("p256dh", "")
+    auth = body.keys.get("auth", "")
+    if not body.endpoint or not p256dh or not auth:
+        raise HTTPException(status_code=400, detail="Missing endpoint or keys")
+
+    # Upsert: update if endpoint already exists
+    existing = (await session.execute(
+        select(PushSubscription).where(and_(
+            PushSubscription.user_id == user.id,
+            PushSubscription.endpoint == body.endpoint,
+        ))
+    )).scalar_one_or_none()
+
+    if existing:
+        existing.p256dh = p256dh
+        existing.auth = auth
+        existing.user_agent = body.userAgent
+    else:
+        session.add(PushSubscription(
+            user_id=user.id,
+            endpoint=body.endpoint,
+            p256dh=p256dh,
+            auth=auth,
+            user_agent=body.userAgent,
+        ))
+
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/push/unsubscribe")
+async def push_unsubscribe(
+    request: _Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Remove a push subscription by endpoint."""
+    from bot.database.models import PushSubscription
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="Missing endpoint")
+
+    result = await session.execute(
+        sql_delete(PushSubscription).where(and_(
+            PushSubscription.user_id == user.id,
+            PushSubscription.endpoint == endpoint,
+        ))
+    )
+    await session.commit()
+    return {"ok": True, "deleted": result.rowcount > 0}
+
+
+@router.post("/push/test")
+async def push_test(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Send a test push notification."""
+    from bot.core.push import send_push
+    count = await send_push(
+        session, user.id,
+        title="Personal OS",
+        body="Push Notifications funktionieren!",
+        tag="test",
+    )
+    await session.commit()
+    return {"ok": True, "sent_to": count}

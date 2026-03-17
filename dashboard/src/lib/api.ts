@@ -127,6 +127,21 @@ async function apiDelete<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiUpload<T>(path: string, file: File | Blob, contentType?: string): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+      "Content-Type": contentType || file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface NodeRelation {
@@ -956,6 +971,18 @@ export interface PatternInsightsResponse {
   consistency_score: ConsistencyScore | null;
 }
 
+export interface CorrelationInsight {
+  type: string;
+  title: string;
+  description: string;
+  data: {
+    correlation_r: number;
+    strength: string;
+    n_pairs: number;
+    [key: string]: unknown;
+  };
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -1130,10 +1157,25 @@ export const api = {
   deleteFinanceTransaction: (id: number) => apiDelete<{ deleted: boolean }>(`/api/finance/transactions/${id}`),
   patternInsights: () => apiFetch<PatternInsightsResponse>("/api/autopilot/pattern-insights"),
   refreshPatternInsights: () => apiPost<{ ok: boolean; insights_generated: number; consistency_score: unknown }>("/api/autopilot/pattern-insights/refresh", {}),
+  correlations: () => apiFetch<{ correlations: CorrelationInsight[]; analysis_days: number }>("/api/intelligence/correlations"),
+  refreshCorrelations: () => apiPost<{ ok: boolean; correlations: CorrelationInsight[]; count: number }>("/api/intelligence/correlations/refresh", {}),
   // Health Sync
   healthMetrics: (days = 30) => apiFetch<{ metrics: HealthMetric[] }>(`/api/health/metrics?days=${days}`),
   syncHealth: (data: Record<string, unknown>) => apiPost<{ ok: boolean; stored: string[] }>("/api/health/sync", data),
   healthShortcutSetup: () => apiFetch<HealthShortcutSetup>("/api/health/shortcut-setup"),
+  importAppleHealth: (file: File | Blob) =>
+    apiUpload<{ ok: boolean; days_imported: number; total_days_in_file: number; kr_updates: string[] }>(
+      "/api/health/import/apple-health", file, "application/zip",
+    ),
+  importHealthCsv: (file: File | Blob) =>
+    apiUpload<{ ok: boolean; days_imported: number; total_days_in_file: number; kr_updates: string[] }>(
+      "/api/health/import/csv", file, "text/csv",
+    ),
+  // Push Notifications
+  vapidKey: () => apiFetch<{ publicKey: string }>("/api/push/vapid-key"),
+  pushSubscribe: (sub: { endpoint: string; keys: Record<string, string>; userAgent?: string }) =>
+    apiPost<{ ok: boolean }>("/api/push/subscribe", sub),
+  pushTest: () => apiPost<{ ok: boolean; sent_to: number }>("/api/push/test", {}),
   // Onboarding
   onboardingStatus: () => apiFetch<{ completed: boolean }>("/api/onboarding/status"),
   completeOnboarding: (body: {

@@ -10,6 +10,7 @@ import {
   useFitnessSplits,
   useFitnessProgression,
 } from "@/hooks/useApi";
+import HealthImport from "@/components/HealthImport";
 import { formatDate, cn } from "@/lib/utils";
 import {
   BarChart,
@@ -448,6 +449,11 @@ export default function FitnessPage() {
       {isEmpty && (
         <EmptyState emoji="💪" message="Noch keine Workouts geloggt — fang an zu trainieren!" />
       )}
+
+      {/* Health Data Import */}
+      <div className="mt-6">
+        <HealthImport />
+      </div>
     </div>
   );
 }

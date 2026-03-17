@@ -68,6 +68,12 @@ async def run_pattern_analysis(session: AsyncSession, user_id: int) -> dict:
         logger.exception("Routine skip analysis failed")
 
     try:
+        from bot.core.correlation_engine import run_correlation_analysis
+        insights += await run_correlation_analysis(session, user_id)
+    except Exception:
+        logger.exception("Health correlation analysis failed")
+
+    try:
         consistency = await _compute_consistency_score(session, user_id, today)
     except Exception:
         logger.exception("Consistency score failed")

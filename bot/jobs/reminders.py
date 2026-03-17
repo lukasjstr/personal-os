@@ -335,7 +335,7 @@ async def _already_reminded(
 async def _mark_reminder(
     session: AsyncSession, user_id: int, reminder_type: str, message: str
 ) -> None:
-    """Record a sent reminder to prevent duplicates."""
+    """Record a sent reminder to prevent duplicates. Also sends web push."""
     now = datetime.utcnow()
     reminder = ScheduledReminder(
         user_id=user_id,
@@ -348,6 +348,17 @@ async def _mark_reminder(
     )
     session.add(reminder)
     await session.flush()
+
+    # Dual delivery: also send via web push if subscribed
+    try:
+        from bot.core.push import send_push_if_subscribed
+        # Strip markdown for push notification body
+        clean = message.replace("*", "").replace("_", "")[:200]
+        await send_push_if_subscribed(
+            session, user_id, title="Personal OS", body=clean, tag=reminder_type,
+        )
+    except Exception:
+        logger.debug("Web push failed (non-fatal) for reminder %s", reminder_type)
 
 
 async def _check_commitment_reminders(

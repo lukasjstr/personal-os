@@ -1,6 +1,6 @@
 """Universal health data sync — accepts data from any source.
 
-Sources: iOS Shortcuts, Huawei Health export, manual Telegram input.
+Sources: Apple Health, iOS Shortcuts, Huawei Health export, CSV, manual Telegram input.
 Stores in existing Log table with appropriate log_types.
 Auto-updates linked KRs when daily targets are met.
 """
@@ -9,7 +9,9 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import xml.etree.ElementTree as ET
 import zipfile
+from collections import defaultdict
 from datetime import date, datetime
 from typing import Optional
 
@@ -159,6 +161,273 @@ async def parse_huawei_export(zip_bytes: bytes) -> list[dict]:
         return []
 
     return [{"metric_date": d, **v} for d, v in sorted(daily.items())]
+
+
+# ── Apple Health ─────────────────────────────────────────────────────────────
+
+# Map Apple HealthKit identifiers → our metric keys
+_APPLE_TYPE_MAP: dict[str, str] = {
+    "HKQuantityTypeIdentifierStepCount": "steps",
+    "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "hrv",
+    "HKQuantityTypeIdentifierBodyMass": "weight_kg",
+    "HKQuantityTypeIdentifierHeartRate": "resting_heart_rate",
+    "HKQuantityTypeIdentifierActiveEnergyBurned": "calories",
+    "HKQuantityTypeIdentifierBasalEnergyBurned": "basal_calories",
+    "HKQuantityTypeIdentifierDistanceWalkingRunning": "walking_distance_km",
+    "HKQuantityTypeIdentifierFlightsClimbed": "flights_climbed",
+    "HKQuantityTypeIdentifierOxygenSaturation": "spo2",
+    "HKQuantityTypeIdentifierAppleExerciseTime": "active_minutes",
+    "HKQuantityTypeIdentifierRestingHeartRate": "resting_heart_rate",
+    "HKQuantityTypeIdentifierBodyMassIndex": "bmi",
+}
+
+# Metrics that should be summed per day (vs averaged)
+_SUM_METRICS = {"steps", "calories", "basal_calories", "flights_climbed", "active_minutes", "walking_distance_km"}
+# Metrics that should take the latest value per day
+_LATEST_METRICS = {"weight_kg", "bmi"}
+
+
+def parse_apple_health_export(zip_bytes: bytes) -> list[dict]:
+    """Parse Apple Health export ZIP → list of daily metric dicts.
+
+    Apple Health exports contain apple_health_export/export.xml.
+    Uses iterparse for memory efficiency (export files can be 100MB+).
+    """
+    daily: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            # Find export.xml
+            xml_name = None
+            for name in zf.namelist():
+                if name.endswith("export.xml"):
+                    xml_name = name
+                    break
+            if not xml_name:
+                logger.error("Apple Health ZIP: no export.xml found")
+                return []
+
+            with zf.open(xml_name) as xml_file:
+                _parse_apple_xml_stream(xml_file, daily)
+
+    except zipfile.BadZipFile:
+        logger.error("Invalid ZIP file for Apple Health export")
+        return []
+    except Exception:
+        logger.exception("Error parsing Apple Health export")
+        return []
+
+    # Aggregate raw values → final daily metrics
+    result: dict[str, dict] = {}
+    for date_str, metrics in sorted(daily.items()):
+        day = {}
+        for metric, values in metrics.items():
+            if not values:
+                continue
+            if metric in _SUM_METRICS:
+                day[metric] = round(sum(values), 2)
+            elif metric in _LATEST_METRICS:
+                day[metric] = round(values[-1], 2)
+            else:  # average (HR, HRV, SpO2)
+                day[metric] = round(sum(values) / len(values), 2)
+        if day:
+            result[date_str] = day
+
+    # Process sleep separately (stored in daily under "sleep_hours")
+    return [{"metric_date": d, **v} for d, v in sorted(result.items())]
+
+
+def _parse_apple_xml_stream(
+    xml_file: io.IOBase,
+    daily: dict[str, dict[str, list[float]]],
+) -> None:
+    """Stream-parse Apple Health export.xml using iterparse."""
+    for event, elem in ET.iterparse(xml_file, events=("end",)):
+        if elem.tag == "Record":
+            record_type = elem.get("type", "")
+            metric_key = _APPLE_TYPE_MAP.get(record_type)
+            if not metric_key:
+                elem.clear()
+                continue
+
+            value_str = elem.get("value", "")
+            start_date_str = elem.get("startDate", "")
+
+            try:
+                value = float(value_str)
+            except (ValueError, TypeError):
+                elem.clear()
+                continue
+
+            # Parse date: "2024-01-15 08:00:00 +0200"
+            date_str = _parse_apple_date(start_date_str)
+            if date_str:
+                # SpO2 is reported as 0-1 fraction, convert to percentage
+                if metric_key == "spo2" and value <= 1.0:
+                    value = value * 100
+                # Walking distance: Apple reports meters, convert to km
+                if metric_key == "walking_distance_km":
+                    value = value / 1000
+                daily[date_str][metric_key].append(value)
+
+            elem.clear()
+
+        elif elem.tag == "Record" and elem.get("type") == "HKCategoryTypeIdentifierSleepAnalysis":
+            # Sleep: compute duration from startDate/endDate
+            start_str = elem.get("startDate", "")
+            end_str = elem.get("endDate", "")
+            value = elem.get("value", "")
+            # Only count actual sleep (not InBed)
+            if "Asleep" in value or "AsleepCore" in value or "AsleepDeep" in value or "AsleepREM" in value:
+                start_dt = _parse_apple_datetime(start_str)
+                end_dt = _parse_apple_datetime(end_str)
+                if start_dt and end_dt:
+                    hours = (end_dt - start_dt).total_seconds() / 3600
+                    if 0 < hours < 24:
+                        date_key = start_dt.strftime("%Y-%m-%d")
+                        daily[date_key]["sleep_hours"].append(hours)
+            elem.clear()
+
+    # Post-process sleep: sum fragments per day
+    for date_str in daily:
+        if "sleep_hours" in daily[date_str]:
+            total = sum(daily[date_str]["sleep_hours"])
+            daily[date_str]["sleep_hours"] = [round(total, 2)]
+
+
+def _parse_apple_date(raw: str) -> str:
+    """Extract YYYY-MM-DD from Apple Health date format."""
+    # Format: "2024-01-15 08:00:00 +0200" or "2024-01-15 08:00:00 +02:00"
+    raw = raw.strip()
+    if len(raw) >= 10:
+        return raw[:10]
+    return ""
+
+
+def _parse_apple_datetime(raw: str) -> Optional[datetime]:
+    """Parse Apple Health datetime to datetime object."""
+    raw = raw.strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S %z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+    return None
+
+
+# ── Generic CSV Import ───────────────────────────────────────────────────────
+
+# Map common CSV column names to our metric keys
+_CSV_COLUMN_MAP: dict[str, str] = {
+    "sleep": "sleep_hours", "sleep_hours": "sleep_hours", "schlaf": "sleep_hours",
+    "steps": "steps", "schritte": "steps", "step_count": "steps",
+    "hrv": "hrv", "heart_rate_variability": "hrv",
+    "weight": "weight_kg", "weight_kg": "weight_kg", "gewicht": "weight_kg",
+    "calories": "calories", "kalorien": "calories", "active_energy": "calories",
+    "active_minutes": "active_minutes", "exercise_minutes": "active_minutes",
+    "heart_rate": "resting_heart_rate", "resting_heart_rate": "resting_heart_rate",
+    "ruhepuls": "resting_heart_rate",
+    "spo2": "spo2", "blood_oxygen": "spo2",
+    "mood": "mood", "stimmung": "mood",
+    "water": "water", "wasser": "water", "water_liters": "water",
+}
+
+
+def parse_generic_csv(content: str) -> list[dict]:
+    """Parse a generic CSV file into daily metric dicts.
+
+    Supports two formats:
+    1. Wide format: date, steps, sleep_hours, weight_kg, ...
+    2. Long format: date, metric, value
+    """
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        return []
+
+    fields_lower = [f.lower().strip() for f in reader.fieldnames]
+
+    # Detect format
+    if "metric" in fields_lower and "value" in fields_lower:
+        return _parse_long_csv(content)
+    return _parse_wide_csv(content, reader.fieldnames)
+
+
+def _parse_wide_csv(content: str, fieldnames: list[str]) -> list[dict]:
+    """Parse wide-format CSV: one row per day, columns are metrics."""
+    reader = csv.DictReader(io.StringIO(content))
+    daily: list[dict] = []
+
+    # Map column names to metric keys
+    col_map: dict[str, str] = {}
+    for col in fieldnames:
+        col_lower = col.lower().strip()
+        if col_lower in ("date", "datum", "tag", "day"):
+            continue
+        mapped = _CSV_COLUMN_MAP.get(col_lower, col_lower)
+        col_map[col] = mapped
+
+    for row in reader:
+        date_str = ""
+        for date_col in ("date", "Date", "datum", "Datum", "tag", "Tag", "day", "Day"):
+            if row.get(date_col):
+                date_str = _normalize_date(row[date_col])
+                break
+        if not date_str:
+            continue
+
+        metrics: dict = {"metric_date": date_str}
+        for col, metric_key in col_map.items():
+            val = row.get(col, "").strip()
+            if not val:
+                continue
+            try:
+                metrics[metric_key] = float(val)
+            except ValueError:
+                pass
+        if len(metrics) > 1:  # more than just metric_date
+            daily.append(metrics)
+
+    return daily
+
+
+def _parse_long_csv(content: str) -> list[dict]:
+    """Parse long-format CSV: columns date, metric, value."""
+    reader = csv.DictReader(io.StringIO(content))
+    day_data: dict[str, dict] = {}
+
+    for row in reader:
+        date_str = ""
+        for key in ("date", "Date", "datum", "Datum"):
+            if row.get(key):
+                date_str = _normalize_date(row[key])
+                break
+        if not date_str:
+            continue
+
+        metric_raw = ""
+        for key in ("metric", "Metric", "type", "Type"):
+            if row.get(key):
+                metric_raw = row[key].lower().strip()
+                break
+        if not metric_raw:
+            continue
+
+        value_str = ""
+        for key in ("value", "Value", "wert", "Wert"):
+            if row.get(key):
+                value_str = row[key].strip()
+                break
+
+        metric_key = _CSV_COLUMN_MAP.get(metric_raw, metric_raw)
+        try:
+            value = float(value_str)
+        except (ValueError, TypeError):
+            continue
+
+        day = day_data.setdefault(date_str, {"metric_date": date_str})
+        day[metric_key] = value
+
+    return list(day_data.values())
 
 
 def _parse_sleep_csv(content: str, daily: dict) -> None:

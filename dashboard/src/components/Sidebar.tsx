@@ -28,6 +28,8 @@ import {
   ChevronRight,
   User,
   CalendarDays,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { useDashboard } from "@/hooks/useApi";
 import XPBar from "./XPBar";
@@ -123,6 +125,55 @@ const MOBILE_BOTTOM_NAV: NavItem[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+function NotificationBell() {
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setPushEnabled(Notification.permission === "granted");
+    }
+  }, []);
+
+  const togglePush = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      if (pushEnabled) {
+        // Can't programmatically revoke — tell user
+        setPushEnabled(false);
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setPushEnabled(true);
+        // Subscribe via service worker
+        const reg = await navigator.serviceWorker.ready;
+        const { subscribeToPush } = await import("./PWARegister");
+        await subscribeToPush(reg);
+      }
+    } catch (err) {
+      console.warn("Push toggle failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={togglePush}
+      className="p-1 rounded-md hover:bg-zinc-700 transition-colors shrink-0"
+      title={pushEnabled ? "Push aktiv" : "Push aktivieren"}
+    >
+      {pushEnabled ? (
+        <Bell className="h-4 w-4 text-indigo-400" />
+      ) : (
+        <BellOff className="h-4 w-4 text-zinc-500" />
+      )}
+    </button>
+  );
+}
+
 export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -167,6 +218,7 @@ export default function Sidebar() {
             <div className="font-bold text-white text-sm">Personal OS</div>
             <div className="text-zinc-500 text-xs">Dashboard v3</div>
           </div>
+          <NotificationBell />
           {stats && stats.level != null && (
             <span className="text-xs font-bold bg-gradient-to-br from-yellow-500 to-orange-600 text-white px-2 py-0.5 rounded-full shrink-0">
               Lv.{stats.level}

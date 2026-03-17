@@ -9,6 +9,7 @@ import WeekHeatmap from "@/components/WeekHeatmap";
 import CircularProgress from "@/components/CircularProgress";
 import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
 import PatternsCard from "@/components/PatternsCard";
+import CorrelationCard from "@/components/CorrelationCard";
 import ConfidenceCard from "@/components/ConfidenceCard";
 import DailyPlanCard from "@/components/DailyPlanCard";
 import {
@@ -722,6 +723,9 @@ export default function DashboardPage() {
 
       {/* Behavioral Patterns */}
       <PatternsCard />
+
+      {/* Health Correlations */}
+      <CorrelationCard />
 
       {/* P2.3 — Proaktive Vorschläge */}
       {autopilotSuggestions && autopilotSuggestions.suggestions.length > 0 && (

@@ -47,6 +47,7 @@ class User(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
     goal_onboardings: Mapped[list["GoalOnboarding"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     objectives: Mapped[list["Objective"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     logs: Mapped[list["Log"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -1120,3 +1121,26 @@ class GoalOnboarding(Base):
 
     def __repr__(self) -> str:
         return f"<GoalOnboarding id={self.id} user_id={self.user_id} status={self.status}>"
+
+
+# ─── Push Subscriptions ──────────────────────────────────────────────────────
+
+class PushSubscription(Base):
+    """Web Push subscription for PWA notifications."""
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "endpoint", name="uq_push_sub_user_endpoint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
+    auth: Mapped[str] = mapped_column(Text, nullable=False)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="push_subscriptions")
+
+    def __repr__(self) -> str:
+        return f"<PushSubscription id={self.id} user_id={self.user_id}>"

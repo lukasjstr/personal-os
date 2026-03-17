@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_secret_key: str = "change-me"
 
+    # Web Push (VAPID)
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
+    vapid_mailto: str = "mailto:lukasjstr@gmail.com"
+
     @property
     def database_url(self) -> str:
         return (
