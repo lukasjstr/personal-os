@@ -14,7 +14,8 @@ from bot.core.gamification import get_level_title
 from bot.core.supplement_protocol import generate_daily_checklist, load_protocol
 from bot.database.connection import get_session
 from bot.database.models import (
-    CalendarEvent, DailyBrief, Log, Objective, Routine, Task, User,
+    CalendarEvent, DailyBrief, EveningCheckin, KeyResult, Log, Objective, Routine,
+    RoutineCompletion, Task, User, UserInsight,
 )
 from bot.jobs.daily_suggestions import get_or_generate_suggestions
 from bot.telegram.sender import send_message
@@ -187,6 +188,65 @@ async def _generate_brief_for_user(
     )
     yesterday_mood = mood_result.scalar_one_or_none()
 
+    # --- Smart Brief: Training Skip Tracker (last 7 days) ---
+    week_ago = datetime.combine(today - timedelta(days=7), datetime.min.time())
+    training_keywords = ["sport", "training", "gym", "workout", "fitness", "lauf", "run"]
+
+    # Check routines that are fitness-related and were NOT completed in last 7 days
+    fitness_routines_res = await session.execute(
+        select(Routine).where(and_(
+            Routine.user_id == user.id,
+            Routine.status == "active",
+        ))
+    )
+    all_routines = fitness_routines_res.scalars().all()
+    fitness_routine_ids = [
+        r.id for r in all_routines
+        if any(kw in r.title.lower() for kw in training_keywords)
+    ]
+
+    training_skip_count = 0
+    if fitness_routine_ids:
+        completions_res = await session.execute(
+            select(RoutineCompletion).where(and_(
+                RoutineCompletion.user_id == user.id,
+                RoutineCompletion.routine_id.in_(fitness_routine_ids),
+                RoutineCompletion.completed_at >= week_ago,
+            ))
+        )
+        completions_this_week = completions_res.scalars().all()
+        completed_days = len(set(c.completed_at.date() for c in completions_this_week))
+        # Assume 5 weekdays of potential training
+        training_skip_count = max(0, min(7, 5 - completed_days))
+
+    # --- Smart Brief: Yesterday's evening energy score ---
+    yesterday_energy = None
+    yesterday_checkin_res = await session.execute(
+        select(EveningCheckin).where(and_(
+            EveningCheckin.user_id == user.id,
+            EveningCheckin.date == today - timedelta(days=1),
+        ))
+    )
+    yesterday_checkin = yesterday_checkin_res.scalar_one_or_none()
+    if yesterday_checkin and yesterday_checkin.gap_analysis:
+        yesterday_energy = yesterday_checkin.gap_analysis.get("energy_score")
+
+    # --- Smart Brief: Pattern Insight of the Day ---
+    pattern_insight = None
+    try:
+        insight_res = await session.execute(
+            select(UserInsight).where(and_(
+                UserInsight.user_id == user.id,
+                UserInsight.is_active == True,  # noqa: E712
+            )).order_by(UserInsight.created_at.desc()).limit(10)
+        )
+        insights = insight_res.scalars().all()
+        if insights:
+            import random
+            pattern_insight = random.choice(insights)
+    except Exception:
+        pass
+
     # ── Build context string ───────────────────────────────────────────────────
     context_lines = []
 
@@ -278,6 +338,27 @@ async def _generate_brief_for_user(
 
     if yesterday_mood:
         context_lines.append(f"\nGESTRIGE STIMMUNG: {yesterday_mood.data.get('score', '?')}/10")
+
+    # Smart Brief enhancements
+    if training_skip_count >= 2:
+        context_lines.append(
+            f"\n⚠️ TRAINING-WARNUNG: Bereits {training_skip_count}x Training diese Woche übersprungen — heute ist kritisch!"
+        )
+
+    if yesterday_energy is not None:
+        try:
+            energy_val = int(yesterday_energy)
+            if energy_val <= 4:
+                context_lines.append(
+                    f"\n🔋 ENERGIE GESTERN NIEDRIG: {energy_val}/10 — heute leichte, erreichbare Tasks priorisieren!"
+                )
+        except (TypeError, ValueError):
+            pass
+
+    if pattern_insight:
+        context_lines.append(
+            f"\n💡 ERKENNTNIS DES TAGES: {pattern_insight.title} — {pattern_insight.description[:200]}"
+        )
 
     total_xp = user.xp or 0
     level = user.level or 0

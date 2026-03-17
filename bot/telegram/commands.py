@@ -396,6 +396,62 @@ async def handle_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_next_action(context.bot, user, session)
 
 
+async def handle_learn(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /learn command — show due learning items for spaced repetition review."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    async with get_session() as session:
+        from bot.core.user_settings import get_or_create_user as _get_user
+        from bot.core.knowledge import get_due_reviews
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        user = await _get_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        await session.commit()
+
+        due_items = await get_due_reviews(session, user.id)
+
+    if not due_items:
+        await send_message(
+            chat_id,
+            "📚 *Keine fälligen Wiederholungen!*\n\nAlles ist up to date. Gut gemacht! 🎉",
+        )
+        return
+
+    # Show first due item with review buttons
+    item = due_items[0]
+    remaining = len(due_items)
+
+    content_preview = ""
+    if item.ai_summary:
+        content_preview = f"\n\n📝 _{item.ai_summary[:300]}_"
+    elif item.content:
+        content_preview = f"\n\n_{item.content[:300]}_"
+
+    text = (
+        f"📚 *{item.title}*\n"
+        f"Typ: {item.item_type} | Level: {'⭐' * item.skill_level}\n"
+        f"Wiederholung #{item.review_count + 1}"
+        f"{content_preview}\n\n"
+        f"_{remaining} Item{'s' if remaining > 1 else ''} fällig_\n\n"
+        "Wie gut erinnerst du dich?"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("😔 Schlecht", callback_data=f"learn_review_{item.id}_1"),
+            InlineKeyboardButton("🆗 Ok", callback_data=f"learn_review_{item.id}_3"),
+            InlineKeyboardButton("😊 Gut", callback_data=f"learn_review_{item.id}_4"),
+            InlineKeyboardButton("🌟 Sehr gut", callback_data=f"learn_review_{item.id}_5"),
+        ]
+    ])
+
+    if update.message:
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
 async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /ical command — show iCal feed URL."""
     if not update.message or not update.effective_user:

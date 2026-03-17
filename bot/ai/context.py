@@ -18,6 +18,16 @@ async def build_context(session: AsyncSession, user: User) -> str:
     today_start = datetime.combine(today, datetime.min.time())
     lines: list[str] = []
 
+    # ─── Life Profile (prepended for persistent memory) ───────────────────────
+    try:
+        from bot.core.life_profile import get_life_profile_context
+        profile_ctx = await get_life_profile_context(session, user.id)
+        if profile_ctx:
+            lines.append(profile_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
     # ─── Active OKRs ──────────────────────────────────────────────────────────
     obj_result = await session.execute(
         select(Objective)
@@ -263,6 +273,16 @@ async def build_context(session: AsyncSession, user: User) -> str:
         rel_ctx = await get_relationship_context(session, user.id)
         if rel_ctx:
             lines.append(rel_ctx)
+    except Exception:
+        pass
+
+    # ─── Knowledge Context ────────────────────────────────────────────────────
+    try:
+        from bot.core.knowledge import get_knowledge_context
+        know_ctx = await get_knowledge_context(session, user.id)
+        if know_ctx:
+            lines.append(know_ctx)
+            lines.append("")
     except Exception:
         pass
 

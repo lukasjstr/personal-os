@@ -78,6 +78,9 @@ class User(Base):
     contacts: Mapped[list["Contact"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     interactions: Mapped[list["Interaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     commitments: Mapped[list["Commitment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    life_profile: Mapped[Optional["LifeProfile"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
+    learning_items: Mapped[list["LearningItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    learning_reviews: Mapped[list["LearningReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -1018,3 +1021,75 @@ class Commitment(Base):
 
     def __repr__(self) -> str:
         return f"<Commitment id={self.id} status={self.status} desc={self.description[:40]!r}>"
+
+
+# ─── Feature 11 — Life Profile (Langzeit-Gedächtnis) ─────────────────────────
+
+class LifeProfile(Base):
+    """Persistent compressed life summary updated weekly via GPT-4o."""
+    __tablename__ = "life_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_life_profile_user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    strengths: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    patterns: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    current_focus: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    update_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="life_profile")
+
+    def __repr__(self) -> str:
+        return f"<LifeProfile user_id={self.user_id} updated={self.last_updated}>"
+
+
+# ─── Feature 6 — Knowledge Management ────────────────────────────────────────
+
+class LearningItem(Base):
+    """Spaced-repetition learning item (book, article, concept, skill, note)."""
+    __tablename__ = "learning_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    item_type: Mapped[str] = mapped_column(String(60), nullable=False, default="note")  # book|article|concept|skill|note
+    source: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    skill_level: Mapped[int] = mapped_column(Integer, default=1)  # 1-5 for skills
+    next_review_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    review_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ease_factor: Mapped[float] = mapped_column(Float, default=2.5)  # SM-2 ease factor
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="learning_items")
+    reviews: Mapped[list["LearningReview"]] = relationship(back_populates="item", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<LearningItem id={self.id} type={self.item_type} title={self.title!r}>"
+
+
+class LearningReview(Base):
+    """SM-2 spaced repetition review record."""
+    __tablename__ = "learning_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("learning_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    quality: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-5 SM-2 quality
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="learning_reviews")
+    item: Mapped["LearningItem"] = relationship(back_populates="reviews")
+
+    def __repr__(self) -> str:
+        return f"<LearningReview id={self.id} item_id={self.item_id} quality={self.quality}>"

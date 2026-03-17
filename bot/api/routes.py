@@ -24,7 +24,8 @@ from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutomationRule, AutopilotNotification, BrainDump, CalendarEvent,
     Commitment, Contact, DailyBrief,
-    DailyContext, DailySuggestion, EveningCheckin, FitnessSplit, Interaction, KeyResult, Log, NodeRelation,
+    DailyContext, DailySuggestion, EveningCheckin, FitnessSplit, Interaction, KeyResult,
+    LearningItem, LearningReview, LifeProfile, Log, NodeRelation,
     Objective, ObjectiveTaskSuggestion,
     OKRProposalDraft, QuarterlyReview, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
     ShoppingDefault, Task, User, UserAchievement, WeeklyReflection, WorkoutLog,
@@ -8438,3 +8439,252 @@ async def delete_commitment(
     await session.delete(commitment)
     await session.flush()
     return {"ok": True}
+
+
+# ─── Feature 11: Life Profile API ─────────────────────────────────────────────
+
+@router.get("/life-profile")
+async def get_life_profile(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return current life profile."""
+    result = await session.execute(
+        select(LifeProfile).where(LifeProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return {"profile": None}
+    return {
+        "profile": {
+            "id": profile.id,
+            "summary": profile.summary,
+            "strengths": profile.strengths or [],
+            "patterns": profile.patterns or [],
+            "current_focus": profile.current_focus,
+            "last_updated": profile.last_updated.isoformat() if profile.last_updated else None,
+            "update_count": profile.update_count,
+        }
+    }
+
+
+@router.post("/life-profile/regenerate")
+async def regenerate_life_profile(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Force regenerate life profile now."""
+    from bot.core.life_profile import update_life_profile
+    profile = await update_life_profile(session, user.id)
+    await session.commit()
+    return {
+        "ok": True,
+        "last_updated": profile.last_updated.isoformat() if profile.last_updated else None,
+        "update_count": profile.update_count,
+    }
+
+
+# ─── Feature 6: Knowledge Management API ─────────────────────────────────────
+
+class CreateLearningItemBody(BaseModel):
+    title: str
+    content: Optional[str] = None
+    item_type: str = "note"  # book|article|concept|skill|note
+    source: Optional[str] = None
+    tags: Optional[list] = None
+
+
+class UpdateLearningItemBody(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    item_type: Optional[str] = None
+    source: Optional[str] = None
+    tags: Optional[list] = None
+    skill_level: Optional[int] = None
+
+
+class ReviewLearningItemBody(BaseModel):
+    quality: int  # 0-5
+
+
+@router.get("/learning")
+async def list_learning_items(
+    item_type: Optional[str] = Query(None),
+    due_only: bool = Query(False),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List learning items."""
+    q = select(LearningItem).where(LearningItem.user_id == user.id)
+    if item_type:
+        q = q.where(LearningItem.item_type == item_type)
+    if due_only:
+        q = q.where(LearningItem.next_review_at <= datetime.utcnow())
+    q = q.order_by(LearningItem.next_review_at.asc().nulls_last(), LearningItem.created_at.desc())
+    result = await session.execute(q)
+    items = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "title": item.title,
+                "content": item.content,
+                "item_type": item.item_type,
+                "source": item.source,
+                "skill_level": item.skill_level,
+                "next_review_at": item.next_review_at.isoformat() if item.next_review_at else None,
+                "review_count": item.review_count,
+                "last_reviewed_at": item.last_reviewed_at.isoformat() if item.last_reviewed_at else None,
+                "ease_factor": item.ease_factor,
+                "ai_summary": item.ai_summary,
+                "tags": item.tags or [],
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in items
+        ]
+    }
+
+
+@router.get("/learning/due")
+async def get_due_learning_items(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Items due for review today."""
+    from bot.core.knowledge import get_due_reviews
+    items = await get_due_reviews(session, user.id)
+    return {
+        "count": len(items),
+        "items": [
+            {
+                "id": item.id,
+                "title": item.title,
+                "item_type": item.item_type,
+                "skill_level": item.skill_level,
+                "review_count": item.review_count,
+                "ai_summary": item.ai_summary,
+                "content": item.content,
+                "ease_factor": item.ease_factor,
+            }
+            for item in items
+        ],
+    }
+
+
+@router.get("/learning/skills")
+async def get_learning_skills(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Skills with levels."""
+    result = await session.execute(
+        select(LearningItem).where(
+            and_(LearningItem.user_id == user.id, LearningItem.item_type == "skill")
+        ).order_by(LearningItem.skill_level.desc(), LearningItem.title.asc())
+    )
+    skills = result.scalars().all()
+    return {
+        "skills": [
+            {
+                "id": s.id,
+                "title": s.title,
+                "skill_level": s.skill_level,
+                "review_count": s.review_count,
+                "tags": s.tags or [],
+                "next_review_at": s.next_review_at.isoformat() if s.next_review_at else None,
+            }
+            for s in skills
+        ]
+    }
+
+
+@router.post("/learning")
+async def create_learning_item(
+    body: CreateLearningItemBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Add a new learning item."""
+    from bot.core.knowledge import add_learning_item
+    item = await add_learning_item(
+        session=session,
+        user_id=user.id,
+        title=body.title,
+        content=body.content or "",
+        item_type=body.item_type,
+        source=body.source,
+        tags=body.tags,
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "id": item.id,
+        "ai_summary": item.ai_summary,
+        "next_review_at": item.next_review_at.isoformat() if item.next_review_at else None,
+    }
+
+
+@router.put("/learning/{item_id}")
+async def update_learning_item(
+    item_id: int,
+    body: UpdateLearningItemBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a learning item."""
+    result = await session.execute(
+        select(LearningItem).where(
+            and_(LearningItem.id == item_id, LearningItem.user_id == user.id)
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Learning item not found")
+    if body.title is not None:
+        item.title = body.title
+    if body.content is not None:
+        item.content = body.content
+    if body.item_type is not None:
+        item.item_type = body.item_type
+    if body.source is not None:
+        item.source = body.source
+    if body.tags is not None:
+        item.tags = body.tags
+    if body.skill_level is not None:
+        item.skill_level = max(1, min(5, body.skill_level))
+    await session.flush()
+    return {"ok": True}
+
+
+@router.delete("/learning/{item_id}")
+async def delete_learning_item(
+    item_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Delete a learning item."""
+    result = await session.execute(
+        select(LearningItem).where(
+            and_(LearningItem.id == item_id, LearningItem.user_id == user.id)
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Learning item not found")
+    await session.delete(item)
+    await session.flush()
+    return {"ok": True, "deleted_id": item_id}
+
+
+@router.post("/learning/{item_id}/review")
+async def submit_learning_review(
+    item_id: int,
+    body: ReviewLearningItemBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Submit a spaced repetition review (quality 0-5)."""
+    from bot.core.knowledge import review_item
+    result = await review_item(session, user.id, item_id, body.quality)
+    await session.commit()
+    return result
