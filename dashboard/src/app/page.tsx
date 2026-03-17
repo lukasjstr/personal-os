@@ -1,12 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import LoadingSpinner, { ErrorState } from "@/components/LoadingSpinner";
 import XPBar from "@/components/XPBar";
 import MissionBoard from "@/components/MissionBoard";
 import WeekHeatmap from "@/components/WeekHeatmap";
 import CircularProgress from "@/components/CircularProgress";
+import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
+import PatternsCard from "@/components/PatternsCard";
+import ConfidenceCard from "@/components/ConfidenceCard";
+import DailyPlanCard from "@/components/DailyPlanCard";
 import {
   useDashboard,
   useTasks,
@@ -18,14 +22,15 @@ import {
   useGamificationStats,
   useTodaySuggestions,
   useAutopilotSuggestions,
+  useDailyContext,
+  useStreakRisks,
 } from "@/hooks/useApi";
-import AutopilotIntelligenceCards from "@/components/AutopilotIntelligenceCards";
-import PatternsCard from "@/components/PatternsCard";
-import ConfidenceCard from "@/components/ConfidenceCard";
-import HealthCard from "@/components/HealthCard";
-import SupplementsCard from "@/components/SupplementsCard";
-import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, cn } from "@/lib/utils";
-import type { DailySuggestionsResponse, Log } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useSWRConfig } from "swr";
+import { getMoodEmoji, formatTimeAgo, LOG_TYPE_EMOJI, CATEGORY_EMOJI, CATEGORY_COLORS, cn } from "@/lib/utils";
+import type { Log, Objective } from "@/lib/api";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const LOG_TYPE_COLOR: Record<string, string> = {
   workout: "text-green-400",
@@ -37,6 +42,29 @@ const LOG_TYPE_COLOR: Record<string, string> = {
   note: "text-zinc-400",
   general: "text-zinc-400",
 };
+
+const CATEGORY_LABEL_DE: Record<string, string> = {
+  health: "Gesundheit",
+  fitness: "Fitness",
+  business: "Business",
+  personal: "Persönlich",
+  finance: "Finanzen",
+  learning: "Lernen",
+  relationships: "Beziehungen",
+  default: "Sonstiges",
+};
+
+const FOCUS_AREAS = [
+  { value: "health", label: "Gesundheit" },
+  { value: "fitness", label: "Fitness" },
+  { value: "business", label: "Business" },
+  { value: "personal", label: "Persönlich" },
+  { value: "finance", label: "Finanzen" },
+  { value: "learning", label: "Lernen" },
+  { value: "relationships", label: "Beziehungen" },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatActivityLog(log: Log): string {
   const d = log.data;
@@ -55,90 +83,437 @@ function formatActivityLog(log: Log): string {
   }
 }
 
-function AiCoachSection({ suggestionsData }: { suggestionsData: DailySuggestionsResponse | undefined }) {
-  const [open, setOpen] = React.useState(true);
-  const s = suggestionsData?.suggestions;
+// ─── Daily Intelligence Strip ─────────────────────────────────────────────────
+
+function DailyIntelligenceStrip() {
+  const { mutate } = useSWRConfig();
+  const { data: context, isLoading } = useDailyContext();
+
+  // Local state for the quick-context form
+  const [energy, setEnergy] = useState<number | null>(null);
+  const [hours, setHours] = useState<number | null>(null);
+  const [focusArea, setFocusArea] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const plan = context?.daily_plan;
+  const hasPlan = !!plan && plan.top_tasks.length > 0;
+  const hasContext = !!context?.energy;
+
+  async function handleGenerate() {
+    if (energy === null || hours === null || !focusArea) return;
+    setGenerating(true);
+    try {
+      await api.saveDailyContext({ energy, hours_available: hours, focus_area: focusArea });
+      await api.generateDailyPlan();
+      await mutate("daily-context");
+      setShowForm(false);
+    } catch {
+      // silently fail
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleRegenerateOnly() {
+    setGenerating(true);
+    try {
+      await api.generateDailyPlan();
+      await mutate("daily-context");
+    } catch {
+      // silently fail
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl mb-6 overflow-hidden">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-zinc-800/50 transition-colors"
-      >
-        <h2 className="text-white font-semibold flex items-center gap-2">
-          <span>💡</span> Dein AI-Coach sagt heute:
-        </h2>
-        <span className="text-zinc-500 text-sm">{open ? "▲" : "▼"}</span>
-      </button>
+    <div className="bg-gradient-to-r from-zinc-900 to-zinc-800 border border-zinc-700 rounded-xl p-5 mb-5">
+      {isLoading ? (
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-zinc-400 text-sm">Tagesplanung lädt…</span>
+        </div>
+      ) : hasPlan ? (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-white font-semibold flex items-center gap-2 text-sm">
+              <span>🎯</span> Dein Fokus heute
+            </h2>
+            <button
+              onClick={handleRegenerateOnly}
+              disabled={generating}
+              className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors disabled:opacity-50"
+            >
+              {generating ? "…" : "↺ Neu"}
+            </button>
+          </div>
+          <DailyPlanCard context={context} onRegenerate={() => mutate("daily-context")} />
+        </div>
+      ) : hasContext && !hasPlan ? (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-white font-semibold flex items-center gap-2 text-sm">
+              <span>🎯</span> Tagesplanung
+            </h2>
+          </div>
+          <p className="text-zinc-400 text-sm mb-3">
+            Kontext gespeichert. Generiere jetzt deinen personalisierten Tagesplan.
+          </p>
+          <button
+            onClick={handleRegenerateOnly}
+            disabled={generating}
+            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+          >
+            {generating ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Generiert…
+              </>
+            ) : (
+              "✨ Tagesplan generieren"
+            )}
+          </button>
+        </div>
+      ) : showForm ? (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-semibold flex items-center gap-2 text-sm">
+              <span>🌅</span> Wie startest du heute?
+            </h2>
+            <button
+              onClick={() => setShowForm(false)}
+              className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+            >
+              ✕
+            </button>
+          </div>
 
-      {open && (
-        <div className="px-5 pb-5 space-y-4">
-          {!suggestionsData ? (
-            <p className="text-zinc-500 text-sm">Lädt…</p>
-          ) : !s ? (
-            <p className="text-zinc-500 text-sm italic">
-              Empfehlungen werden morgen früh um 06:30 generiert.
+          {/* Energy selector */}
+          <div className="mb-4">
+            <div className="text-zinc-400 text-xs font-medium mb-2">Energie</div>
+            <div className="flex gap-2">
+              {[
+                { val: 3, label: "Niedrig", icon: "😴" },
+                { val: 6, label: "Mittel", icon: "⚙️" },
+                { val: 9, label: "Hoch", icon: "⚡" },
+              ].map((opt) => (
+                <button
+                  key={opt.val}
+                  onClick={() => setEnergy(opt.val)}
+                  className={cn(
+                    "flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border text-xs font-medium transition-colors",
+                    energy === opt.val
+                      ? "bg-blue-600/20 border-blue-500 text-blue-300"
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                  )}
+                >
+                  <span className="text-lg">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Hours selector */}
+          <div className="mb-4">
+            <div className="text-zinc-400 text-xs font-medium mb-2">Verfügbare Zeit</div>
+            <div className="flex gap-2">
+              {[1, 2, 4, 6].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setHours(h)}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg border text-xs font-medium transition-colors",
+                    hours === h
+                      ? "bg-blue-600/20 border-blue-500 text-blue-300"
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                  )}
+                >
+                  {h === 6 ? "6h+" : `${h}h`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Focus area */}
+          <div className="mb-4">
+            <div className="text-zinc-400 text-xs font-medium mb-2">Fokus-Bereich</div>
+            <select
+              value={focusArea}
+              onChange={(e) => setFocusArea(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+            >
+              <option value="">Bereich wählen…</option>
+              {FOCUS_AREAS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleGenerate}
+            disabled={generating || energy === null || hours === null || !focusArea}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            {generating ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Generiert…
+              </>
+            ) : (
+              "✨ Tagesplanung generieren"
+            )}
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-white font-semibold flex items-center gap-2 mb-1 text-sm">
+              <span>🌅</span> Tagesplanung starten
+            </h2>
+            <p className="text-zinc-500 text-xs">
+              Sag mir wie du drauf bist — ich plane deinen Tag.
             </p>
-          ) : (
-            <>
-              {/* Fokus-Tasks */}
-              {s.fokus_heute && s.fokus_heute.filter((f) => f.task && f.task !== "—").length > 0 && (
-                <div>
-                  <div className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">
-                    Fokus heute
-                  </div>
-                  <ul className="space-y-2">
-                    {s.fokus_heute.filter((f) => f.task && f.task !== "—").map((f, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-blue-400 font-bold shrink-0 mt-0.5">{i + 1}.</span>
-                        <div>
-                          <div className="text-white text-sm font-medium">{f.task}</div>
-                          {f.begruendung && (
-                            <div className="text-zinc-500 text-xs mt-0.5">{f.begruendung}</div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Tipp */}
-              {s.tipp && (
-                <div className="bg-emerald-950/50 border border-emerald-800/40 rounded-lg px-4 py-3">
-                  <div className="text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-1">
-                    Tipp des Tages
-                  </div>
-                  <p className="text-emerald-200 text-sm">{s.tipp}</p>
-                </div>
-              )}
-
-              {/* Streak-Warnung */}
-              {s.streak_warnung && (
-                <div className="bg-orange-950/50 border border-orange-800/40 rounded-lg px-4 py-3">
-                  <div className="text-orange-400 text-xs font-semibold uppercase tracking-wider mb-1">
-                    ⚠️ Streak-Alarm
-                  </div>
-                  <p className="text-orange-200 text-sm">{s.streak_warnung}</p>
-                </div>
-              )}
-
-              {/* Dimension Check */}
-              {s.dimension_check && (
-                <div className="bg-purple-950/50 border border-purple-800/40 rounded-lg px-4 py-3">
-                  <div className="text-purple-400 text-xs font-semibold uppercase tracking-wider mb-1">
-                    Dimensionen-Check
-                  </div>
-                  <p className="text-purple-200 text-sm">{s.dimension_check}</p>
-                </div>
-              )}
-            </>
-          )}
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap ml-4"
+          >
+            Starten →
+          </button>
         </div>
       )}
     </div>
   );
 }
+
+// ─── Life Areas Grid ──────────────────────────────────────────────────────────
+
+function groupByCategory(objectives: Objective[]): Record<string, Objective[]> {
+  const map: Record<string, Objective[]> = {};
+  for (const obj of objectives) {
+    const cat = obj.category || "default";
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(obj);
+  }
+  return map;
+}
+
+function calcAreaProgress(objs: Objective[]): number {
+  const allKRs = objs.flatMap((o) => o.key_results);
+  if (allKRs.length === 0) return 0;
+  return Math.round(allKRs.reduce((s, kr) => s + kr.progress_pct, 0) / allKRs.length);
+}
+
+function getMomentumLevel(objs: Objective[]): "high" | "medium" | "low" {
+  // A simple heuristic: use average progress pct
+  const avg = calcAreaProgress(objs);
+  if (avg >= 60) return "high";
+  if (avg >= 30) return "medium";
+  return "low";
+}
+
+const MOMENTUM_DOT: Record<string, string> = {
+  high: "bg-emerald-400",
+  medium: "bg-yellow-400",
+  low: "bg-red-400",
+};
+
+const MOMENTUM_LABEL: Record<string, string> = {
+  high: "⚡ Momentum stark",
+  medium: "⚙️ Momentum mittel",
+  low: "💤 Braucht Aufmerksamkeit",
+};
+
+function LifeAreasGrid({ objectives }: { objectives: Objective[] }) {
+  const active = objectives.filter((o) => o.status === "active");
+  const grouped = groupByCategory(active);
+  const categories = Object.keys(grouped).sort();
+
+  if (categories.length === 0) return null;
+
+  return (
+    <div className="mb-5">
+      <h2 className="text-white font-semibold text-sm mb-3 flex items-center justify-between">
+        <span>🗺️ Lebensbereiche</span>
+        <Link href="/objectives" className="text-blue-400 hover:text-blue-300 text-xs transition-colors">
+          Alle Ziele →
+        </Link>
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {categories.map((cat) => {
+          const objs = grouped[cat];
+          const progress = calcAreaProgress(objs);
+          const momentum = getMomentumLevel(objs);
+          const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.default;
+          const emoji = CATEGORY_EMOJI[cat] ?? CATEGORY_EMOJI.default;
+          const label = CATEGORY_LABEL_DE[cat] ?? cat;
+
+          return (
+            <Link key={cat} href="/objectives" className="block hover:opacity-90 transition-opacity">
+              <div
+                className={cn(
+                  "rounded-xl p-3.5 border",
+                  colors.bg,
+                  "border-zinc-800"
+                )}
+              >
+                {/* Header */}
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-lg">{emoji}</span>
+                  <span className="text-white font-semibold text-sm truncate">{label}</span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="mb-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={cn("text-xs font-medium", colors.text)}>
+                      {progress}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${progress}%`, backgroundColor: colors.hex }}
+                    />
+                  </div>
+                </div>
+
+                {/* Meta */}
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500 text-xs">
+                    {objs.length} {objs.length === 1 ? "Ziel" : "Ziele"}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <div className={cn("w-2 h-2 rounded-full", MOMENTUM_DOT[momentum])} />
+                  </div>
+                </div>
+
+                {/* Momentum label */}
+                <div className="text-zinc-500 text-xs mt-1.5">{MOMENTUM_LABEL[momentum]}</div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Streak Risks ─────────────────────────────────────────────────────────────
+
+function StreakRisksSection() {
+  const { data } = useStreakRisks();
+  const risks = data?.risks ?? [];
+  const filtered = risks.filter((r) => r.days_since >= 3);
+
+  if (filtered.length === 0) return null;
+
+  return (
+    <div className="bg-amber-900/20 border border-amber-800/40 rounded-xl p-4 mb-5">
+      <h2 className="text-amber-400 font-semibold text-sm mb-3 flex items-center gap-2">
+        <span>⚠️</span> Aufmerksamkeit nötig
+      </h2>
+      <div className="space-y-2.5">
+        {filtered.map((risk) => {
+          const colors = CATEGORY_COLORS[risk.category] ?? CATEGORY_COLORS.default;
+          return (
+            <div key={risk.objective_id} className="flex items-start gap-3">
+              <div className="shrink-0 mt-0.5">
+                <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full", colors.bg, colors.text)}>
+                  {risk.days_since}T
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-zinc-200 text-sm font-medium truncate">{risk.title}</div>
+                {risk.suggested_action && (
+                  <div className="text-amber-400/70 text-xs mt-0.5 line-clamp-1">
+                    → {risk.suggested_action}
+                  </div>
+                )}
+                {risk.open_task_count > 0 && (
+                  <div className="text-zinc-600 text-xs mt-0.5">
+                    {risk.open_task_count} offene Tasks
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Quick Actions ────────────────────────────────────────────────────────────
+
+function QuickActions() {
+  return (
+    <div className="grid grid-cols-4 gap-2 mb-5">
+      {[
+        { href: "/brain-dumps", icon: "📝", label: "Brain Dump" },
+        { href: "/objectives", icon: "🎯", label: "Neues Ziel" },
+        { href: "/tasks", icon: "📋", label: "Tasks" },
+        { href: "/objectives/analysis", icon: "📊", label: "Analyse" },
+      ].map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="flex flex-col items-center gap-1.5 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-xl py-3 px-2 transition-colors"
+        >
+          <span className="text-xl">{item.icon}</span>
+          <span className="text-zinc-400 text-xs text-center leading-tight">{item.label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+// ─── Evening Check-in ─────────────────────────────────────────────────────────
+
+function EveningCheckinBanner() {
+  const { data: checkin } = useStreakRisks(); // we just piggyback the existing load; the banner is always shown for now
+  const [dismissed, setDismissed] = useState(false);
+  const hour = new Date().getHours();
+
+  // Show after 17:00 or always show for now (as per spec)
+  if (dismissed) return null;
+
+  return (
+    <div className="bg-indigo-950/30 border border-indigo-800/30 rounded-xl p-4 mb-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-indigo-300 font-semibold text-sm flex items-center gap-2">
+            <span>🌙</span> Wie war dein Tag?
+          </h2>
+          <p className="text-zinc-500 text-xs mt-0.5">
+            {hour >= 17 ? "Zeit für deinen Abend-Check-in." : "Check-in (jederzeit verfügbar)"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/reflections"
+            className="bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            Check-in starten →
+          </Link>
+          <button
+            onClick={() => setDismissed(true)}
+            className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { data: dash, error: dashError, isLoading: dashLoading } = useDashboard();
@@ -149,7 +524,6 @@ export default function DashboardPage() {
   const { data: weeklySummary } = useWeeklySummary();
   const { data: fitnessSummary } = useFitnessSummary();
   const { data: gamification } = useGamificationStats();
-  const { data: suggestionsData } = useTodaySuggestions();
   const { data: autopilotSuggestions } = useAutopilotSuggestions();
 
   if (dashLoading) return <LoadingSpinner />;
@@ -168,9 +542,10 @@ export default function DashboardPage() {
   const allLogs = logsData?.logs ?? [];
   const recentLogs = allLogs.slice(0, 8);
 
-  // Goal progress — average of all active objectives' key result progress
   const objectives = objectivesData?.objectives ?? [];
   const activeObjectives = objectives.filter((o) => o.status === "active");
+
+  // Goal progress — average of all active objectives' key result progress
   let goalProgress = 0;
   if (activeObjectives.length > 0) {
     const allKRs = activeObjectives.flatMap((o) => o.key_results);
@@ -221,8 +596,8 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Hero */}
-      <div className="mb-6">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <div className="mb-5">
         <div className="flex items-start justify-between mb-3">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -258,20 +633,23 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Quick Stats — horizontal scroll on mobile, 5-col grid on sm+ */}
-      <div className="overflow-x-auto -mx-4 sm:mx-0 mb-6">
+      {/* ── B. Daily Intelligence Strip (hero element) ───────────────────── */}
+      <DailyIntelligenceStrip />
+
+      {/* ── C. Life Areas ────────────────────────────────────────────────── */}
+      <LifeAreasGrid objectives={objectives} />
+
+      {/* ── D. Streak Risks ──────────────────────────────────────────────── */}
+      <StreakRisksSection />
+
+      {/* ── Quick Stats row ──────────────────────────────────────────────── */}
+      <div className="overflow-x-auto -mx-4 sm:mx-0 mb-5">
         <div className="flex sm:grid sm:grid-cols-5 gap-3 px-4 sm:px-0 min-w-max sm:min-w-0 pb-2 sm:pb-0">
 
-          {/* 🎯 Ziel-Fortschritt */}
+          {/* Ziel-Fortschritt */}
           <Link href="/objectives" className="block hover:opacity-90 transition-opacity">
             <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
-              <CircularProgress
-                value={goalProgress}
-                size={52}
-                strokeWidth={5}
-                color="#3b82f6"
-                label={`${goalProgress}%`}
-              />
+              <CircularProgress value={goalProgress} size={52} strokeWidth={5} color="#3b82f6" label={`${goalProgress}%`} />
               <div>
                 <div className="text-zinc-300 text-xs font-medium">Ziel-Fortschritt</div>
                 <div className="text-zinc-600 text-xs mt-0.5">{activeObjectives.length} aktiv</div>
@@ -279,34 +657,22 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* 🔥 Streak */}
+          {/* Streak */}
           <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-1">
             <div className="text-3xl">🔥</div>
-            <div
-              className={cn(
-                "text-2xl font-bold leading-none",
-                streakDays > 0 ? "text-orange-400" : "text-zinc-500"
-              )}
-            >
+            <div className={cn("text-2xl font-bold leading-none", streakDays > 0 ? "text-orange-400" : "text-zinc-500")}>
               {streakDays}
             </div>
             <div className="text-zinc-500 text-xs">Tage Streak</div>
-            {streakDays > 0 && (
-              <div className="text-zinc-700 text-xs">am Laufen</div>
-            )}
           </div>
 
-          {/* ⚡ Mood */}
+          {/* Mood */}
           <Link href="/logs?type=mood" className="block hover:opacity-90 transition-opacity">
             <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-1">
-              <div className="text-3xl">
-                {latestMood != null ? getMoodEmoji(latestMood) : "⚡"}
-              </div>
+              <div className="text-3xl">{latestMood != null ? getMoodEmoji(latestMood) : "⚡"}</div>
               {latestMood != null ? (
                 <>
-                  <div className="text-2xl font-bold text-yellow-400 leading-none">
-                    {latestMood}/10
-                  </div>
+                  <div className="text-2xl font-bold text-yellow-400 leading-none">{latestMood}/10</div>
                   <div className="text-zinc-500 text-xs">Letzte Stimmung</div>
                 </>
               ) : (
@@ -318,16 +684,10 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* 📊 Woche Tasks */}
+          {/* Tasks diese Woche */}
           <Link href="/tasks" className="block hover:opacity-90 transition-opacity">
             <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
-              <CircularProgress
-                value={weeklyTasksPct}
-                size={52}
-                strokeWidth={5}
-                color="#22c55e"
-                label={`${tasksDoneThisWeek}/${totalWeeklyTasks}`}
-              />
+              <CircularProgress value={weeklyTasksPct} size={52} strokeWidth={5} color="#22c55e" label={`${tasksDoneThisWeek}/${totalWeeklyTasks}`} />
               <div>
                 <div className="text-zinc-300 text-xs font-medium">Tasks diese Woche</div>
                 <div className="text-zinc-600 text-xs mt-0.5">erledigt</div>
@@ -335,16 +695,10 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* 💧 Wasser */}
+          {/* Wasser */}
           <Link href="/logs?type=water" className="block hover:opacity-90 transition-opacity">
             <div className="w-[148px] sm:w-auto bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col items-center text-center gap-2">
-              <CircularProgress
-                value={Math.min(100, (waterToday / 3) * 100)}
-                size={52}
-                strokeWidth={5}
-                color="#38bdf8"
-                label={`${waterToday}L`}
-              />
+              <CircularProgress value={Math.min(100, (waterToday / 3) * 100)} size={52} strokeWidth={5} color="#38bdf8" label={`${waterToday}L`} />
               <div>
                 <div className="text-zinc-300 text-xs font-medium">Wasser heute</div>
                 <div className="text-zinc-600 text-xs mt-0.5">Ziel: 3L</div>
@@ -354,10 +708,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* AI Coach Daily Suggestions */}
-      <AiCoachSection suggestionsData={suggestionsData} />
+      {/* ── F. Quick Actions ─────────────────────────────────────────────── */}
+      <QuickActions />
 
-      {/* P2.3 — Autopilot Suggestions Widget */}
+      {/* ── G. Evening Check-in banner ───────────────────────────────────── */}
+      <EveningCheckinBanner />
+
+      {/* ── E. Autopilot Intelligence Cards ─────────────────────────────── */}
+      <AutopilotIntelligenceCards />
+
+      {/* Autopilot Confidence */}
+      <ConfidenceCard />
+
+      {/* Behavioral Patterns */}
+      <PatternsCard />
+
+      {/* P2.3 — Proaktive Vorschläge */}
       {autopilotSuggestions && autopilotSuggestions.suggestions.length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
           <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
@@ -379,25 +745,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Autopilot Confidence (E5) */}
-      <ConfidenceCard />
-
-      {/* Behavioral Patterns (E3) */}
-      <PatternsCard />
-
-      {/* Autopilot Intelligence Cards (D1) */}
-      <AutopilotIntelligenceCards />
-
-      {/* Health Card — Fitness Split + Supplements + Macros */}
-      <HealthCard />
-
-      {/* Supplements Card — compact daily checklist */}
-      <SupplementsCard />
-
-      {/* Quick Access Cards */}
+      {/* ── Quick Access Cards ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
 
-        {/* 💪 Fitness */}
+        {/* Fitness */}
         <Link href="/fitness" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
             <div className="text-3xl shrink-0">💪</div>
@@ -410,20 +761,13 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* 🌅 Routinen */}
+        {/* Routinen */}
         <Link href="/routines" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
             <div className="text-3xl shrink-0">🌅</div>
             <div className="flex-1 min-w-0">
               <div className="text-white font-medium text-sm">Deine Routine</div>
-              <div
-                className={cn(
-                  "text-xs mt-0.5",
-                  routinesDone === routinesTotal && routinesTotal > 0
-                    ? "text-green-400"
-                    : "text-zinc-500"
-                )}
-              >
+              <div className={cn("text-xs mt-0.5", routinesDone === routinesTotal && routinesTotal > 0 ? "text-green-400" : "text-zinc-500")}>
                 {routinesDone} von {routinesTotal} erledigt
               </div>
               <div className="text-zinc-600 text-xs">Daily Quests</div>
@@ -432,13 +776,8 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* 🧠 AI Coach */}
-        <a
-          href="https://t.me"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block hover:opacity-90 transition-opacity"
-        >
+        {/* AI Coach */}
+        <a href="https://t.me" target="_blank" rel="noopener noreferrer" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
             <div className="text-3xl shrink-0">🧠</div>
             <div className="flex-1 min-w-0">
@@ -450,7 +789,7 @@ export default function DashboardPage() {
           </div>
         </a>
 
-        {/* 📥 Brain Dump */}
+        {/* Brain Dump */}
         <Link href="/brain-dumps" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
             <div className="text-3xl shrink-0">📥</div>
@@ -463,18 +802,13 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        {/* 🛒 Einkaufsliste */}
+        {/* Einkaufsliste */}
         <Link href="/shopping" className="block hover:opacity-90 transition-opacity">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4 min-h-[72px]">
             <div className="text-3xl shrink-0">🛒</div>
             <div className="flex-1 min-w-0">
               <div className="text-white font-medium text-sm">Einkaufsliste</div>
-              <div
-                className={cn(
-                  "text-xs mt-0.5",
-                  shoppingItems > 0 ? "text-yellow-400" : "text-zinc-500"
-                )}
-              >
+              <div className={cn("text-xs mt-0.5", shoppingItems > 0 ? "text-yellow-400" : "text-zinc-500")}>
                 {shoppingItems > 0 ? `${shoppingItems} Items offen` : "Liste ist leer"}
               </div>
               <div className="text-zinc-600 text-xs">Per Telegram hinzufügen</div>
@@ -489,28 +823,18 @@ export default function DashboardPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
             <span>🏆</span> Letzte Erfolge
-            <Link
-              href="/achievements"
-              className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors"
-            >
+            <Link href="/achievements" className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors">
               Alle anzeigen →
             </Link>
           </h2>
           <div className="space-y-2">
             {gamification.recent_achievements.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0"
-              >
+              <div key={a.id} className="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0">
                 <span className="text-xl w-8 text-center shrink-0">{a.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-white text-sm font-medium truncate">{a.title}</div>
                   <div className="text-zinc-500 text-xs">
-                    {new Date(a.unlocked_at).toLocaleDateString("de-DE", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    })}
+                    {new Date(a.unlocked_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
                   </div>
                 </div>
                 <span className="text-yellow-500 text-xs font-medium shrink-0">+{a.xp_reward} XP</span>
@@ -530,10 +854,7 @@ export default function DashboardPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
           <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
             <span>📋</span> Letzte Aktivitäten
-            <Link
-              href="/logs"
-              className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors"
-            >
+            <Link href="/logs" className="text-xs text-blue-400 hover:text-blue-300 ml-auto transition-colors">
               Alle →
             </Link>
           </h2>
@@ -545,10 +866,7 @@ export default function DashboardPage() {
                   : LOG_TYPE_EMOJI[log.log_type] ?? LOG_TYPE_EMOJI.default;
               const color = LOG_TYPE_COLOR[log.log_type] ?? "text-zinc-400";
               return (
-                <div
-                  key={log.id}
-                  className="flex items-start gap-3 py-2.5 border-b border-zinc-800 last:border-0"
-                >
+                <div key={log.id} className="flex items-start gap-3 py-2.5 border-b border-zinc-800 last:border-0">
                   <div className="flex flex-col items-center shrink-0">
                     <span className="text-base">{emoji}</span>
                     {i < recentLogs.length - 1 && (
@@ -557,9 +875,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex-1 min-w-0 pb-1">
                     <span className={cn("text-sm", color)}>{formatActivityLog(log)}</span>
-                    <div className="text-zinc-500 text-xs mt-0.5">
-                      {formatTimeAgo(log.logged_at)}
-                    </div>
+                    <div className="text-zinc-500 text-xs mt-0.5">{formatTimeAgo(log.logged_at)}</div>
                   </div>
                 </div>
               );

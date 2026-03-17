@@ -4,11 +4,17 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from bot.core.daily_intelligence import (
+    run_evening_checkin,
+    run_morning_context_collection,
+    run_streak_risk_check,
+)
 from bot.jobs.daily_suggestions import generate_daily_suggestions
 from bot.jobs.evening_review import send_evening_review
 from bot.jobs.morning_brief import send_morning_brief
 from bot.jobs.reminders import process_reminders
 from bot.jobs.weekly_reflection_trigger import check_and_trigger_reflections
+from bot.jobs.weekly_auto_plan import send_weekly_auto_plan
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +49,10 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
-    # Evening review at 21:00
+    # Evening review at 20:45 (legacy summary before interactive check-in)
     _scheduler.add_job(
         send_evening_review,
-        CronTrigger(hour=21, minute=0, timezone="Europe/Berlin"),
+        CronTrigger(hour=20, minute=45, timezone="Europe/Berlin"),
         id="evening_review",
         max_instances=1,
         coalesce=True,
@@ -93,5 +99,46 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
-    logger.info("Scheduler initialized with 7 active jobs: daily_suggestions, morning_brief, evening_review, reminders, weekly_reflection, ical_sync, gap_nudge")
+    # Sprint 3: Weekly auto-plan on Mondays at 07:30
+    _scheduler.add_job(
+        send_weekly_auto_plan,
+        CronTrigger(hour=7, minute=30, day_of_week="mon", timezone="Europe/Berlin"),
+        id="weekly_auto_plan",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Daily intelligence: morning context collection at 07:45 (after morning brief)
+    _scheduler.add_job(
+        run_morning_context_collection,
+        CronTrigger(hour=7, minute=45, timezone="Europe/Berlin"),
+        id="morning_context_collection",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Daily intelligence: interactive evening check-in at 21:00
+    _scheduler.add_job(
+        run_evening_checkin,
+        CronTrigger(hour=21, minute=0, timezone="Europe/Berlin"),
+        id="evening_checkin",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Daily intelligence: streak risk alerts at 10:00 (inline-button flow)
+    _scheduler.add_job(
+        run_streak_risk_check,
+        CronTrigger(hour=10, minute=0, timezone="Europe/Berlin"),
+        id="streak_risk_check_intelligence",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    logger.info(
+        "Scheduler initialized with 12 active jobs: daily_suggestions, morning_brief, "
+        "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
+        "streak_risk_check, weekly_auto_plan, morning_context_collection, "
+        "evening_checkin, streak_risk_check_intelligence"
+    )
     return _scheduler

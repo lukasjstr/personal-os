@@ -69,6 +69,8 @@ class User(Base):
     proposal_calendar_slots: Mapped[list["ProposalCalendarSlot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     node_relations: Mapped[list["NodeRelation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    daily_contexts: Mapped[list["DailyContext"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    evening_checkins: Mapped[list["EveningCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -797,3 +799,49 @@ class NodeRelation(Base):
             f"{self.from_type}:{self.from_id} -{self.relation_type}-> "
             f"{self.to_type}:{self.to_id}>"
         )
+
+
+class DailyContext(Base):
+    """Daily state snapshot: energy, available time, focus area.
+    Collected via Telegram morning flow; powers Smart Daily Plan."""
+    __tablename__ = "daily_contexts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    energy: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)       # 1-10
+    hours_available: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    focus_area: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # category or free text
+    mood_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # AI-generated daily plan (top 3 tasks + reasoning)
+    daily_plan: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="daily_contexts")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_daily_context_user_date"),
+    )
+
+
+class EveningCheckin(Base):
+    """Evening check-in: what was done, gaps, tomorrow prep."""
+    __tablename__ = "evening_checkins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    tasks_planned: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0)
+    completed_task_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    win_of_day: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    blocker: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # AI gap analysis + tomorrow plan
+    gap_analysis: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="evening_checkins")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_evening_checkin_user_date"),
+    )

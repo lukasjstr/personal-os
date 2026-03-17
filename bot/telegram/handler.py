@@ -5,10 +5,21 @@ import tempfile
 
 from openai import AsyncOpenAI
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.ai.client import process_message
 from bot.config import settings
+from bot.core.daily_intelligence import (
+    _evening_ci_state,
+    handle_ci_all,
+    handle_ci_none,
+    handle_ci_skip_win,
+    handle_ci_task_toggle,
+    handle_ci_win_text,
+    handle_ctx_energy,
+    handle_ctx_focus,
+    handle_ctx_time,
+)
 from bot.core.user_settings import get_or_create_user
 from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
 from bot.core.workout_tracker import handle_workout_message
@@ -32,6 +43,71 @@ logger = logging.getLogger(__name__)
 openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline button callback queries for daily intelligence flows."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+
+    await query.answer()  # acknowledge the button press immediately
+
+    tg_user = update.effective_user
+    data = query.data or ""
+
+    async with get_session() as session:
+        user = await get_or_create_user(
+            session,
+            tg_user.id,
+            tg_user.username,
+            tg_user.first_name,
+        )
+        bot = context.bot
+
+        try:
+            # Morning context: energy
+            if data.startswith("ctx_energy_"):
+                await handle_ctx_energy(bot, user, data)
+
+            # Morning context: time available
+            elif data.startswith("ctx_time_"):
+                await handle_ctx_time(bot, user, data)
+
+            # Morning context: focus area
+            elif data.startswith("ctx_focus_"):
+                await handle_ctx_focus(bot, user, session, data)
+                await session.commit()
+
+            # Evening check-in: individual task toggle
+            elif data.startswith("ci_task_"):
+                await handle_ci_task_toggle(bot, user, session, data)
+
+            # Evening check-in: nothing done
+            elif data == "ci_none":
+                await handle_ci_none(bot, user, session)
+
+            # Evening check-in: everything done
+            elif data == "ci_all":
+                await handle_ci_all(bot, user, session)
+
+            # Evening check-in: skip win-of-day
+            elif data == "ci_skip_win":
+                await handle_ci_skip_win(bot, user, session)
+                await session.commit()
+
+            # Streak risk view (acknowledge — full task list shown via text commands)
+            elif data.startswith("streak_view_"):
+                await bot.send_message(
+                    chat_id=tg_user.id,
+                    text="📋 Nutze /status oder frage mich nach deinen Tasks für dieses Ziel.",
+                )
+
+            else:
+                logger.debug("Unhandled callback query data: %s", data)
+
+        except Exception:
+            logger.exception("Error handling callback query '%s' for user %s", data, user.id)
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle a text message from Telegram."""
     if not update.message or not update.effective_user:
@@ -50,7 +126,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             tg_user.username,
             tg_user.first_name,
         )
-        # Check for active reflection session first
+
+        # Check for active evening check-in win-of-day input
+        state = _evening_ci_state.get(user.id)
+        if state and state.get("step") == "win":
+            consumed = await handle_ci_win_text(context.bot, user, session, text)
+            if consumed:
+                await session.commit()
+                return
+
+        # Check for active reflection session
         reflection = await get_active_reflection(session, user.id)
         if reflection:
             reply = await handle_reflection_answer(session, user, reflection, text)
@@ -160,6 +245,9 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("ical", handle_ical))
     application.add_handler(CommandHandler("token", handle_token))
     application.add_handler(CommandHandler("organize", handle_organize))
+
+    # Inline button callbacks (daily intelligence flows)
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
 
     # Message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

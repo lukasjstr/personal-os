@@ -138,3 +138,15 @@ export function useAutopilotSuggestions() {
 export function useHealthDaily() {
   return useSWR("health-daily", () => api.healthDaily(), { refreshInterval: 300_000 });
 }
+
+export function useDailyContext() {
+  return useSWR("daily-context", () => api.dailyContext(), { refreshInterval: 60_000 });
+}
+
+export function useStreakRisks() {
+  return useSWR("streak-risks", () => api.streakRisks(), { refreshInterval: 300_000 });
+}
+
+export function useEveningCheckin() {
+  return useSWR("evening-checkin", () => api.eveningCheckin(), { refreshInterval: 60_000 });
+}

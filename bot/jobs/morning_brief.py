@@ -60,6 +60,16 @@ async def send_morning_brief() -> None:
                     brief.priorities = priorities_snapshot
                     await session.flush()
                     logger.info("Morning brief sent to user %s", user.id)
+
+                    # Kick off morning context collection if not yet done today
+                    try:
+                        from bot.core.daily_intelligence import collect_morning_context
+                        from bot.telegram.sender import get_bot
+                        await collect_morning_context(get_bot(), user, session)
+                    except Exception:
+                        logger.exception(
+                            "Morning context collection failed after brief for user %s", user.id
+                        )
             except Exception:
                 logger.exception("Failed to send morning brief to user %s", user.id)
 

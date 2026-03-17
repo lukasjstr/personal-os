@@ -725,6 +725,61 @@ export interface PlannerSnapshot {
   progress_summary: PlannerProgressSummary;
 }
 
+// ─── Daily Intelligence Types ─────────────────────────────────────────────────
+
+export interface DailyPlan {
+  top_tasks: {
+    task_id: number;
+    title: string;
+    objective_title: string | null;
+    kr_title: string | null;
+    reason: string;
+    estimated_minutes: number;
+    energy_required: "low" | "medium" | "high";
+  }[];
+  focus_block: {
+    suggested_start: string;
+    duration_minutes: number;
+    description: string;
+  } | null;
+  motivational_kickoff: string;
+}
+
+export interface DailyContext {
+  id: number;
+  date: string;
+  energy: number | null;
+  hours_available: number | null;
+  focus_area: string | null;
+  mood_note: string | null;
+  daily_plan: DailyPlan | null;
+}
+
+export interface StreakRisk {
+  objective_id: number;
+  title: string;
+  category: string;
+  days_since: number;
+  open_task_count: number;
+  suggested_action: string | null;
+}
+
+export interface EveningCheckin {
+  id: number;
+  date: string;
+  tasks_planned: number;
+  tasks_completed: number;
+  win_of_day: string | null;
+  blocker: string | null;
+  gap_analysis: {
+    completion_rate_pct: number;
+    gap_summary: string;
+    positive_note: string;
+    tomorrow_focus: { objective_title: string; suggested_task_title: string } | null;
+    pattern_note: string;
+  } | null;
+}
+
 // ─── Health Daily ─────────────────────────────────────────────────────────────
 
 export interface SupplementItem {
@@ -964,6 +1019,16 @@ export const api = {
   analyzeObjectives: () => apiFetch<ObjectiveAnalysis>("/api/objectives/ai-analysis"),
   setObjectiveParent: (id: number, parentId: number | null) =>
     apiPost<{ ok: boolean }>(`/api/objectives/${id}/set-parent`, { parent_objective_id: parentId }),
+  // Daily intelligence
+  dailyContext: () => apiFetch<DailyContext>("/api/intelligence/daily-context"),
+  saveDailyContext: (data: { energy: number; hours_available: number; focus_area: string; mood_note?: string }) =>
+    apiPost<DailyContext>("/api/intelligence/daily-context", data),
+  generateDailyPlan: () => apiPost<DailyContext>("/api/intelligence/daily-plan", {}),
+  streakRisks: () => apiFetch<{ risks: StreakRisk[] }>("/api/intelligence/streak-risks"),
+  eveningCheckin: () => apiFetch<EveningCheckin>("/api/intelligence/evening-checkin"),
+  saveEveningCheckin: (data: unknown) =>
+    apiPost<EveningCheckin>("/api/intelligence/evening-checkin", data),
+  weeklyPlan: () => apiPost<unknown>("/api/intelligence/weekly-plan", {}),
   // Health daily
   healthDaily: () => apiFetch<DailyHealthData>("/api/health/daily"),
   // Protocol editors

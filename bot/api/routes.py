@@ -23,7 +23,8 @@ from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
     Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
-    DailySuggestion, FitnessSplit, KeyResult, Log, NodeRelation, Objective, ObjectiveTaskSuggestion,
+    DailyContext, DailySuggestion, EveningCheckin, FitnessSplit, KeyResult, Log, NodeRelation,
+    Objective, ObjectiveTaskSuggestion,
     OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
     ShoppingDefault, Task, User, UserAchievement, WeeklyReflection, WorkoutLog,
     VALID_NODE_TYPES, VALID_RELATION_TYPES,
@@ -6744,6 +6745,599 @@ PFLICHT-REGELN:
     analysis.setdefault("dependencies", [])
 
     return analysis
+
+
+# ─── Intelligence API ─────────────────────────────────────────────────────────
+
+class DailyContextBody(BaseModel):
+    energy: int
+    hours_available: float
+    focus_area: str
+    mood_note: Optional[str] = None
+
+
+class EveningCheckinBody(BaseModel):
+    completed_task_ids: list[int]
+    win_of_day: Optional[str] = None
+    blocker: Optional[str] = None
+
+
+@router.get("/intelligence/daily-context")
+async def get_daily_context(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return today's DailyContext for current user, or null if none exists."""
+    from datetime import date as _date
+    today = _date.today()
+    result = await session.execute(
+        select(DailyContext).where(
+            and_(DailyContext.user_id == user.id, DailyContext.date == today)
+        )
+    )
+    ctx = result.scalar_one_or_none()
+    if not ctx:
+        return {"context": None}
+    return {
+        "context": {
+            "id": ctx.id,
+            "date": ctx.date.isoformat(),
+            "energy": ctx.energy,
+            "hours_available": ctx.hours_available,
+            "focus_area": ctx.focus_area,
+            "mood_note": ctx.mood_note,
+            "daily_plan": ctx.daily_plan,
+        }
+    }
+
+
+@router.post("/intelligence/daily-context")
+async def upsert_daily_context(
+    body: DailyContextBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upsert today's DailyContext and immediately generate the daily plan."""
+    from datetime import date as _date
+    today = _date.today()
+
+    result = await session.execute(
+        select(DailyContext).where(
+            and_(DailyContext.user_id == user.id, DailyContext.date == today)
+        )
+    )
+    ctx = result.scalar_one_or_none()
+    if ctx is None:
+        ctx = DailyContext(user_id=user.id, date=today)
+        session.add(ctx)
+
+    ctx.energy = body.energy
+    ctx.hours_available = body.hours_available
+    ctx.focus_area = body.focus_area
+    ctx.mood_note = body.mood_note
+    await session.flush()
+
+    # Generate daily plan immediately after saving context
+    plan_result = await _generate_daily_plan_for_user(user, session, ctx)
+
+    ctx.daily_plan = plan_result
+    await session.commit()
+    await session.refresh(ctx)
+
+    return {
+        "context": {
+            "id": ctx.id,
+            "date": ctx.date.isoformat(),
+            "energy": ctx.energy,
+            "hours_available": ctx.hours_available,
+            "focus_area": ctx.focus_area,
+            "mood_note": ctx.mood_note,
+            "daily_plan": ctx.daily_plan,
+        },
+        "daily_plan": plan_result,
+    }
+
+
+async def _generate_daily_plan_for_user(user: User, session: AsyncSession, ctx: Optional[DailyContext]) -> dict:
+    """Internal helper: generate a smart daily plan and return it as a dict."""
+    import json as _json
+    from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+    today = _date.today()
+
+    # Load open tasks with objective/KR links
+    task_res = await session.execute(
+        select(Task)
+        .options(selectinload(Task.objective))
+        .where(
+            and_(
+                Task.user_id == user.id,
+                Task.status.in_(["todo", "in_progress"]),
+            )
+        )
+        .order_by(Task.priority.asc().nullslast(), Task.created_at.asc())
+        .limit(50)
+    )
+    tasks = task_res.scalars().all()
+
+    # Determine which objectives had a task completed in the last 7 days
+    seven_ago = _datetime.combine(today - _timedelta(days=7), _datetime.min.time())
+    stale_obj_ids: set[int] = set()
+    if tasks:
+        obj_ids_with_tasks = {t.objective_id for t in tasks if t.objective_id}
+        for obj_id in obj_ids_with_tasks:
+            recent_res = await session.execute(
+                select(func.count()).select_from(Task).where(
+                    and_(
+                        Task.objective_id == obj_id,
+                        Task.status == "done",
+                        Task.completed_at >= seven_ago,
+                    )
+                )
+            )
+            count = recent_res.scalar() or 0
+            if count == 0:
+                stale_obj_ids.add(obj_id)
+
+    energy = ctx.energy if ctx else 5
+    hours_available = ctx.hours_available if ctx else 8.0
+    focus_area = ctx.focus_area if ctx else ""
+
+    # Score each task
+    scored = []
+    for task in tasks:
+        base = (6 - (task.priority or 3)) * 20
+        deadline_bonus = 0
+        if task.due_date:
+            days_until = (task.due_date - today).days
+            if days_until < 0:
+                deadline_bonus = 60
+            elif days_until <= 3:
+                deadline_bonus = 40
+            elif days_until <= 7:
+                deadline_bonus = 20
+        momentum_risk = 30 if (task.objective_id and task.objective_id in stale_obj_ids) else 0
+        energy_match = -20 if (energy <= 4 and (task.priority or 3) >= 3) else 0
+        total = base + deadline_bonus + momentum_risk + energy_match
+        scored.append((total, task))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top_tasks = [t for _, t in scored[:3]]
+
+    # Load KR titles for top tasks
+    kr_by_obj: dict[int, list[str]] = {}
+    obj_title_by_id: dict[int, str] = {}
+    top_obj_ids = {t.objective_id for t in top_tasks if t.objective_id}
+    if top_obj_ids:
+        kr_res = await session.execute(
+            select(KeyResult).where(KeyResult.objective_id.in_(top_obj_ids))
+        )
+        for kr in kr_res.scalars().all():
+            kr_by_obj.setdefault(kr.objective_id, []).append(kr.title)
+        obj_res = await session.execute(
+            select(Objective).where(Objective.id.in_(top_obj_ids))
+        )
+        for obj in obj_res.scalars().all():
+            obj_title_by_id[obj.id] = obj.title
+
+    tasks_for_prompt = []
+    for task in top_tasks:
+        obj_title = obj_title_by_id.get(task.objective_id, "") if task.objective_id else ""
+        kr_titles = kr_by_obj.get(task.objective_id, []) if task.objective_id else []
+        tasks_for_prompt.append(
+            f"- [{task.id}] {task.title} (Objective: {obj_title or 'keines'}, KRs: {', '.join(kr_titles[:2]) or 'keine'})"
+        )
+
+    tasks_text = "\n".join(tasks_for_prompt) if tasks_for_prompt else "Keine offenen Tasks."
+
+    fallback_plan = {
+        "top_tasks": [
+            {
+                "task_id": t.id,
+                "title": t.title,
+                "objective_title": obj_title_by_id.get(t.objective_id, "") if t.objective_id else "",
+                "kr_title": (kr_by_obj.get(t.objective_id, [""])[0]) if t.objective_id else "",
+                "reason": "Höchste Priorität",
+                "estimated_minutes": 60,
+                "energy_required": "medium",
+            }
+            for t in top_tasks
+        ],
+        "focus_block": {
+            "suggested_start": "09:00",
+            "duration_minutes": 90,
+            "description": f"Fokus-Block für {focus_area or 'deine wichtigsten Aufgaben'}",
+        },
+        "motivational_kickoff": "Mach heute einen wichtigen Schritt vorwärts!",
+    }
+
+    try:
+        client = _goal_openai_client()
+        prompt = (
+            f"Nutzer hat heute {energy}/10 Energie, {hours_available} Stunden Zeit. "
+            f"Fokus: {focus_area or 'allgemein'}. "
+            f"Die 3 priorisierten Tasks sind:\n{tasks_text}\n\n"
+            "Generiere JSON mit: {\"top_tasks\": [{\"task_id\": int, \"title\": str, "
+            "\"objective_title\": str, \"kr_title\": str, \"reason\": str, "
+            "\"estimated_minutes\": int, \"energy_required\": \"low\"|\"medium\"|\"high\"}], "
+            "\"focus_block\": {\"suggested_start\": \"HH:MM\", \"duration_minutes\": int, "
+            "\"description\": str}, \"motivational_kickoff\": str}"
+        )
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        return _json.loads(resp.choices[0].message.content)
+    except Exception:
+        return fallback_plan
+
+
+@router.post("/intelligence/daily-plan")
+async def generate_daily_plan(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Generate a smart daily plan based on today's context and open tasks."""
+    from datetime import date as _date, datetime as _datetime
+
+    today = _date.today()
+    ctx_res = await session.execute(
+        select(DailyContext).where(
+            and_(DailyContext.user_id == user.id, DailyContext.date == today)
+        )
+    )
+    ctx = ctx_res.scalar_one_or_none()
+
+    plan = await _generate_daily_plan_for_user(user, session, ctx)
+
+    if ctx is not None:
+        ctx.daily_plan = plan
+        await session.commit()
+
+    return {
+        "daily_plan": plan,
+        "generated_at": _datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/intelligence/streak-risks")
+async def get_streak_risks(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return active objectives with no task completed in the last N days (at-risk streaks)."""
+    from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+    today = _date.today()
+    fourteen_ago = _datetime.combine(today - _timedelta(days=14), _datetime.min.time())
+
+    obj_res = await session.execute(
+        select(Objective)
+        .where(and_(Objective.user_id == user.id, Objective.status == "active"))
+    )
+    objectives = obj_res.scalars().all()
+
+    risks = []
+    for obj in objectives:
+        # Last completed task within 14 days
+        last_res = await session.execute(
+            select(Task.completed_at)
+            .where(
+                and_(
+                    Task.objective_id == obj.id,
+                    Task.status == "done",
+                    Task.completed_at >= fourteen_ago,
+                )
+            )
+            .order_by(Task.completed_at.desc())
+            .limit(1)
+        )
+        last_completed = last_res.scalar_one_or_none()
+        if last_completed:
+            days_since = (today - last_completed.date()).days
+        else:
+            days_since = 14
+
+        if days_since < 3:
+            continue
+
+        # Count open tasks for this objective
+        open_res = await session.execute(
+            select(func.count()).select_from(Task).where(
+                and_(
+                    Task.objective_id == obj.id,
+                    Task.status.in_(["todo", "in_progress"]),
+                )
+            )
+        )
+        open_task_count = open_res.scalar() or 0
+
+        # Suggested action: first open task title
+        first_task_res = await session.execute(
+            select(Task.title)
+            .where(
+                and_(
+                    Task.objective_id == obj.id,
+                    Task.status.in_(["todo", "in_progress"]),
+                )
+            )
+            .order_by(Task.priority.asc().nullslast(), Task.created_at.asc())
+            .limit(1)
+        )
+        suggested_action = first_task_res.scalar_one_or_none()
+
+        risks.append({
+            "objective_id": obj.id,
+            "title": obj.title,
+            "category": obj.category,
+            "days_since": days_since,
+            "open_task_count": open_task_count,
+            "suggested_action": suggested_action,
+        })
+
+    risks.sort(key=lambda x: x["days_since"], reverse=True)
+    return {"risks": risks}
+
+
+@router.post("/intelligence/evening-checkin")
+async def post_evening_checkin(
+    body: EveningCheckinBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upsert evening check-in: mark tasks done, generate gap analysis."""
+    import json as _json
+    from datetime import date as _date, datetime as _datetime
+
+    today = _date.today()
+    now = _datetime.utcnow()
+
+    # Upsert EveningCheckin
+    checkin_res = await session.execute(
+        select(EveningCheckin).where(
+            and_(EveningCheckin.user_id == user.id, EveningCheckin.date == today)
+        )
+    )
+    checkin = checkin_res.scalar_one_or_none()
+    if checkin is None:
+        checkin = EveningCheckin(user_id=user.id, date=today)
+        session.add(checkin)
+
+    # Mark provided task IDs as done
+    tasks_marked = 0
+    completed_titles: list[str] = []
+    if body.completed_task_ids:
+        task_res = await session.execute(
+            select(Task).where(
+                and_(Task.id.in_(body.completed_task_ids), Task.user_id == user.id)
+            )
+        )
+        for task in task_res.scalars().all():
+            if task.status != "done":
+                task.status = "done"
+                task.completed_at = now
+                tasks_marked += 1
+            completed_titles.append(task.title)
+
+    tasks_completed = len(body.completed_task_ids)
+
+    # Load today's DailyContext for tasks_planned
+    ctx_res = await session.execute(
+        select(DailyContext).where(
+            and_(DailyContext.user_id == user.id, DailyContext.date == today)
+        )
+    )
+    ctx = ctx_res.scalar_one_or_none()
+    tasks_planned = 3  # default if no context
+    if ctx and ctx.daily_plan:
+        top_tasks = ctx.daily_plan.get("top_tasks", [])
+        tasks_planned = len(top_tasks) if top_tasks else 3
+
+    checkin.tasks_planned = tasks_planned
+    checkin.tasks_completed = tasks_completed
+    checkin.completed_task_ids = body.completed_task_ids
+    checkin.win_of_day = body.win_of_day
+    checkin.blocker = body.blocker
+    await session.flush()
+
+    # Load active objectives for context
+    obj_res = await session.execute(
+        select(Objective).where(
+            and_(Objective.user_id == user.id, Objective.status == "active")
+        )
+    )
+    active_objectives = [o.title for o in obj_res.scalars().all()]
+
+    completion_rate = int((tasks_completed / tasks_planned) * 100) if tasks_planned > 0 else 0
+
+    fallback_gap = {
+        "completion_rate_pct": completion_rate,
+        "gap_summary": f"{tasks_completed} von {tasks_planned} Tasks erledigt.",
+        "positive_note": body.win_of_day or "Guter Fortschritt heute!",
+        "tomorrow_focus": {"objective_title": active_objectives[0] if active_objectives else "", "suggested_task_title": ""},
+        "pattern_note": "",
+    }
+
+    try:
+        client = _goal_openai_client()
+        prompt = (
+            f"Heute geplant: {tasks_planned} Tasks, erledigt: {tasks_completed}. "
+            f"Win des Tages: {body.win_of_day or 'nicht angegeben'}. "
+            f"Blocker: {body.blocker or 'keiner'}. "
+            f"Erledigte Tasks: {', '.join(completed_titles) or 'keine'}. "
+            f"Aktive Ziele: {', '.join(active_objectives[:5]) or 'keine'}. "
+            "Generiere gap_analysis JSON: {\"completion_rate_pct\": int, \"gap_summary\": str, "
+            "\"positive_note\": str, \"tomorrow_focus\": {\"objective_title\": str, "
+            "\"suggested_task_title\": str}, \"pattern_note\": str}"
+        )
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        gap_analysis = _json.loads(resp.choices[0].message.content)
+    except Exception:
+        gap_analysis = fallback_gap
+
+    checkin.gap_analysis = gap_analysis
+    await session.commit()
+    await session.refresh(checkin)
+
+    return {
+        "checkin": {
+            "id": checkin.id,
+            "date": checkin.date.isoformat(),
+            "tasks_planned": checkin.tasks_planned,
+            "tasks_completed": checkin.tasks_completed,
+            "completed_task_ids": checkin.completed_task_ids,
+            "win_of_day": checkin.win_of_day,
+            "blocker": checkin.blocker,
+            "gap_analysis": checkin.gap_analysis,
+        },
+        "gap_analysis": gap_analysis,
+        "tasks_marked_done": tasks_marked,
+    }
+
+
+@router.get("/intelligence/evening-checkin")
+async def get_evening_checkin(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return today's EveningCheckin for current user, or null."""
+    from datetime import date as _date
+    today = _date.today()
+    result = await session.execute(
+        select(EveningCheckin).where(
+            and_(EveningCheckin.user_id == user.id, EveningCheckin.date == today)
+        )
+    )
+    checkin = result.scalar_one_or_none()
+    if not checkin:
+        return {"checkin": None}
+    return {
+        "checkin": {
+            "id": checkin.id,
+            "date": checkin.date.isoformat(),
+            "tasks_planned": checkin.tasks_planned,
+            "tasks_completed": checkin.tasks_completed,
+            "completed_task_ids": checkin.completed_task_ids,
+            "win_of_day": checkin.win_of_day,
+            "blocker": checkin.blocker,
+            "gap_analysis": checkin.gap_analysis,
+        }
+    }
+
+
+@router.post("/intelligence/weekly-plan")
+async def generate_weekly_plan(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Generate next week's task plan from lagging KRs. Result is not persisted."""
+    import json as _json
+    from datetime import datetime as _datetime
+
+    # Load active objectives with KRs
+    obj_res = await session.execute(
+        select(Objective)
+        .options(selectinload(Objective.key_results))
+        .where(and_(Objective.user_id == user.id, Objective.status == "active"))
+        .order_by(Objective.created_at)
+    )
+    objectives = obj_res.scalars().all()
+
+    if not objectives:
+        return {
+            "weekly_plan": {
+                "week_theme": "Erste Ziele anlegen",
+                "daily_focus": [],
+                "key_priorities": [],
+                "weekly_commitment": "Starte diese Woche mit dem Anlegen deiner ersten Ziele!",
+            },
+            "generated_at": _datetime.utcnow().isoformat(),
+        }
+
+    # Compute progress_pct for each KR and find lagging ones
+    lagging_krs = []
+    for obj in objectives:
+        for kr in obj.key_results:
+            target = kr.target_value or 0
+            current = kr.current_value or 0
+            if target > 0:
+                progress_pct = min(100, int((current / target) * 100))
+            else:
+                progress_pct = 0
+            lagging_krs.append({
+                "kr_title": kr.title,
+                "objective_title": obj.title,
+                "progress_pct": progress_pct,
+                "current": current,
+                "target": target,
+                "unit": kr.unit or "",
+            })
+
+    lagging_krs.sort(key=lambda x: x["progress_pct"])
+    top_lagging = lagging_krs[:5]
+
+    lagging_text = "\n".join(
+        f"- {item['kr_title']} (Objective: {item['objective_title']}, "
+        f"Fortschritt: {item['progress_pct']}%, {item['current']}/{item['target']} {item['unit']})"
+        for item in top_lagging
+    )
+
+    fallback_plan = {
+        "week_theme": "Fokus auf rückständige Ziele",
+        "daily_focus": [
+            {"day": kr["objective_title"][:20], "objective_title": kr["objective_title"], "task_title": kr["kr_title"], "estimated_minutes": 60}
+            for kr in top_lagging[:5]
+        ],
+        "key_priorities": [
+            {"kr_title": kr["kr_title"], "why_urgent": f"Nur {kr['progress_pct']}% erreicht", "suggested_tasks": [kr["kr_title"]]}
+            for kr in top_lagging
+        ],
+        "weekly_commitment": "Diese Woche konzentriere ich mich auf die rückständigsten Key Results.",
+    }
+
+    try:
+        client = _goal_openai_client()
+        prompt = (
+            f"Basierend auf diesen KRs die am weitesten hinter dem Ziel sind:\n{lagging_text}\n\n"
+            "Generiere einen Wochenplan als JSON: {\"week_theme\": str, "
+            "\"daily_focus\": [{\"day\": \"Montag\"|\"Dienstag\"|\"Mittwoch\"|\"Donnerstag\"|\"Freitag\", "
+            "\"objective_title\": str, \"task_title\": str, \"estimated_minutes\": int}], "
+            "\"key_priorities\": [{\"kr_title\": str, \"why_urgent\": str, \"suggested_tasks\": [str]}], "
+            "\"weekly_commitment\": str}"
+        )
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        weekly_plan = _json.loads(resp.choices[0].message.content)
+    except Exception:
+        weekly_plan = fallback_plan
+
+    return {
+        "weekly_plan": weekly_plan,
+        "generated_at": _datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/intelligence/patterns")
+async def get_productivity_patterns(
+    days: int = Query(28, ge=7, le=90),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Sprint 4: Compute productivity patterns for the past N days."""
+    from bot.core.pattern_memory import compute_productivity_patterns
+    patterns = await compute_productivity_patterns(session, user, days=days)
+    return patterns
 
 
 # ─── iCal / Google Calendar Sync ─────────────────────────────────────────────
