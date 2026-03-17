@@ -6513,7 +6513,7 @@ class GoalAnalysisRefreshBody(BaseModel):
 
 @router.post("/goals/analysis")
 async def goal_analysis(
-    body: GoalAnalysisRefreshBody,
+    body: GoalAnalysisRefreshBody = GoalAnalysisRefreshBody(),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
