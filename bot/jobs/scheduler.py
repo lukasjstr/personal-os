@@ -22,6 +22,7 @@ from bot.jobs.pattern_analysis import run_weekly_pattern_analysis
 from bot.jobs.learning_reminders import send_learning_reminders
 
 logger = logging.getLogger(__name__)
+_log = logger  # alias used by inline job wrappers
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
@@ -258,12 +259,96 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # ── Action Engine: Autonomous Decision Layer ──────────────────────────────
+
+    async def _run_action_engine_morning():
+        from bot.core.action_engine import run_morning_actions
+        from bot.core.kill_switches import is_enabled
+        if not is_enabled("autopilot_nudges"):
+            return
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    await run_morning_actions(session, user.id)
+                    await session.commit()
+                except Exception:
+                    _log.exception("Morning action engine failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_action_engine_morning,
+        CronTrigger(hour=6, minute=15, timezone="Europe/Berlin"),
+        id="action_engine_morning",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    async def _run_action_engine_evening():
+        from bot.core.action_engine import run_evening_actions
+        from bot.core.kill_switches import is_enabled
+        if not is_enabled("autopilot_nudges"):
+            return
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    await run_evening_actions(session, user.id)
+                    await session.commit()
+                except Exception:
+                    _log.exception("Evening action engine failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_action_engine_evening,
+        CronTrigger(hour=21, minute=30, timezone="Europe/Berlin"),
+        id="action_engine_evening",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    async def _run_action_engine_weekly():
+        from bot.core.action_engine import run_weekly_actions
+        from bot.core.kill_switches import is_enabled
+        if not is_enabled("autopilot_nudges"):
+            return
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    await run_weekly_actions(session, user.id)
+                    await session.commit()
+                except Exception:
+                    _log.exception("Weekly action engine failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_action_engine_weekly,
+        CronTrigger(hour=9, minute=0, day_of_week="sun", timezone="Europe/Berlin"),
+        id="action_engine_weekly",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 21 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 24 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "
         "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
-        "quarterly_review, learning_reminders, life_profile_update"
+        "quarterly_review, learning_reminders, life_profile_update, "
+        "action_engine_morning, action_engine_evening, action_engine_weekly"
     )
     return _scheduler

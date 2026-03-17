@@ -5457,6 +5457,33 @@ async def update_action_queue_state(
     return response
 
 
+@router.post("/autopilot/action-engine/run")
+async def trigger_action_engine(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    phase: str = Query("morning", description="morning, evening, or weekly"),
+) -> dict:
+    """Manually trigger the action engine for testing/debugging."""
+    from bot.core.action_engine import run_morning_actions, run_evening_actions, run_weekly_actions
+    if phase == "morning":
+        report = await run_morning_actions(session, user.id)
+    elif phase == "evening":
+        report = await run_evening_actions(session, user.id)
+    elif phase == "weekly":
+        report = await run_weekly_actions(session, user.id)
+    else:
+        raise HTTPException(status_code=400, detail="phase must be morning, evening, or weekly")
+    await session.commit()
+    return {
+        "ok": True,
+        "phase": phase,
+        "rules_fired": report.rules_fired,
+        "tasks_created": report.tasks_created,
+        "notifications_created": report.notifications_created,
+        "flags_set": report.flags_set,
+    }
+
+
 # ─── Objective Task Suggestions (B3) ───────────────────────────────────────────
 
 # Deterministic fallback task templates per objective category

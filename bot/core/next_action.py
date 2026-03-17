@@ -61,6 +61,13 @@ def _score_task(task: Task, ctx: Optional[DailyContext], today: date) -> float:
         if ctx.energy in ENERGY_MATCH.get(task.priority, set()):
             score += 8
 
+    # Low-energy day adjustment (set by action_engine)
+    if ctx and ctx.daily_plan and ctx.daily_plan.get("low_energy_day"):
+        if task.priority >= 4:
+            score += 15  # boost easy tasks
+        elif task.priority <= 1:
+            score -= 10  # penalize hard tasks
+
     # Older tasks get slight boost (avoid starvation)
     if task.created_at:
         age_days = (datetime.utcnow() - task.created_at).days

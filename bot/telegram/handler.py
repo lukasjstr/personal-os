@@ -233,6 +233,32 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                         text="Kein aktives Ziel-Onboarding gefunden.",
                     )
 
+            # Routine time adjustment (from action_engine Rule 6)
+            elif data.startswith("routine_adjust_"):
+                parts = data.split("_")  # routine_adjust_{id}_{time}
+                if len(parts) >= 4:
+                    routine_id = int(parts[2])
+                    new_time = parts[3]  # morning, midday, evening, pause
+                    from bot.database.models import Routine
+                    routine = (await session.execute(
+                        select(Routine).where(and_(
+                            Routine.id == routine_id,
+                            Routine.user_id == user.id,
+                        ))
+                    )).scalar_one_or_none()
+                    if routine:
+                        if new_time == "pause":
+                            routine.status = "paused"
+                            reply = f"⏸ Routine '{routine.title}' pausiert."
+                        else:
+                            routine.time_of_day = new_time
+                            time_labels = {"morning": "Morgens", "midday": "Mittags", "evening": "Abends"}
+                            reply = f"✅ Routine '{routine.title}' auf {time_labels.get(new_time, new_time)} verschoben."
+                        await session.commit()
+                        await bot.send_message(chat_id=tg_user.id, text=reply)
+                    else:
+                        await bot.send_message(chat_id=tg_user.id, text="Routine nicht gefunden.")
+
             else:
                 logger.debug("Unhandled callback query data: %s", data)
 

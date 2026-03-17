@@ -147,7 +147,13 @@ async def generate_top5(
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:5]
+
+    # Load reduction: if action_engine flagged yesterday as overloaded, return fewer tasks
+    limit = 5
+    if ctx and ctx.daily_plan and ctx.daily_plan.get("reduce_load"):
+        limit = 3
+
+    return scored[:limit]
 
 
 def format_top5_for_telegram(top5: list[dict]) -> str:
