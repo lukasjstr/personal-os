@@ -6157,11 +6157,39 @@ class GoalClarifyBody(BaseModel):
     goal: str
 
 
+class GoalOptionsBody(BaseModel):
+    goal: str
+    category: str
+    answers: dict
+
+
 class GoalGenerateBody(BaseModel):
     goal: str
+    category: Optional[str] = None
+    answers: Optional[dict] = None
+    selected_krs: Optional[list] = None
+    feedback: Optional[str] = None
+    # legacy fields kept for backward compat
     why: Optional[str] = None
     timeframe: Optional[str] = None
     current_state: Optional[str] = None
+
+
+class GoalRefineBody(BaseModel):
+    goal: str
+    category: str
+    answers: dict
+    current_kr_options: list
+    feedback: str
+
+
+def _goal_openai_client() -> "AsyncOpenAI":  # type: ignore[name-defined]
+    import os
+    from openai import AsyncOpenAI
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise HTTPException(status_code=503, detail="OpenAI API Key fehlt auf dem Server.")
+    return AsyncOpenAI(api_key=key)
 
 
 @router.post("/goals/clarify")
@@ -6169,40 +6197,190 @@ async def goal_clarify(
     body: GoalClarifyBody,
     user: User = Depends(get_current_user),
 ) -> dict:
-    """Return 3 AI-generated clarifying questions for the given goal."""
-    import os
-    from openai import AsyncOpenAI
+    """Return goal-category-specific clarifying questions with type/hint/options."""
+    import json as _j
 
-    fallback = {"questions": [
-        {"id": "why", "label": "Warum ist dir das wichtig?", "placeholder": "Deine tiefe Motivation..."},
-        {"id": "timeframe", "label": "Bis wann willst du es erreichen?", "placeholder": "z.B. in 3 Monaten, bis Ende Jahr..."},
-        {"id": "current_state", "label": "Wo stehst du gerade?", "placeholder": "Aktueller Stand, was hast du schon probiert..."},
-    ]}
-
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    if not openai_key:
-        return fallback
+    fallback = {
+        "category": "personal",
+        "category_emoji": "🎯",
+        "questions": [
+            {"id": "why", "label": "Warum ist dir das wichtig?", "placeholder": "Deine tiefe Motivation...", "hint": "Je klarer deine Motivation, desto höher deine Ausdauer.", "type": "text"},
+            {"id": "timeframe", "label": "Bis wann willst du es erreichen?", "placeholder": "z.B. in 3 Monaten", "hint": "Ein Zeitrahmen macht das Ziel planbar.", "type": "choice", "options": ["4 Wochen", "8 Wochen", "3 Monate", "6 Monate", "1 Jahr"]},
+            {"id": "current_state", "label": "Wo stehst du gerade?", "placeholder": "Aktueller Stand...", "hint": "Hilft mir die richtige Ausgangsbasis zu setzen.", "type": "text"},
+        ],
+    }
 
     try:
-        client = AsyncOpenAI(api_key=openai_key)
+        client = _goal_openai_client()
+    except HTTPException:
+        return fallback
+
+    system = (
+        "Du bist ein strategischer Life-Coach. Analysiere das Ziel des Nutzers, "
+        "erkenne die Kategorie und stelle sehr präzise, kategoriespezifische Fragen "
+        "um das Ziel SMART zu machen. Antworte nur auf Deutsch, nur als JSON."
+    )
+    prompt = f"""Ziel: "{body.goal}"
+
+Antworte NUR als JSON:
+{{
+  "category": "fitness|health|business|finance|learning|relationships|personal|creative",
+  "category_emoji": "passendes Emoji für die Kategorie",
+  "questions": [
+    {{
+      "id": "eindeutige_id",
+      "label": "Präzise Frage (max 70 Zeichen)",
+      "placeholder": "Beispielantwort",
+      "hint": "Kurze Erklärung warum diese Frage wichtig ist (max 60 Zeichen)",
+      "type": "text|choice",
+      "options": ["Option1", "Option2"]
+    }}
+  ]
+}}
+
+Regeln:
+- Generiere 3-4 Fragen
+- Verwende type="choice" mit options wenn sinnvoll (Zeitrahmen, Frequenz, Level)
+- Fragen sollen SPEZIFISCH für das Ziel und die Kategorie sein, nicht generisch
+- Kategorie-Hints:
+  fitness/health: Startgewicht/Kraft-Level, Trainingsfrequenz, spez. Zielmetrik
+  business: Aktueller Umsatz/Status, Zielkunde, konkretes Revenue-Ziel
+  learning: Vorwissen, Lernzeit täglich, konkretes Anwendungsziel
+  finance: Aktuelles Einkommen/Ausgaben, Sparziel, Zeitraum
+  relationships: Kontext, gewünschte Veränderung, Frequenz
+  creative: Medium/Format, Erfahrung, Output-Ziel"""
+
+    try:
         resp = await client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": f'''Ziel des Nutzers: "{body.goal}"
-
-Generiere 3 kurze, präzise Rückfragen auf Deutsch.
-Antworte NUR mit JSON:
-{{"questions":[
-  {{"id":"why","label":"Frage zur Motivation (max 60 Zeichen)","placeholder":"Beispielantwort"}},
-  {{"id":"timeframe","label":"Frage zum Zeitrahmen","placeholder":"Beispielantwort"}},
-  {{"id":"current_state","label":"Frage zum aktuellen Stand","placeholder":"Beispielantwort"}}
-]}}'''}],
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             temperature=0.3,
             response_format={"type": "json_object"},
         )
-        import json as _j
         return _j.loads(resp.choices[0].message.content)
     except Exception:
         return fallback
+
+
+@router.post("/goals/generate-options")
+async def goal_generate_options(
+    body: GoalOptionsBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Generate KR options for user to pick from. Returns objective draft + 7-9 KR options."""
+    import json as _j
+    from datetime import date as _date
+
+    existing_result = await session.execute(
+        select(Objective).where(Objective.user_id == user.id, Objective.status == "active")
+    )
+    existing_titles = [o.title for o in existing_result.scalars().all()]
+    today = _date.today().isoformat()
+    answers_text = "\n".join(f"- {k}: {v}" for k, v in (body.answers or {}).items() if v)
+
+    system = (
+        "Du bist ein OKR-Experte und Life-Coach. Generiere messbare Key Result Optionen "
+        "für den Nutzer zum Auswählen. Antworte nur auf Deutsch, nur als JSON."
+    )
+    prompt = f"""Heute: {today}
+Bestehende Ziele: {', '.join(existing_titles) if existing_titles else 'Keine'}
+
+Ziel: "{body.goal}"
+Kategorie: {body.category}
+Antworten des Nutzers:
+{answers_text or 'Keine Antworten gegeben'}
+
+Generiere NUR JSON:
+{{
+  "objective_draft": {{
+    "title": "Inspirierender Titel max 80 Zeichen",
+    "description": "1-2 Sätze warum wichtig",
+    "category": "{body.category}",
+    "target_date": "YYYY-MM-DD",
+    "emoji": "passendes Emoji"
+  }},
+  "motivation_message": "Persönliche motivierende Nachricht 2-3 Sätze",
+  "first_step": "Erster konkreter Schritt HEUTE",
+  "kr_options": [
+    {{
+      "id": "kr_eindeutig_1",
+      "title": "Messbares KR mit konkretem Zielwert",
+      "metric_type": "number|percentage|boolean|streak",
+      "target_value": 10,
+      "current_value": 0,
+      "unit": "Einheit oder null",
+      "why": "Warum dieses KR sinnvoll ist (max 60 Zeichen)",
+      "recommended": true,
+      "difficulty": "easy|medium|hard"
+    }}
+  ]
+}}
+
+Regeln für kr_options:
+- Generiere 7-9 verschiedene KR-Optionen
+- Markiere 2-3 als recommended: true (die sinnvollste Kombination)
+- Verschiedene Schwierigkeitsgrade: mindestens 2 easy, 3-4 medium, 1-2 hard
+- KRs sollen sich ERGÄNZEN, nicht doppeln
+- Nutze die Antworten des Nutzers für konkrete Zahlen (Ausgangs-/Zielwerte)
+- Jedes KR braucht echte, messbare Zahlen"""
+
+    client = _goal_openai_client()
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        return _j.loads(resp.choices[0].message.content)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"KI-Generierung fehlgeschlagen: {exc}") from exc
+
+
+@router.post("/goals/refine-options")
+async def goal_refine_options(
+    body: GoalRefineBody,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Refine KR options based on user feedback."""
+    import json as _j
+
+    current_json = _j.dumps(body.current_kr_options, ensure_ascii=False)
+    answers_text = "\n".join(f"- {k}: {v}" for k, v in (body.answers or {}).items() if v)
+
+    system = (
+        "Du bist ein OKR-Experte. Verfeinere die Key Result Optionen basierend auf dem "
+        "Feedback des Nutzers. Antworte nur auf Deutsch, nur als JSON."
+    )
+    prompt = f"""Ziel: "{body.goal}" (Kategorie: {body.category})
+Nutzer-Antworten: {answers_text or 'keine'}
+
+Aktuelle KR-Optionen:
+{current_json}
+
+Nutzer-Feedback: "{body.feedback}"
+
+Generiere eine überarbeitete Liste als JSON:
+{{"kr_options": [ ...gleiche Struktur wie oben... ]}}
+
+Regeln:
+- Beachte das Feedback und passe die Optionen entsprechend an
+- Behalte gute bestehende KRs, ersetze nur was kritisiert wird
+- Wieder 7-9 Optionen, 2-3 empfohlen, alle Schwierigkeitsgrade vertreten
+- IDs dürfen sich ändern (neue IDs für neue KRs)"""
+
+    client = _goal_openai_client()
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            temperature=0.5,
+            response_format={"type": "json_object"},
+        )
+        return _j.loads(resp.choices[0].message.content)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"KI-Verfeinerung fehlgeschlagen: {exc}") from exc
 
 
 @router.post("/goals/generate")
@@ -6211,49 +6389,59 @@ async def goal_generate(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """GPT-powered OKR plan generation. Saves as OKRProposalDraft and returns the plan."""
+    """Generate full plan from selected KRs. Saves as OKRProposalDraft."""
     import json as _json
-    import os
     from datetime import date as _date
-    from openai import AsyncOpenAI
 
-    # Load existing objectives for synergy detection
     existing_result = await session.execute(
         select(Objective).where(Objective.user_id == user.id, Objective.status == "active")
     )
-    existing_objs = existing_result.scalars().all()
-    existing_titles = [o.title for o in existing_objs]
-
+    existing_titles = [o.title for o in existing_result.scalars().all()]
     today = _date.today().isoformat()
 
-    system_prompt = (
+    # Support both new (selected_krs + answers) and legacy (why/timeframe/current_state) call
+    answers_text = ""
+    if body.answers:
+        answers_text = "\n".join(f"- {k}: {v}" for k, v in body.answers.items() if v)
+    else:
+        parts = []
+        if body.why: parts.append(f"- Warum: {body.why}")
+        if body.timeframe: parts.append(f"- Zeitrahmen: {body.timeframe}")
+        if body.current_state: parts.append(f"- Aktueller Stand: {body.current_state}")
+        answers_text = "\n".join(parts)
+
+    selected_krs_json = _json.dumps(body.selected_krs or [], ensure_ascii=False)
+
+    system = (
         "Du bist ein strategischer Life-Coach und OKR-Experte. "
-        "Du hilfst dem Nutzer konkrete, messbare Ziele zu definieren. "
+        "Generiere einen konkreten Aktionsplan basierend auf den bereits festgelegten Key Results. "
         "Antworte auf Deutsch. Sei präzise und actionable."
     )
-    user_prompt = f"""Heute: {today}
-Bestehende Ziele des Nutzers: {', '.join(existing_titles) if existing_titles else 'Noch keine'}
 
-Neues Ziel:
-- Was: {body.goal}
-- Warum: {body.why or 'Nicht angegeben'}
-- Zeitrahmen: {body.timeframe or 'Nicht angegeben — verwende 90 Tage'}
-- Aktueller Stand: {body.current_state or 'Nicht angegeben'}
+    if body.selected_krs:
+        # New flow: KRs already selected, generate tasks + schedule around them
+        user_prompt = f"""Heute: {today}
+Bestehende Ziele: {', '.join(existing_titles) if existing_titles else 'Keine'}
 
-Generiere einen vollständigen OKR-Plan als JSON. NUR JSON:
+Ziel: "{body.goal}" (Kategorie: {body.category or 'general'})
+Nutzer-Antworten: {answers_text or 'keine'}
+Feedback: {body.feedback or 'keins'}
+
+Bereits ausgewählte Key Results (NICHT ändern):
+{selected_krs_json}
+
+Generiere NUR JSON:
 {{
   "objective": {{
-    "title": "Inspirierender Titel (max 80 Zeichen)",
+    "title": "Inspirierender Titel max 80 Zeichen",
     "description": "1-2 Sätze warum wichtig",
-    "category": "health|fitness|business|personal|finance|learning|relationships",
+    "category": "{body.category or 'personal'}",
     "target_date": "YYYY-MM-DD",
     "emoji": "passendes Emoji"
   }},
-  "key_results": [
-    {{"title": "Messbares KR mit Zielwert", "metric_type": "number|percentage|boolean|streak", "target_value": 10, "current_value": 0, "unit": "Einheit", "why": "Warum dieses KR"}}
-  ],
+  "key_results": {selected_krs_json},
   "tasks": [
-    {{"title": "Konkreter Task", "priority": 1, "due_days": 7, "category": "Kategorie"}}
+    {{"title": "Konkreter Task passend zu den KRs", "priority": 1, "due_days": 7, "category": "Kategorie"}}
   ],
   "weekly_schedule": [
     {{"day": "Montag", "activity": "Was tun", "duration_min": 60}}
@@ -6261,24 +6449,36 @@ Generiere einen vollständigen OKR-Plan als JSON. NUR JSON:
   "synergies": [
     {{"existing_goal": "Titel des bestehenden Ziels", "connection": "Wie hängt es zusammen"}}
   ],
-  "motivation_message": "Persönliche motivierende Nachricht (2-3 Sätze)",
-  "first_step": "Der erste konkrete Schritt HEUTE"
+  "motivation_message": "Persönliche motivierende Nachricht 2-3 Sätze",
+  "first_step": "Erster konkreter Schritt HEUTE"
 }}
 
-Regeln: 3-5 KRs (echte Zahlen), 5-8 Tasks, Wochenplan nur bei Habit/Sport-Zielen, Synergien nur wenn wirklich relevant."""
+Regeln: 5-8 Tasks die DIREKT auf die KRs einzahlen, Wochenplan nur bei regelmäßigen Aktivitäten, Synergien nur wenn wirklich relevant."""
+    else:
+        # Legacy flow: generate everything
+        user_prompt = f"""Heute: {today}
+Bestehende Ziele: {', '.join(existing_titles) if existing_titles else 'Keine'}
 
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    if not openai_key:
-        raise HTTPException(status_code=503, detail="OpenAI API Key fehlt auf dem Server. Bitte in der .env konfigurieren.")
+Neues Ziel: "{body.goal}"
+{answers_text}
 
+Generiere vollständigen OKR-Plan als JSON:
+{{
+  "objective": {{"title": "max 80 Zeichen", "description": "1-2 Sätze", "category": "fitness|health|business|personal|finance|learning|relationships", "target_date": "YYYY-MM-DD", "emoji": "Emoji"}},
+  "key_results": [{{"title": "...", "metric_type": "number|percentage|boolean|streak", "target_value": 10, "current_value": 0, "unit": "...", "why": "...", "recommended": true, "difficulty": "medium"}}],
+  "tasks": [{{"title": "...", "priority": 1, "due_days": 7, "category": "..."}}],
+  "weekly_schedule": [{{"day": "Montag", "activity": "...", "duration_min": 60}}],
+  "synergies": [{{"existing_goal": "...", "connection": "..."}}],
+  "motivation_message": "...",
+  "first_step": "..."
+}}
+Regeln: 3-5 KRs, 5-8 Tasks, Wochenplan nur bei Habit/Sport."""
+
+    client = _goal_openai_client()
     try:
-        client = AsyncOpenAI(api_key=openai_key)
         resp = await client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user_prompt}],
             temperature=0.4,
             response_format={"type": "json_object"},
         )
@@ -6286,7 +6486,6 @@ Regeln: 3-5 KRs (echte Zahlen), 5-8 Tasks, Wochenplan nur bei Habit/Sport-Zielen
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"KI-Generierung fehlgeschlagen: {exc}") from exc
 
-    # Save as OKRProposalDraft for later execution
     draft = OKRProposalDraft(
         user_id=user.id,
         source_text=body.goal,
