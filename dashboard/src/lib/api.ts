@@ -983,6 +983,50 @@ export interface CorrelationInsight {
   };
 }
 
+// ─── Goal Onboarding Types ────────────────────────────────────────────────
+
+export interface GoalQuestion {
+  id: string;
+  label: string;
+  placeholder?: string;
+  hint?: string;
+  type: "text" | "choice";
+  options?: string[];
+}
+
+export interface GoalClarifyResponse {
+  category: string;
+  category_emoji: string;
+  questions: GoalQuestion[];
+}
+
+export interface GoalKROption {
+  title: string;
+  metric_type: string;
+  target_value: number;
+  current_value: number;
+  unit: string;
+  why: string;
+  recommended: boolean;
+  difficulty: string;
+}
+
+export interface GoalOptionsResponse {
+  objective: { title: string; description: string; emoji: string; category: string; target_date: string };
+  kr_options: GoalKROption[];
+}
+
+export interface GoalPlan {
+  objective: { title: string; description: string; category: string; target_date: string; emoji: string };
+  key_results: unknown[];
+  tasks: { title: string; priority: number; due_days: number }[];
+  routines: { title: string; frequency: string; time_of_day: string }[];
+  reminders: { title: string; message: string }[];
+  shopping_items: string[];
+  motivation_message: string;
+  first_step: string;
+}
+
 // ─── API functions ─────────────────────────────────────────────────────────
 
 export const fetcher = (path: string) => apiFetch(path);
@@ -1185,6 +1229,17 @@ export const api = {
     wakeup_time?: string;
     morning_routines?: string[];
   }) => apiPost<{ ok: boolean; created: Record<string, unknown> }>("/api/onboarding", body),
+  // Goal Onboarding (conversational flow)
+  goalClarify: (goal: string) =>
+    apiPost<GoalClarifyResponse>("/api/goals/clarify", { goal }),
+  goalGenerateOptions: (body: { goal: string; category?: string; answers?: Record<string, string> }) =>
+    apiPost<GoalOptionsResponse>("/api/goals/generate-options", body),
+  goalGenerate: (body: { goal: string; category?: string; selected_krs?: unknown[]; answers?: Record<string, string>; feedback?: string }) =>
+    apiPost<{ draft_id: number; plan: GoalPlan }>("/api/goals/generate", body),
+  goalExecute: (draftId: number) =>
+    apiPost<{ ok: boolean; objective_id: number; key_result_ids: number[]; task_ids: number[] }>(
+      `/api/objectives/proposal-drafts/${draftId}/execute`, {}
+    ),
   // Tasks with category filter
   tasksByCategory: (category: string) =>
     apiFetch<{ tasks: Task[] }>(`/api/tasks?category=${encodeURIComponent(category)}`),

@@ -64,6 +64,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "LEBEN",
     items: [
       { href: "/objectives", label: "Ziele & KRs", icon: Target, emoji: "🎯" },
+      { href: "/goals/new", label: "Neues Ziel", icon: Zap, emoji: "✨" },
       { href: "/routines", label: "Routinen", icon: RefreshCw, emoji: "🔄" },
       { href: "/weekly", label: "Wochenziele", icon: CalendarDays, emoji: "📖" },
     ],
