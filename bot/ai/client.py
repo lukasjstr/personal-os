@@ -72,8 +72,22 @@ async def _execute_tool(
 ) -> str:
     """Execute a tool call and return a string result."""
     try:
+        # ─── Goal Onboarding ─────────────────────────────────────────────────
+        if name == "start_goal_onboarding":
+            from bot.core.goal_onboarding import get_active_onboarding, start_onboarding
+            existing = await get_active_onboarding(session, user.id)
+            if existing:
+                return (
+                    "Es läuft bereits ein Ziel-Onboarding. "
+                    "Der Nutzer muss es erst abschließen oder mit /goal cancel abbrechen."
+                )
+            onboarding, intro = await start_onboarding(
+                session, user.id, args["goal_text"]
+            )
+            return intro
+
         # ─── OKR ──────────────────────────────────────────────────────────────
-        if name == "create_objective":
+        elif name == "create_objective":
             obj = await create_objective(session, user.id, **args)
             await _notify_achievements(session, user)
             return (

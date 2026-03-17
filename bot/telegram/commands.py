@@ -5,6 +5,7 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.core.goal_onboarding import cancel_onboarding, start_onboarding
 from bot.core.shopping import get_shopping_summary
 from bot.core.user_settings import (
     format_settings,
@@ -15,7 +16,7 @@ from bot.core.user_settings import (
     TIME_SETTINGS,
 )
 from bot.database.connection import get_session
-from bot.telegram.sender import send_message
+from bot.telegram.sender import send_message, send_typing
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "**Termine:**\n"
         "  'Mittwoch 14 Uhr Zahnarzt' → Kalender\n\n"
         "**Befehle:**\n"
+        "  /goal — Geführtes Ziel-Coaching starten\n"
         "  /next — Bester nächster Schritt\n"
         "  /status — Tagesübersicht\n"
         "  /settings — Einstellungen\n"
@@ -475,3 +477,55 @@ async def handle_ical(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"`{ical_url}`\n\n"
         "Der Feed enthält alle deine Kalender-Events.",
     )
+
+
+async def handle_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /goal command — start a conversational goal onboarding.
+
+    Usage:
+        /goal Ich will gesünder leben
+        /goal cancel
+        /goal  (no text → show help)
+    """
+    if not update.message or not update.effective_user:
+        return
+
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+    text = (update.message.text or "").strip()
+
+    # Extract goal text after /goal
+    goal_text = text.split(maxsplit=1)[1] if len(text.split(maxsplit=1)) > 1 else ""
+
+    # No text → show help
+    if not goal_text:
+        await send_message(
+            chat_id,
+            "🎯 *Ziel-Coaching starten*\n\n"
+            "Schreib dein Ziel nach dem Befehl:\n"
+            "`/goal Ich will gesünder leben`\n\n"
+            "Oder schreib einfach dein Ziel — ich erkenne es automatisch!",
+        )
+        return
+
+    # Cancel
+    if goal_text.lower() in ("cancel", "abbrechen", "stop"):
+        async with get_session() as session:
+            user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+            cancelled = await cancel_onboarding(session, user.id)
+            await session.commit()
+        if cancelled:
+            await send_message(chat_id, "❌ Ziel-Onboarding abgebrochen.")
+        else:
+            await send_message(chat_id, "Kein aktives Onboarding zum Abbrechen.")
+        return
+
+    # Start onboarding
+    await send_typing(chat_id)
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        onboarding, intro = await start_onboarding(session, user.id, goal_text)
+        await session.commit()
+
+    await send_message(chat_id, intro)

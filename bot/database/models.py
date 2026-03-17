@@ -46,6 +46,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
+    goal_onboardings: Mapped[list["GoalOnboarding"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     objectives: Mapped[list["Objective"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     logs: Mapped[list["Log"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -1093,3 +1094,29 @@ class LearningReview(Base):
 
     def __repr__(self) -> str:
         return f"<LearningReview id={self.id} item_id={self.item_id} quality={self.quality}>"
+
+
+# ─── Goal Onboarding ─────────────────────────────────────────────────────────
+
+class GoalOnboarding(Base):
+    """Conversational goal onboarding — adaptive coaching dialog for new goals."""
+    __tablename__ = "goal_onboardings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="in_progress", index=True)
+    # in_progress, plan_review, completed, cancelled
+    current_step: Mapped[int] = mapped_column(Integer, default=1)
+    goal_input: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_answers: Mapped[dict] = mapped_column(JSON, default=dict)
+    draft_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    proposal_draft_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("okr_proposal_drafts.id", ondelete="SET NULL"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="goal_onboardings")
+
+    def __repr__(self) -> str:
+        return f"<GoalOnboarding id={self.id} user_id={self.user_id} status={self.status}>"

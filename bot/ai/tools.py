@@ -2,12 +2,38 @@
 from typing import Any
 
 TOOLS: list[dict[str, Any]] = [
+    # ─── Goal Onboarding Tool ────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "start_goal_onboarding",
+            "description": (
+                "Startet einen geführten Coaching-Dialog für ein NEUES Ziel. "
+                "Der Bot stellt 3-7 adaptive Fragen und erstellt am Ende einen "
+                "vollständigen Plan (Objective + KRs + Tasks + Routinen + Kalender). "
+                "BEVORZUGE DIESES TOOL wenn der User ein neues Ziel/Vorhaben/Projekt "
+                "nennt (z.B. 'gesünder leben', 'Spanisch lernen', 'Business aufbauen'). "
+                "NICHT nutzen bei: einfachen Task-Anfragen, bestehende Ziele aktualisieren, "
+                "Log-Einträge (Workout, Wasser, Mood)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_text": {
+                        "type": "string",
+                        "description": "Das Ziel des Nutzers in seinen eigenen Worten",
+                    },
+                },
+                "required": ["goal_text"],
+            },
+        },
+    },
     # ─── OKR Tools ────────────────────────────────────────────────────────────
     {
         "type": "function",
         "function": {
             "name": "create_objective",
-            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze dies wenn der User ein neues großes Ziel nennt wie 'Ich will gesünder leben' oder 'Business aufbauen'. Nach der Erstellung: suggest_tasks_for_objective aufrufen um 3-5 konkrete Tasks automatisch zu erstellen.",
+            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze create_objective NUR wenn start_goal_onboarding nicht passt (z.B. wenn der User explizit kein Coaching will oder ein Objective manuell anlegen möchte).",
             "parameters": {
                 "type": "object",
                 "properties": {

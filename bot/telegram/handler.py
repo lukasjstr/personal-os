@@ -30,10 +30,16 @@ from bot.core.next_action import (
     handle_next_skip,
     send_next_action,
 )
+from bot.core.goal_onboarding import (
+    get_active_onboarding,
+    handle_onboarding_answer,
+    handle_onboarding_callback,
+)
 from bot.core.user_settings import get_or_create_user
 from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
 from bot.database.connection import get_session
 from bot.telegram.commands import (
+    handle_goal,
     handle_help,
     handle_ical,
     handle_next,
@@ -210,6 +216,23 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 else:
                     await bot.send_message(chat_id=tg_user.id, text="👍 Kein Problem — kein Eintrag gespeichert.")
 
+            # Goal onboarding: confirm / adjust / cancel
+            elif data.startswith("goal_confirm_") or data.startswith("goal_adjust_") or data.startswith("goal_cancel_"):
+                onboarding = await get_active_onboarding(session, user.id)
+                if onboarding:
+                    reply = await handle_onboarding_callback(session, user, onboarding, data)
+                    await session.commit()
+                    await bot.send_message(
+                        chat_id=tg_user.id,
+                        text=reply,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=tg_user.id,
+                        text="Kein aktives Ziel-Onboarding gefunden.",
+                    )
+
             else:
                 logger.debug("Unhandled callback query data: %s", data)
 
@@ -243,6 +266,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if consumed:
                 await session.commit()
                 return
+
+        # Check for active goal onboarding
+        onboarding = await get_active_onboarding(session, user.id)
+        if onboarding:
+            reply_text, keyboard_data = await handle_onboarding_answer(
+                session, user, onboarding, text
+            )
+            await session.commit()
+            if keyboard_data:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(btn["text"], callback_data=btn["callback_data"])
+                     for btn in row]
+                    for row in keyboard_data
+                ])
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=reply_text,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+            else:
+                await send_message(chat_id, reply_text)
+            return
 
         # Check for active reflection session
         reflection = await get_active_reflection(session, user.id)
@@ -346,6 +393,30 @@ async def _handle_audio_input(
             tg_user.first_name,
         )
 
+        # Check active goal onboarding
+        onboarding = await get_active_onboarding(session, user.id)
+        if onboarding:
+            reply_text, keyboard_data = await handle_onboarding_answer(
+                session, user, onboarding, text
+            )
+            await session.commit()
+            if keyboard_data:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(btn["text"], callback_data=btn["callback_data"])
+                     for btn in row]
+                    for row in keyboard_data
+                ])
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=reply_text,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+            else:
+                await send_message(chat_id, reply_text)
+            return
+
         # Check active reflection session
         reflection = await get_active_reflection(session, user.id)
         if reflection:
@@ -396,6 +467,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("token", handle_token))
     application.add_handler(CommandHandler("organize", handle_organize))
     application.add_handler(CommandHandler("next", handle_next))
+    application.add_handler(CommandHandler("goal", handle_goal))
 
     # Inline button callbacks (daily intelligence flows)
     application.add_handler(CallbackQueryHandler(handle_callback_query))
