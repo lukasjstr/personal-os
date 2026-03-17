@@ -736,7 +736,7 @@ async def list_tasks(
                 "created_at": t.created_at.isoformat(),
                 "linked_event_id": _next_event(t).id if _next_event(t) else None,
                 "linked_event_title": _next_event(t).title if _next_event(t) else None,
-                "linked_event_start": _next_event(t).start_time.isoformat() if _next_event(t) else None,
+                "linked_event_start": _localize_berlin(_next_event(t).start_time) if _next_event(t) else None,
                 "relations": task_relations.get(t.id, []),
             }
             for t in tasks
@@ -1157,13 +1157,21 @@ async def list_routines(
     }
 
 
+def _localize_berlin(dt: datetime) -> str:
+    """Add Europe/Berlin timezone info to naive datetime for correct frontend display."""
+    if dt.tzinfo is not None:
+        return dt.isoformat()
+    from zoneinfo import ZoneInfo
+    return dt.replace(tzinfo=ZoneInfo("Europe/Berlin")).isoformat()
+
+
 def _event_dict(e: CalendarEvent) -> dict:
     return {
         "id": e.id,
         "title": e.title,
         "description": e.description,
-        "start_time": e.start_time.isoformat(),
-        "end_time": e.end_time.isoformat() if e.end_time else None,
+        "start_time": _localize_berlin(e.start_time),
+        "end_time": _localize_berlin(e.end_time) if e.end_time else None,
         "all_day": e.all_day,
         "event_type": e.event_type,
         "notes": e.description,
@@ -3275,8 +3283,8 @@ async def export_data(
             {
                 "id": e.id,
                 "title": e.title,
-                "start_time": e.start_time.isoformat(),
-                "end_time": e.end_time.isoformat() if e.end_time else None,
+                "start_time": _localize_berlin(e.start_time),
+                "end_time": _localize_berlin(e.end_time) if e.end_time else None,
                 "all_day": e.all_day,
                 "event_type": e.event_type,
             }
@@ -4379,8 +4387,8 @@ def _build_deterministic_daily_plan(
             "type": "event",
             "title": e.title,
             "reason": e.start_time.strftime("%H:%M") if not e.all_day else "All day",
-            "start_time": e.start_time.isoformat(),
-            "end_time": e.end_time.isoformat() if e.end_time else None,
+            "start_time": _localize_berlin(e.start_time),
+            "end_time": _localize_berlin(e.end_time) if e.end_time else None,
             "all_day": e.all_day,
         })
     if event_items:
@@ -9101,3 +9109,120 @@ async def push_test(
     )
     await session.commit()
     return {"ok": True, "sent_to": count}
+
+
+# ─── Conversational Goal Onboarding (REST API for Dashboard) ─────────────────
+
+
+class GoalOnboardingStartBody(BaseModel):
+    goal_text: str
+
+
+class GoalOnboardingAnswerBody(BaseModel):
+    text: str
+
+
+@router.post("/goal-onboarding/start")
+async def goal_onboarding_start(
+    body: GoalOnboardingStartBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Start a conversational goal coaching dialog. Returns first question."""
+    from bot.core.goal_onboarding import start_onboarding, get_active_onboarding
+    existing = await get_active_onboarding(session, user.id)
+    if existing:
+        existing.status = "cancelled"
+        await session.flush()
+
+    onboarding, intro = await start_onboarding(session, user.id, body.goal_text)
+    await session.commit()
+    return {"onboarding_id": onboarding.id, "message": intro, "status": onboarding.status, "step": onboarding.current_step}
+
+
+@router.get("/goal-onboarding/active")
+async def goal_onboarding_active(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get the active onboarding session, if any."""
+    from bot.core.goal_onboarding import get_active_onboarding
+    onboarding = await get_active_onboarding(session, user.id)
+    if not onboarding:
+        return {"active": False}
+    return {
+        "active": True,
+        "onboarding_id": onboarding.id,
+        "status": onboarding.status,
+        "step": onboarding.current_step,
+        "goal": onboarding.goal_input,
+        "draft_payload": onboarding.draft_payload,
+    }
+
+
+@router.post("/goal-onboarding/answer")
+async def goal_onboarding_answer(
+    body: GoalOnboardingAnswerBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Process an answer in the coaching dialog. Returns next question or plan."""
+    from bot.core.goal_onboarding import get_active_onboarding, handle_onboarding_answer
+    onboarding = await get_active_onboarding(session, user.id)
+    if not onboarding:
+        raise HTTPException(status_code=404, detail="Kein aktives Onboarding")
+
+    reply_text, keyboard_data = await handle_onboarding_answer(session, user, onboarding, body.text)
+    await session.commit()
+
+    return {
+        "message": reply_text,
+        "status": onboarding.status,
+        "step": onboarding.current_step,
+        "buttons": keyboard_data,
+        "draft_payload": onboarding.draft_payload if onboarding.status == "plan_review" else None,
+    }
+
+
+@router.post("/goal-onboarding/confirm")
+async def goal_onboarding_confirm(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Confirm and execute the generated plan."""
+    from bot.core.goal_onboarding import get_active_onboarding, handle_onboarding_callback
+    onboarding = await get_active_onboarding(session, user.id)
+    if not onboarding:
+        raise HTTPException(status_code=404, detail="Kein aktives Onboarding")
+
+    reply = await handle_onboarding_callback(session, user, onboarding, f"goal_confirm_{onboarding.id}")
+    await session.commit()
+    return {"message": reply, "status": onboarding.status}
+
+
+@router.post("/goal-onboarding/adjust")
+async def goal_onboarding_adjust(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Request plan adjustment."""
+    from bot.core.goal_onboarding import get_active_onboarding, handle_onboarding_callback
+    onboarding = await get_active_onboarding(session, user.id)
+    if not onboarding:
+        raise HTTPException(status_code=404, detail="Kein aktives Onboarding")
+
+    reply = await handle_onboarding_callback(session, user, onboarding, f"goal_adjust_{onboarding.id}")
+    await session.commit()
+    return {"message": reply, "status": onboarding.status}
+
+
+@router.post("/goal-onboarding/cancel")
+async def goal_onboarding_cancel(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Cancel the active onboarding."""
+    from bot.core.goal_onboarding import cancel_onboarding
+    cancelled = await cancel_onboarding(session, user.id)
+    await session.commit()
+    return {"ok": True, "cancelled": cancelled}

@@ -1240,6 +1240,25 @@ export const api = {
     apiPost<{ ok: boolean; objective_id: number; key_result_ids: number[]; task_ids: number[] }>(
       `/api/objectives/proposal-drafts/${draftId}/execute`, {}
     ),
+  // Conversational Goal Onboarding (Telegram-style)
+  goalOnboardingStart: (goalText: string) =>
+    apiPost<{ onboarding_id: number; message: string; status: string; step: number }>(
+      "/api/goal-onboarding/start", { goal_text: goalText }
+    ),
+  goalOnboardingActive: () =>
+    apiFetch<{ active: boolean; onboarding_id?: number; status?: string; step?: number; goal?: string; draft_payload?: GoalPlan }>(
+      "/api/goal-onboarding/active"
+    ),
+  goalOnboardingAnswer: (text: string) =>
+    apiPost<{ message: string; status: string; step: number; buttons?: unknown[][]; draft_payload?: GoalPlan }>(
+      "/api/goal-onboarding/answer", { text }
+    ),
+  goalOnboardingConfirm: () =>
+    apiPost<{ message: string; status: string }>("/api/goal-onboarding/confirm", {}),
+  goalOnboardingAdjust: () =>
+    apiPost<{ message: string; status: string }>("/api/goal-onboarding/adjust", {}),
+  goalOnboardingCancel: () =>
+    apiPost<{ ok: boolean; cancelled: boolean }>("/api/goal-onboarding/cancel", {}),
   // Tasks with category filter
   tasksByCategory: (category: string) =>
     apiFetch<{ tasks: Task[] }>(`/api/tasks?category=${encodeURIComponent(category)}`),
