@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ArrowRight, ArrowLeft, Sparkles, Check, Zap, Target, Calendar, Link2 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "");
+const API_URL = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
 function getToken() {
   if (typeof window === "undefined") return "";
