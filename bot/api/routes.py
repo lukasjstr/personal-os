@@ -623,6 +623,7 @@ async def list_objectives(
                         "status": t.status,
                         "priority": t.priority,
                         "parent_task_id": t.parent_task_id,
+                        "key_result_id": t.key_result_id,
                     }
                     for t in sorted(o.tasks, key=lambda t: (t.status != "done", t.priority, t.id))
                 ],
@@ -6441,10 +6442,13 @@ Generiere NUR JSON:
   }},
   "key_results": {selected_krs_json},
   "tasks": [
-    {{"title": "Konkreter Task passend zu den KRs", "priority": 1, "due_days": 7, "category": "Kategorie"}}
+    {{"title": "Konkreter Task", "priority": 1, "due_days": 7, "category": "Kategorie", "kr_title": "Exakter Titel des zugehörigen Key Results aus der Liste oben"}}
   ],
   "weekly_schedule": [
     {{"day": "Montag", "activity": "Was tun", "duration_min": 60}}
+  ],
+  "reminders": [
+    {{"title": "Erinnerung", "message": "Push-Text max 80 Zeichen", "day_offset": 1, "time": "08:00", "kr_title": "Zugehöriger KR-Titel"}}
   ],
   "synergies": [
     {{"existing_goal": "Titel des bestehenden Ziels", "connection": "Wie hängt es zusammen"}}
@@ -6453,7 +6457,11 @@ Generiere NUR JSON:
   "first_step": "Erster konkreter Schritt HEUTE"
 }}
 
-Regeln: 5-8 Tasks die DIREKT auf die KRs einzahlen, Wochenplan nur bei regelmäßigen Aktivitäten, Synergien nur wenn wirklich relevant."""
+Regeln:
+- 5-8 Tasks die DIREKT auf die KRs einzahlen, jeder Task hat kr_title gesetzt
+- Wochenplan nur bei regelmäßigen Aktivitäten
+- 2-4 Erinnerungen als Push-Benachrichtigungen für die wichtigsten Meilensteine
+- Synergien nur wenn wirklich relevant"""
     else:
         # Legacy flow: generate everything
         user_prompt = f"""Heute: {today}

@@ -59,12 +59,29 @@ def _safe_int(x: Any, default: int = 0) -> int:
         return default
 
 
-def _extract_first_objective(draft_payload: dict[str, Any]) -> dict[str, Any] | None:
+def _extract_plan(draft_payload: dict[str, Any]) -> tuple[dict[str, Any], list[dict], list[dict]]:
+    """Return (objective_dict, key_results_list, tasks_list) from either payload format.
+
+    New format (from /goals/generate):
+        {"objective": {...}, "key_results": [...], "tasks": [...]}
+
+    Legacy format (from /objectives/okr-draft):
+        {"objectives": [{"title": ..., "key_results": [...], "tasks": [...]}]}
+    """
+    # New flat format
+    if isinstance(draft_payload.get("objective"), dict):
+        obj_d = draft_payload["objective"]
+        krs = draft_payload.get("key_results") or obj_d.get("key_results") or []
+        tasks = draft_payload.get("tasks") or obj_d.get("tasks") or []
+        return obj_d, krs, tasks
+
+    # Legacy format
     objs = draft_payload.get("objectives")
-    if not isinstance(objs, list) or not objs:
-        return None
-    obj = objs[0]
-    return obj if isinstance(obj, dict) else None
+    if isinstance(objs, list) and objs and isinstance(objs[0], dict):
+        obj_d = objs[0]
+        return obj_d, obj_d.get("key_results") or [], obj_d.get("tasks") or []
+
+    return {}, [], []
 
 
 async def execute_accepted_proposal(
@@ -116,7 +133,7 @@ async def execute_accepted_proposal(
             calendar_conflicts=[],
         )
 
-    obj_d = _extract_first_objective(draft_row.draft_payload) or {}
+    obj_d, raw_krs, raw_tasks = _extract_plan(draft_row.draft_payload)
     title = str(obj_d.get("title") or draft_row.source_text[:80] or "New Objective").strip()
     category = str(obj_d.get("category") or "personal")
     description = (str(obj_d.get("description") or "").strip() + "\n\n" + marker).strip()
@@ -132,39 +149,52 @@ async def execute_accepted_proposal(
     session.add(objective)
     await session.flush()
 
-    # Key results
+    # Key results — build title→id map for task linkage
     key_result_ids: list[int] = []
-    for kr in (obj_d.get("key_results") or []):
+    kr_title_to_id: dict[str, int] = {}
+    for kr in raw_krs:
         if not isinstance(kr, dict):
             continue
         kr_title = str(kr.get("title") or "Key Result").strip()
         target_value = float(kr.get("target_value") or 1)
         current_value = float(kr.get("current_value") or 0)
         unit = str(kr.get("unit") or "")
-        frequency = str(kr.get("frequency") or "weekly")
+        metric_type = str(kr.get("metric_type") or kr.get("type") or "number")
         kr_row = KeyResult(
             objective_id=objective.id,
             user_id=draft_row.user_id,
             title=kr_title,
-            type=str(kr.get("type") or "number"),
+            type=metric_type,
             current_value=current_value,
             target_value=target_value,
             unit=unit,
-            frequency=frequency,
+            frequency=str(kr.get("frequency") or "weekly"),
             status="active",
         )
         session.add(kr_row)
         await session.flush()
         key_result_ids.append(kr_row.id)
+        kr_title_to_id[kr_title.lower()] = kr_row.id
 
-    # Tasks (best-effort: from draft payload tasks list, or derive none)
+    # Tasks — linked to best-matching KR where possible
     task_ids: list[int] = []
-    for t in (obj_d.get("tasks") or []):
+    default_kr_id = key_result_ids[0] if key_result_ids else None
+    for t in raw_tasks:
         if not isinstance(t, dict):
             continue
         t_title = str(t.get("title") or "Task").strip()
         if not t_title:
             continue
+        # Link to KR: explicit kr_title field, or fall back to first KR
+        linked_kr_id: int | None = None
+        t_kr_hint = str(t.get("kr_title") or t.get("key_result") or "").lower().strip()
+        if t_kr_hint:
+            for kr_t, kr_id in kr_title_to_id.items():
+                if t_kr_hint in kr_t or kr_t in t_kr_hint:
+                    linked_kr_id = kr_id
+                    break
+        if linked_kr_id is None:
+            linked_kr_id = default_kr_id
         task = Task(
             user_id=draft_row.user_id,
             title=t_title,
@@ -172,6 +202,7 @@ async def execute_accepted_proposal(
             priority=_safe_int(t.get("priority"), 2),
             status="open",
             objective_id=objective.id,
+            key_result_id=linked_kr_id,
         )
         session.add(task)
         await session.flush()
@@ -216,8 +247,39 @@ async def execute_accepted_proposal(
         await session.flush()
         calendar_event_ids.append(ev.id)
 
-    # Reminders: materialize reminder drafts into ScheduledReminder rows.
+    # Reminders: first materialize explicit "reminders" array from new payload format.
     scheduled_reminder_ids: list[int] = []
+    from datetime import date as _date, timedelta
+    today = _date.today()
+    for r_dict in (draft_row.draft_payload.get("reminders") or []):
+        if not isinstance(r_dict, dict):
+            continue
+        title = str(r_dict.get("title") or "Erinnerung")
+        message = str(r_dict.get("message") or title).strip()
+        if marker not in message:
+            message = (message + "\n\n" + marker).strip()
+        day_offset = _safe_int(r_dict.get("day_offset"), 1)
+        time_str = str(r_dict.get("time") or "09:00")
+        try:
+            h, m = (int(x) for x in time_str.split(":")[:2])
+        except Exception:
+            h, m = 9, 0
+        from datetime import datetime as _dt
+        sched_date = today + timedelta(days=day_offset)
+        scheduled_for = _dt(sched_date.year, sched_date.month, sched_date.day, h, m)
+        rem = ScheduledReminder(
+            user_id=draft_row.user_id,
+            reminder_type="milestone",
+            message=message,
+            scheduled_for=scheduled_for,
+            status="pending",
+            auto_generated=True,
+        )
+        session.add(rem)
+        await session.flush()
+        scheduled_reminder_ids.append(rem.id)
+
+    # Also materialize reminder drafts from reminder_factory (calendar/legacy flow).
     for r in generate_reminder_drafts(draft_row.draft_payload):
         msg = (r.body or "").strip()
         if marker not in msg:

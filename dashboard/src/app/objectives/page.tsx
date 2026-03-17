@@ -341,48 +341,69 @@ function EditKRModal({
 
 // ─── Task Checklist ───────────────────────────────────────────────────────────
 
-function TaskChecklist({ tasks }: { tasks: ObjectiveTask[] }) {
-  if (tasks.length === 0) return null;
-  const topLevel = tasks.filter((t) => !t.parent_task_id);
-  const subTaskMap = tasks.reduce<Record<number, ObjectiveTask[]>>((acc, t) => {
-    if (t.parent_task_id) {
-      (acc[t.parent_task_id] ??= []).push(t);
-    }
-    return acc;
-  }, {});
+function TaskRow({ task }: { task: ObjectiveTask }) {
+  const isDone = task.status === "done";
+  return (
+    <div className="flex items-center gap-2 py-1 text-sm">
+      <span className={cn("shrink-0 text-xs", isDone ? "text-green-400" : "text-zinc-600")}>
+        {isDone ? "✓" : "○"}
+      </span>
+      <span className={cn("flex-1 min-w-0 truncate", isDone ? "text-zinc-500 line-through" : "text-zinc-300")}>
+        {task.title}
+      </span>
+      <span className="text-zinc-700 text-xs font-mono shrink-0">P{task.priority}</span>
+    </div>
+  );
+}
 
-  function TaskRow({ task, indent = 0 }: { task: ObjectiveTask; indent?: number }) {
-    const isDone = task.status === "done";
-    const subs = subTaskMap[task.id] ?? [];
+function TaskChecklist({ tasks, keyResults }: { tasks: ObjectiveTask[]; keyResults: { id: number; title: string }[] }) {
+  if (tasks.length === 0) return null;
+
+  // Group tasks by key_result_id
+  const byKr: Record<number, ObjectiveTask[]> = {};
+  const unlinked: ObjectiveTask[] = [];
+  for (const t of tasks) {
+    if (t.key_result_id != null) {
+      (byKr[t.key_result_id] ??= []).push(t);
+    } else {
+      unlinked.push(t);
+    }
+  }
+
+  const krMap = Object.fromEntries(keyResults.map((kr) => [kr.id, kr.title]));
+  const hasGroups = Object.keys(byKr).length > 0;
+
+  if (!hasGroups) {
+    // No KR linkage — flat list
     return (
-      <>
-        <div
-          className={cn(
-            "flex items-center gap-2 py-1.5 text-sm",
-            indent > 0 && "pl-6 border-l border-zinc-700/50 ml-3",
-          )}
-        >
-          <span className={cn("shrink-0", isDone ? "text-green-400" : "text-zinc-500")}>
-            {isDone ? "✅" : "☐"}
-          </span>
-          <span className={cn("flex-1", isDone ? "text-zinc-500 line-through" : "text-zinc-300")}>
-            {task.title}
-          </span>
-          <span className="text-zinc-600 text-xs font-mono shrink-0">P{task.priority}</span>
-        </div>
-        {subs.map((sub) => (
-          <TaskRow key={sub.id} task={sub} indent={indent + 1} />
-        ))}
-      </>
+      <div className="px-5 py-3 border-t border-zinc-800 space-y-0.5">
+        <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mb-2">Tasks</div>
+        {tasks.map((t) => <TaskRow key={t.id} task={t} />)}
+      </div>
     );
   }
 
   return (
-    <div className="px-5 py-3 border-t border-zinc-800 space-y-0.5">
-      <div className="text-xs text-zinc-500 font-medium uppercase tracking-wider mb-2">Tasks</div>
-      {topLevel.map((t) => (
-        <TaskRow key={t.id} task={t} />
+    <div className="border-t border-zinc-800">
+      {Object.entries(byKr).map(([krId, krTasks]) => (
+        <div key={krId} className="px-5 py-2 border-b border-zinc-800/50 last:border-b-0">
+          <div className="text-xs text-blue-400/80 font-medium mb-1.5 flex items-center gap-1">
+            <span className="text-zinc-600">↳</span>
+            {krMap[Number(krId)] ?? "Key Result"}
+          </div>
+          <div className="space-y-0.5 pl-3">
+            {krTasks.map((t) => <TaskRow key={t.id} task={t} />)}
+          </div>
+        </div>
       ))}
+      {unlinked.length > 0 && (
+        <div className="px-5 py-2">
+          <div className="text-xs text-zinc-600 font-medium mb-1.5">Weitere Tasks</div>
+          <div className="space-y-0.5 pl-3">
+            {unlinked.map((t) => <TaskRow key={t.id} task={t} />)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -616,7 +637,7 @@ function ObjectiveCard({
         )}
 
         {/* Task Checklist */}
-        {expanded && obj.tasks.length > 0 && <TaskChecklist tasks={obj.tasks} />}
+        {expanded && obj.tasks.length > 0 && <TaskChecklist tasks={obj.tasks} keyResults={obj.key_results} />}
 
         {/* Footer */}
         <div className="border-t border-zinc-800 px-5 py-2 flex items-center gap-4 text-xs text-zinc-500">

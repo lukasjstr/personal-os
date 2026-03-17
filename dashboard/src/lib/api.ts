@@ -158,6 +158,7 @@ export interface ObjectiveTask {
   status: string;
   priority: number;
   parent_task_id: number | null;
+  key_result_id: number | null;
 }
 
 export interface Objective {
