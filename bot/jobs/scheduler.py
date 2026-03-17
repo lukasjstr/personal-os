@@ -185,11 +185,43 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # Quarterly review: Jan 1, Apr 1, Jul 1, Oct 1 at 09:00
+    async def _run_quarterly_review() -> None:
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        try:
+            from bot.database.connection import get_session
+            from bot.core.quarterly_review import generate_quarterly_review
+            from sqlalchemy import select as _select
+            from bot.database.models import User as _User
+            async with get_session() as _session:
+                users_result = await _session.execute(
+                    _select(_User).where(_User.is_active == True)  # noqa: E712
+                )
+                users = users_result.scalars().all()
+                for _user in users:
+                    try:
+                        await generate_quarterly_review(_session, _user.id)
+                        _log.info("Quarterly review generated for user %s", _user.id)
+                    except Exception:
+                        _log.exception("Failed quarterly review for user %s", _user.id)
+        except Exception:
+            _log.exception("Quarterly review job failed")
+
+    _scheduler.add_job(
+        _run_quarterly_review,
+        CronTrigger(month="1,4,7,10", day=1, hour=9, minute=0, timezone="Europe/Berlin"),
+        id="quarterly_review",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 17 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 18 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "
-        "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis"
+        "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
+        "quarterly_review"
     )
     return _scheduler

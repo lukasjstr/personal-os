@@ -73,6 +73,11 @@ class User(Base):
     evening_checkins: Mapped[list["EveningCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     financial_transactions: Mapped[list["FinancialTransaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     budgets: Mapped[list["Budget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    automation_rules: Mapped[list["AutomationRule"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    quarterly_reviews: Mapped[list["QuarterlyReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    contacts: Mapped[list["Contact"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    interactions: Mapped[list["Interaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    commitments: Mapped[list["Commitment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -894,3 +899,122 @@ class Budget(Base):
 
     def __repr__(self) -> str:
         return f"<Budget id={self.id} category={self.category} limit={self.monthly_limit}>"
+
+
+# ─── Feature 5 — Automation Rule Engine ──────────────────────────────────────
+
+class AutomationRule(Base):
+    __tablename__ = "automation_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    trigger_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    # trigger_types: workout_skipped | energy_low | kr_completed | sleep_low | routine_skipped | kr_at_risk | manual
+    trigger_conditions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    action_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    # action_types: send_message | create_task | reschedule_workout | suggest_routine | update_setting
+    action_params: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    cooldown_hours: Mapped[int] = mapped_column(Integer, default=24)
+    last_triggered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    trigger_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="automation_rules")
+
+    def __repr__(self) -> str:
+        return f"<AutomationRule id={self.id} trigger={self.trigger_type} action={self.action_type}>"
+
+
+# ─── Feature 6 — Quarterly Review ────────────────────────────────────────────
+
+class QuarterlyReview(Base):
+    __tablename__ = "quarterly_reviews"
+    __table_args__ = (
+        UniqueConstraint("user_id", "year", "quarter", name="uq_quarterly_review_user_year_quarter"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-4
+    quarter_label: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # "Q1 2026"
+    life_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0-100
+    objectives_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    ai_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    highlights: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    challenges: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="quarterly_reviews")
+
+    def __repr__(self) -> str:
+        return f"<QuarterlyReview id={self.id} {self.quarter_label} score={self.life_score}>"
+
+
+# ─── Feature 8 — Relationship Engine ─────────────────────────────────────────
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    nickname: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    relationship_type: Mapped[str] = mapped_column(String(60), default="friend")  # friend|family|colleague|mentor|partner
+    contact_frequency_days: Mapped[int] = mapped_column(Integer, default=30)
+    last_contacted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    birthday: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="contacts")
+    interactions: Mapped[list["Interaction"]] = relationship(back_populates="contact", cascade="all, delete-orphan")
+    commitments: Mapped[list["Commitment"]] = relationship(back_populates="contact")
+
+    def __repr__(self) -> str:
+        return f"<Contact id={self.id} name={self.name!r} type={self.relationship_type}>"
+
+
+class Interaction(Base):
+    __tablename__ = "interactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id: Mapped[int] = mapped_column(Integer, ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False, index=True)
+    interaction_type: Mapped[str] = mapped_column(String(60), nullable=False)  # call|message|meeting|email|other
+    quality_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    interacted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="interactions")
+    contact: Mapped["Contact"] = relationship(back_populates="interactions")
+
+    def __repr__(self) -> str:
+        return f"<Interaction id={self.id} contact_id={self.contact_id} type={self.interaction_type}>"
+
+
+class Commitment(Base):
+    __tablename__ = "commitments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("contacts.id", ondelete="CASCADE"), nullable=True, index=True)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending|done|overdue
+    reminder_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="commitments")
+    contact: Mapped[Optional["Contact"]] = relationship(back_populates="commitments")
+
+    def __repr__(self) -> str:
+        return f"<Commitment id={self.id} status={self.status} desc={self.description[:40]!r}>"

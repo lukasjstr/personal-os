@@ -22,6 +22,10 @@ import {
   Lightbulb,
   Menu,
   X,
+  Zap,
+  BarChart3,
+  Users,
+  Smartphone,
 } from "lucide-react";
 import { useDashboard } from "@/hooks/useApi";
 import XPBar from "./XPBar";
@@ -43,6 +47,10 @@ const NAV = [
   { href: "/reflection", label: "Reflexion", icon: BookOpen },
   { href: "/suggestions", label: "AI Suggestions", icon: Lightbulb },
   { href: "/docs", label: "Dokumente", icon: FileText },
+  { href: "/automation", label: "Automatisierung", icon: Zap },
+  { href: "/quarterly", label: "Quartals-Review", icon: BarChart3 },
+  { href: "/relationships", label: "Beziehungen", icon: Users },
+  { href: "/widget", label: "iOS Widget", icon: Smartphone },
   { href: "/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/settings", label: "Einstellungen", icon: Settings },
 ];

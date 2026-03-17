@@ -386,6 +386,36 @@ Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei direkt und prägnan
             fitness_lines.append(f"- Fokus-Übungen: {ex_preview}")
         brief_text += "\n".join(fitness_lines)
 
+    # ─── Automation rule evaluation: sleep_low ────────────────────────────────
+    try:
+        from bot.core.rule_engine import evaluate_rules
+        from bot.database.models import Log as _Log
+        from sqlalchemy import and_ as _and_
+        from datetime import datetime as _dt, timedelta as _td
+        _yesterday = today - _td(days=1)
+        _y_start = _dt.combine(_yesterday, _dt.min.time())
+        _y_end = _dt.combine(_yesterday, _dt.max.time())
+        _sleep_log = (await session.execute(
+            select(_Log).where(_and_(
+                _Log.user_id == user.id,
+                _Log.log_type == "sleep",
+                _Log.logged_at >= _y_start,
+                _Log.logged_at <= _y_end,
+            )).order_by(_Log.logged_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if _sleep_log:
+            _sleep_hours = float(_sleep_log.data.get("hours", 99))
+            if _sleep_hours < 7:
+                rule_msgs = await evaluate_rules(
+                    session, user,
+                    "sleep_low",
+                    {"sleep_hours": _sleep_hours, "value": _sleep_hours},
+                )
+                if rule_msgs:
+                    brief_text += "\n\n⚡ Automatisierung:\n" + "\n".join(f"• {m}" for m in rule_msgs)
+    except Exception:
+        logger.exception("Automation rule evaluation failed in morning brief")
+
     # Priorities snapshot stored in DailyBrief for evening drift detection
     priorities_snapshot = [
         {"id": t.id, "title": t.title, "priority": t.priority}

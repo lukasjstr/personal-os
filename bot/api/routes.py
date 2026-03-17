@@ -22,10 +22,11 @@ from bot.core.routines import get_active_routines, get_todays_completions
 from bot.core.tasks import get_open_tasks, get_open_shopping_items
 from bot.database.connection import get_db
 from bot.database.models import (
-    Achievement, ActionQueueItem, AutopilotNotification, BrainDump, CalendarEvent, DailyBrief,
-    DailyContext, DailySuggestion, EveningCheckin, FitnessSplit, KeyResult, Log, NodeRelation,
+    Achievement, ActionQueueItem, AutomationRule, AutopilotNotification, BrainDump, CalendarEvent,
+    Commitment, Contact, DailyBrief,
+    DailyContext, DailySuggestion, EveningCheckin, FitnessSplit, Interaction, KeyResult, Log, NodeRelation,
     Objective, ObjectiveTaskSuggestion,
-    OKRProposalDraft, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
+    OKRProposalDraft, QuarterlyReview, Routine, RoutineCompletion, RoutineObjectiveImpact, ScheduledReminder,
     ShoppingDefault, Task, User, UserAchievement, WeeklyReflection, WorkoutLog,
     VALID_NODE_TYPES, VALID_RELATION_TYPES,
 )
@@ -7800,3 +7801,640 @@ async def get_shortcut_setup(
             "Oder: Aktiviere 'Apple Health' Sync in Huawei Health für automatischen täglichen Sync",
         ],
     }
+
+
+# ─── Feature 5: Automation Rules ─────────────────────────────────────────────
+
+class AutomationRuleBody(BaseModel):
+    title: str
+    trigger_type: str
+    trigger_conditions: Optional[dict] = None
+    action_type: str
+    action_params: Optional[dict] = None
+    cooldown_hours: int = 24
+    is_active: bool = True
+
+
+class AutomationRuleUpdateBody(BaseModel):
+    title: Optional[str] = None
+    trigger_type: Optional[str] = None
+    trigger_conditions: Optional[dict] = None
+    action_type: Optional[str] = None
+    action_params: Optional[dict] = None
+    cooldown_hours: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+@router.get("/automation/rules")
+async def list_automation_rules(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    result = await session.execute(
+        select(AutomationRule)
+        .where(AutomationRule.user_id == user.id)
+        .order_by(AutomationRule.created_at.desc())
+    )
+    rules = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "title": r.title,
+            "is_active": r.is_active,
+            "trigger_type": r.trigger_type,
+            "trigger_conditions": r.trigger_conditions,
+            "action_type": r.action_type,
+            "action_params": r.action_params,
+            "cooldown_hours": r.cooldown_hours,
+            "last_triggered_at": r.last_triggered_at.isoformat() if r.last_triggered_at else None,
+            "trigger_count": r.trigger_count,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rules
+    ]
+
+
+@router.post("/automation/rules")
+async def create_automation_rule(
+    body: AutomationRuleBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    rule = AutomationRule(
+        user_id=user.id,
+        title=body.title,
+        trigger_type=body.trigger_type,
+        trigger_conditions=body.trigger_conditions,
+        action_type=body.action_type,
+        action_params=body.action_params,
+        cooldown_hours=body.cooldown_hours,
+        is_active=body.is_active,
+    )
+    session.add(rule)
+    await session.flush()
+    return {"ok": True, "id": rule.id}
+
+
+@router.put("/automation/rules/{rule_id}")
+async def update_automation_rule(
+    rule_id: int,
+    body: AutomationRuleUpdateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(AutomationRule).where(
+            and_(AutomationRule.id == rule_id, AutomationRule.user_id == user.id)
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    if body.title is not None:
+        rule.title = body.title
+    if body.trigger_type is not None:
+        rule.trigger_type = body.trigger_type
+    if body.trigger_conditions is not None:
+        rule.trigger_conditions = body.trigger_conditions
+    if body.action_type is not None:
+        rule.action_type = body.action_type
+    if body.action_params is not None:
+        rule.action_params = body.action_params
+    if body.cooldown_hours is not None:
+        rule.cooldown_hours = body.cooldown_hours
+    if body.is_active is not None:
+        rule.is_active = body.is_active
+    await session.flush()
+    return {"ok": True}
+
+
+@router.delete("/automation/rules/{rule_id}")
+async def delete_automation_rule(
+    rule_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(AutomationRule).where(
+            and_(AutomationRule.id == rule_id, AutomationRule.user_id == user.id)
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    await session.delete(rule)
+    await session.flush()
+    return {"ok": True}
+
+
+@router.post("/automation/rules/{rule_id}/toggle")
+async def toggle_automation_rule(
+    rule_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(AutomationRule).where(
+            and_(AutomationRule.id == rule_id, AutomationRule.user_id == user.id)
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    rule.is_active = not rule.is_active
+    await session.flush()
+    return {"ok": True, "is_active": rule.is_active}
+
+
+@router.get("/automation/templates")
+async def get_automation_templates() -> list[dict]:
+    from bot.core.rule_engine import get_rule_templates
+    return await get_rule_templates()
+
+
+@router.post("/automation/rules/{rule_id}/trigger")
+async def trigger_automation_rule_manually(
+    rule_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(AutomationRule).where(
+            and_(AutomationRule.id == rule_id, AutomationRule.user_id == user.id)
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    from bot.core.rule_engine import execute_rule
+    # Bypass cooldown for manual trigger
+    original_last = rule.last_triggered_at
+    rule.last_triggered_at = None
+    try:
+        msg = await execute_rule(session, user, rule, {"manual": True})
+        rule.last_triggered_at = original_last
+        rule.trigger_count = (rule.trigger_count or 0) + 1
+        await session.flush()
+        return {"ok": True, "result": msg}
+    except Exception as e:
+        rule.last_triggered_at = original_last
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Feature 6: Quarterly Reviews ────────────────────────────────────────────
+
+class GenerateQuarterlyBody(BaseModel):
+    year: Optional[int] = None
+    quarter: Optional[int] = None
+
+
+@router.get("/quarterly-reviews")
+async def list_quarterly_reviews(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    result = await session.execute(
+        select(QuarterlyReview)
+        .where(QuarterlyReview.user_id == user.id)
+        .order_by(QuarterlyReview.year.desc(), QuarterlyReview.quarter.desc())
+    )
+    reviews = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "year": r.year,
+            "quarter": r.quarter,
+            "quarter_label": r.quarter_label,
+            "life_score": r.life_score,
+            "status": r.status,
+            "generated_at": r.generated_at.isoformat() if r.generated_at else None,
+            "objectives_count": len(r.objectives_data) if r.objectives_data else 0,
+        }
+        for r in reviews
+    ]
+
+
+@router.get("/quarterly-reviews/latest")
+async def get_latest_quarterly_review(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(QuarterlyReview)
+        .where(QuarterlyReview.user_id == user.id)
+        .order_by(QuarterlyReview.generated_at.desc())
+        .limit(1)
+    )
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="No quarterly reviews found")
+    return {
+        "id": review.id,
+        "year": review.year,
+        "quarter": review.quarter,
+        "quarter_label": review.quarter_label,
+        "life_score": review.life_score,
+        "objectives_data": review.objectives_data,
+        "ai_analysis": review.ai_analysis,
+        "highlights": review.highlights,
+        "challenges": review.challenges,
+        "status": review.status,
+        "generated_at": review.generated_at.isoformat() if review.generated_at else None,
+    }
+
+
+@router.post("/quarterly-reviews/generate")
+async def generate_quarterly_review_endpoint(
+    body: GenerateQuarterlyBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.core.quarterly_review import generate_quarterly_review
+    review = await generate_quarterly_review(
+        session, user.id, year=body.year, quarter=body.quarter
+    )
+    return {
+        "id": review.id,
+        "year": review.year,
+        "quarter": review.quarter,
+        "quarter_label": review.quarter_label,
+        "life_score": review.life_score,
+        "objectives_data": review.objectives_data,
+        "ai_analysis": review.ai_analysis,
+        "highlights": review.highlights,
+        "challenges": review.challenges,
+        "status": review.status,
+        "generated_at": review.generated_at.isoformat() if review.generated_at else None,
+    }
+
+
+@router.get("/quarterly-reviews/{review_id}")
+async def get_quarterly_review(
+    review_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(QuarterlyReview).where(
+            and_(QuarterlyReview.id == review_id, QuarterlyReview.user_id == user.id)
+        )
+    )
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {
+        "id": review.id,
+        "year": review.year,
+        "quarter": review.quarter,
+        "quarter_label": review.quarter_label,
+        "life_score": review.life_score,
+        "objectives_data": review.objectives_data,
+        "ai_analysis": review.ai_analysis,
+        "highlights": review.highlights,
+        "challenges": review.challenges,
+        "status": review.status,
+        "generated_at": review.generated_at.isoformat() if review.generated_at else None,
+    }
+
+
+# ─── Feature 8: Relationship Engine ──────────────────────────────────────────
+
+class ContactBody(BaseModel):
+    name: str
+    nickname: Optional[str] = None
+    relationship_type: str = "friend"
+    contact_frequency_days: int = 30
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    birthday: Optional[str] = None  # ISO date string
+
+
+class ContactUpdateBody(BaseModel):
+    name: Optional[str] = None
+    nickname: Optional[str] = None
+    relationship_type: Optional[str] = None
+    contact_frequency_days: Optional[int] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    birthday: Optional[str] = None
+
+
+class InteractionBody(BaseModel):
+    interaction_type: str
+    notes: Optional[str] = None
+    quality_score: Optional[int] = None
+
+
+class CommitmentBody(BaseModel):
+    description: str
+    contact_id: Optional[int] = None
+    due_date: Optional[str] = None  # ISO date string
+
+
+class CommitmentUpdateBody(BaseModel):
+    description: Optional[str] = None
+    contact_id: Optional[int] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+
+
+@router.get("/contacts")
+async def list_contacts(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    from sqlalchemy.orm import selectinload as _sil
+    now = datetime.utcnow()
+
+    result = await session.execute(
+        select(Contact)
+        .where(and_(Contact.user_id == user.id, Contact.is_active == True))  # noqa: E712
+        .order_by(Contact.name)
+    )
+    contacts = result.scalars().all()
+
+    out = []
+    for c in contacts:
+        if c.last_contacted_at:
+            days_since = (now - c.last_contacted_at).days
+            overdue_days = days_since - c.contact_frequency_days
+        else:
+            days_since = None
+            overdue_days = None
+
+        out.append({
+            "id": c.id,
+            "name": c.name,
+            "nickname": c.nickname,
+            "relationship_type": c.relationship_type,
+            "contact_frequency_days": c.contact_frequency_days,
+            "last_contacted_at": c.last_contacted_at.isoformat() if c.last_contacted_at else None,
+            "days_since_contact": days_since,
+            "overdue_days": overdue_days,
+            "is_overdue": (overdue_days is not None and overdue_days > 0) or (c.last_contacted_at is None),
+            "phone": c.phone,
+            "email": c.email,
+            "notes": c.notes,
+            "birthday": c.birthday.isoformat() if c.birthday else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        })
+    return out
+
+
+@router.post("/contacts")
+async def create_contact(
+    body: ContactBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from datetime import date as _date
+    birthday = None
+    if body.birthday:
+        try:
+            birthday = _date.fromisoformat(body.birthday)
+        except ValueError:
+            pass
+
+    contact = Contact(
+        user_id=user.id,
+        name=body.name.strip(),
+        nickname=body.nickname,
+        relationship_type=body.relationship_type,
+        contact_frequency_days=body.contact_frequency_days,
+        phone=body.phone,
+        email=body.email,
+        notes=body.notes,
+        birthday=birthday,
+    )
+    session.add(contact)
+    await session.flush()
+    return {"ok": True, "id": contact.id}
+
+
+@router.put("/contacts/{contact_id}")
+async def update_contact(
+    contact_id: int,
+    body: ContactUpdateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from datetime import date as _date
+    result = await session.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.user_id == user.id))
+    )
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    if body.name is not None:
+        contact.name = body.name.strip()
+    if body.nickname is not None:
+        contact.nickname = body.nickname
+    if body.relationship_type is not None:
+        contact.relationship_type = body.relationship_type
+    if body.contact_frequency_days is not None:
+        contact.contact_frequency_days = body.contact_frequency_days
+    if body.phone is not None:
+        contact.phone = body.phone
+    if body.email is not None:
+        contact.email = body.email
+    if body.notes is not None:
+        contact.notes = body.notes
+    if body.birthday is not None:
+        try:
+            contact.birthday = _date.fromisoformat(body.birthday)
+        except ValueError:
+            pass
+    await session.flush()
+    return {"ok": True}
+
+
+@router.delete("/contacts/{contact_id}")
+async def delete_contact(
+    contact_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.user_id == user.id))
+    )
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    contact.is_active = False
+    await session.flush()
+    return {"ok": True}
+
+
+@router.post("/contacts/{contact_id}/interaction")
+async def log_contact_interaction(
+    contact_id: int,
+    body: InteractionBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    # Verify contact ownership
+    result = await session.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.user_id == user.id))
+    )
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    from bot.core.relationships import log_interaction
+    interaction = await log_interaction(
+        session, user.id, contact_id,
+        body.interaction_type,
+        notes=body.notes or "",
+        quality_score=body.quality_score,
+    )
+    return {"ok": True, "id": interaction.id}
+
+
+@router.get("/contacts/{contact_id}/interactions")
+async def list_contact_interactions(
+    contact_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    # Verify ownership
+    result = await session.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.user_id == user.id))
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    result2 = await session.execute(
+        select(Interaction)
+        .where(and_(Interaction.contact_id == contact_id, Interaction.user_id == user.id))
+        .order_by(Interaction.interacted_at.desc())
+        .limit(50)
+    )
+    interactions = result2.scalars().all()
+    return [
+        {
+            "id": i.id,
+            "interaction_type": i.interaction_type,
+            "quality_score": i.quality_score,
+            "notes": i.notes,
+            "interacted_at": i.interacted_at.isoformat() if i.interacted_at else None,
+        }
+        for i in interactions
+    ]
+
+
+@router.get("/commitments")
+async def list_commitments(
+    status: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    from sqlalchemy.orm import selectinload as _sil
+
+    conditions = [Commitment.user_id == user.id]
+    if status:
+        conditions.append(Commitment.status == status)
+
+    result = await session.execute(
+        select(Commitment)
+        .options(_sil(Commitment.contact))
+        .where(and_(*conditions))
+        .order_by(Commitment.due_date.asc().nulls_last())
+    )
+    commitments = result.scalars().all()
+    return [
+        {
+            "id": c.id,
+            "description": c.description,
+            "contact_id": c.contact_id,
+            "contact_name": c.contact.name if c.contact else None,
+            "due_date": c.due_date.isoformat() if c.due_date else None,
+            "status": c.status,
+            "reminder_at": c.reminder_at.isoformat() if c.reminder_at else None,
+            "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in commitments
+    ]
+
+
+@router.post("/commitments")
+async def create_commitment(
+    body: CommitmentBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from datetime import date as _date
+    from bot.core.relationships import add_commitment
+
+    due = None
+    if body.due_date:
+        try:
+            due = _date.fromisoformat(body.due_date)
+        except ValueError:
+            pass
+
+    commitment = await add_commitment(
+        session, user.id, body.description,
+        contact_id=body.contact_id,
+        due_date=due,
+    )
+    return {"ok": True, "id": commitment.id}
+
+
+@router.put("/commitments/{commitment_id}")
+async def update_commitment(
+    commitment_id: int,
+    body: CommitmentUpdateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from datetime import date as _date
+
+    result = await session.execute(
+        select(Commitment).where(
+            and_(Commitment.id == commitment_id, Commitment.user_id == user.id)
+        )
+    )
+    commitment = result.scalar_one_or_none()
+    if not commitment:
+        raise HTTPException(status_code=404, detail="Commitment not found")
+
+    if body.description is not None:
+        commitment.description = body.description
+    if body.contact_id is not None:
+        commitment.contact_id = body.contact_id
+    if body.due_date is not None:
+        try:
+            commitment.due_date = _date.fromisoformat(body.due_date)
+        except ValueError:
+            pass
+    if body.status is not None:
+        commitment.status = body.status
+        if body.status == "done" and not commitment.completed_at:
+            commitment.completed_at = datetime.utcnow()
+    await session.flush()
+    return {"ok": True}
+
+
+@router.delete("/commitments/{commitment_id}")
+async def delete_commitment(
+    commitment_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await session.execute(
+        select(Commitment).where(
+            and_(Commitment.id == commitment_id, Commitment.user_id == user.id)
+        )
+    )
+    commitment = result.scalar_one_or_none()
+    if not commitment:
+        raise HTTPException(status_code=404, detail="Commitment not found")
+    await session.delete(commitment)
+    await session.flush()
+    return {"ok": True}

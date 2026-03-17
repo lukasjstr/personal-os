@@ -3,6 +3,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import TokenGate from "@/components/TokenGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import PWARegister from "@/components/PWARegister";
 
 export const metadata: Metadata = {
   title: "Personal OS",
@@ -16,13 +17,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
-        <meta name="theme-color" content="#3b82f6" />
+        <meta name="theme-color" content="#6366f1" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="PersonalOS" />
+        <meta name="apple-mobile-web-app-title" content="Personal OS" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="bg-zinc-950 text-white min-h-screen">
+        <PWARegister />
         <TokenGate>
           <div className="flex min-h-screen">
             <Sidebar />

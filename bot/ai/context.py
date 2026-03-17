@@ -257,6 +257,15 @@ async def build_context(session: AsyncSession, user: User) -> str:
     except Exception:
         pass
 
+    # ─── Relationship Context ─────────────────────────────────────────────────
+    try:
+        from bot.core.relationships import get_relationship_context
+        rel_ctx = await get_relationship_context(session, user.id)
+        if rel_ctx:
+            lines.append(rel_ctx)
+    except Exception:
+        pass
+
     # ─── Pending Prompt State ─────────────────────────────────────────────────
     try:
         from bot.core.smart_detector import get_pending_prompt

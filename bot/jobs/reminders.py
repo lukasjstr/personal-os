@@ -61,6 +61,10 @@ async def process_reminders() -> None:
                 if now_berlin.hour >= 10:
                     await _check_stale_nudges(session, user, today, today_start)
 
+                # 7. Commitment due reminders (once per day at 09:00)
+                if now_berlin.hour == 9:
+                    await _check_commitment_reminders(session, user, today, today_start)
+
             except Exception:
                 logger.exception("Error processing reminders for user %s", user.id)
 
@@ -344,6 +348,47 @@ async def _mark_reminder(
     )
     session.add(reminder)
     await session.flush()
+
+
+async def _check_commitment_reminders(
+    session: AsyncSession, user: User, today: date, today_start: datetime
+) -> None:
+    """Send reminder for commitments due today or tomorrow."""
+    from bot.database.models import Commitment
+    tomorrow = today + timedelta(days=1)
+
+    result = await session.execute(
+        select(Commitment).where(
+            and_(
+                Commitment.user_id == user.id,
+                Commitment.status.in_(["pending", "overdue"]),
+                Commitment.due_date <= tomorrow,
+            )
+        )
+    )
+    commitments = result.scalars().all()
+
+    if not commitments:
+        return
+
+    reminder_type = f"commitments_{today}"
+    if await _already_reminded(session, user.id, reminder_type, today_start):
+        return
+
+    lines = ["📋 *Offene Zusagen:*"]
+    for c in commitments:
+        due_info = ""
+        if c.due_date == today:
+            due_info = " ⚠️ *HEUTE fällig*"
+        elif c.due_date and c.due_date < today:
+            due_info = " ❗ *ÜBERFÄLLIG*"
+        elif c.due_date == tomorrow:
+            due_info = " → morgen fällig"
+        lines.append(f"• {c.description}{due_info}")
+
+    msg = "\n".join(lines)
+    await send_message(user.telegram_id, msg)
+    await _mark_reminded(session, user.id, reminder_type, msg)
 
 
 # Legacy stubs — kept for import compatibility
