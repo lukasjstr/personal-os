@@ -2,11 +2,22 @@
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import CalendarEvent
+
+_BERLIN = ZoneInfo("Europe/Berlin")
+_UTC = ZoneInfo("UTC")
+
+
+def _berlin_to_utc(dt: datetime) -> datetime:
+    """Interpret a naive datetime as Europe/Berlin and convert to naive UTC for DB storage."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(_UTC).replace(tzinfo=None)
+    return dt.replace(tzinfo=_BERLIN).astimezone(_UTC).replace(tzinfo=None)
 
 
 async def create_calendar_event(
@@ -32,6 +43,8 @@ async def create_calendar_event(
             continue
     if not parsed_start:
         raise ValueError(f"Ungültiges Datum: {start_time}")
+    # Convert Berlin local time to UTC for consistent DB storage
+    parsed_start = _berlin_to_utc(parsed_start)
 
     parsed_end = None
     if end_time:
@@ -41,6 +54,8 @@ async def create_calendar_event(
                 break
             except ValueError:
                 continue
+        if parsed_end:
+            parsed_end = _berlin_to_utc(parsed_end)
 
     event = CalendarEvent(
         user_id=user_id,
@@ -60,18 +75,19 @@ async def create_calendar_event(
 
 
 async def get_todays_events(session: AsyncSession, user_id: int) -> list[CalendarEvent]:
-    """Get today's calendar events."""
-    from datetime import date
-    today = date.today()
-    today_start = datetime.combine(today, datetime.min.time())
-    today_end = datetime.combine(today, datetime.max.time())
+    """Get today's calendar events (Berlin timezone, stored as UTC)."""
+    now_berlin = datetime.now(tz=_BERLIN)
+    today_berlin = now_berlin.date()
+    # Convert Berlin day boundaries to naive UTC for DB query
+    today_start_utc = datetime.combine(today_berlin, datetime.min.time(), tzinfo=_BERLIN).astimezone(_UTC).replace(tzinfo=None)
+    today_end_utc = datetime.combine(today_berlin, datetime.max.time(), tzinfo=_BERLIN).astimezone(_UTC).replace(tzinfo=None)
 
     result = await session.execute(
         select(CalendarEvent)
         .where(and_(
             CalendarEvent.user_id == user_id,
-            CalendarEvent.start_time >= today_start,
-            CalendarEvent.start_time <= today_end,
+            CalendarEvent.start_time >= today_start_utc,
+            CalendarEvent.start_time <= today_end_utc,
         ))
         .order_by(CalendarEvent.start_time)
     )

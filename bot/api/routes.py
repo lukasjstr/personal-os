@@ -1158,11 +1158,12 @@ async def list_routines(
 
 
 def _localize_berlin(dt: datetime) -> str:
-    """Add Europe/Berlin timezone info to naive datetime for correct frontend display."""
-    if dt.tzinfo is not None:
-        return dt.isoformat()
+    """Convert naive-UTC datetime to Europe/Berlin for correct frontend display."""
     from zoneinfo import ZoneInfo
-    return dt.replace(tzinfo=ZoneInfo("Europe/Berlin")).isoformat()
+    if dt.tzinfo is not None:
+        return dt.astimezone(ZoneInfo("Europe/Berlin")).isoformat()
+    # Naive datetimes in DB are UTC — convert to Berlin
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Europe/Berlin")).isoformat()
 
 
 def _event_dict(e: CalendarEvent) -> dict:
@@ -1203,6 +1204,41 @@ async def list_calendar(
     )
     events = result.scalars().all()
     return {"events": [_event_dict(e) for e in events]}
+
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    start_time: str
+    end_time: Optional[str] = None
+    event_type: Optional[str] = "reminder"
+    all_day: Optional[bool] = False
+    description: Optional[str] = None
+    linked_task_id: Optional[int] = None
+    linked_routine_id: Optional[int] = None
+
+
+@router.post("/calendar")
+async def create_calendar_event_api(
+    body: CalendarEventCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Create a new calendar event via API."""
+    from bot.core.calendar import create_calendar_event
+    event = await create_calendar_event(
+        session,
+        user_id=user.id,
+        title=body.title,
+        start_time=body.start_time,
+        event_type=body.event_type or "reminder",
+        end_time=body.end_time,
+        all_day=body.all_day or False,
+        description=body.description,
+        linked_task_id=body.linked_task_id,
+        linked_routine_id=body.linked_routine_id,
+    )
+    await session.refresh(event, ["linked_task"])
+    return _event_dict(event)
 
 
 class CalendarEventUpdate(BaseModel):
@@ -1255,20 +1291,21 @@ async def update_calendar_event(
         if not task_res.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         event.linked_task_id = body.linked_task_id
+    from bot.core.calendar import _berlin_to_utc
     _time_fmts = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"]
     new_start = event.start_time
     new_end = event.end_time
     if body.start_time is not None:
         for fmt in _time_fmts:
             try:
-                new_start = datetime.strptime(body.start_time, fmt)
+                new_start = _berlin_to_utc(datetime.strptime(body.start_time, fmt))
                 break
             except ValueError:
                 continue
     if body.end_time is not None:
         for fmt in _time_fmts:
             try:
-                new_end = datetime.strptime(body.end_time, fmt)
+                new_end = _berlin_to_utc(datetime.strptime(body.end_time, fmt))
                 break
             except ValueError:
                 continue
@@ -1309,11 +1346,12 @@ async def reschedule_calendar_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    from bot.core.calendar import _berlin_to_utc
     _time_fmts = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"]
     new_start: Optional[datetime] = None
     for fmt in _time_fmts:
         try:
-            new_start = datetime.strptime(body.start_time, fmt)
+            new_start = _berlin_to_utc(datetime.strptime(body.start_time, fmt))
             break
         except ValueError:
             continue
@@ -1324,7 +1362,7 @@ async def reschedule_calendar_event(
     if body.end_time is not None:
         for fmt in _time_fmts:
             try:
-                new_end = datetime.strptime(body.end_time, fmt)
+                new_end = _berlin_to_utc(datetime.strptime(body.end_time, fmt))
                 break
             except ValueError:
                 continue

@@ -75,7 +75,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/learning", label: "Lernen", icon: GraduationCap, emoji: "🧠" },
       { href: "/brain-dumps", label: "Brain Dumps", icon: Brain, emoji: "💭" },
-      { href: "/reflections", label: "Reflektionen", icon: BookOpen, emoji: "🪞" },
+      { href: "/reflection", label: "Reflektionen", icon: BookOpen, emoji: "🪞" },
     ],
   },
   {

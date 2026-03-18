@@ -69,18 +69,32 @@ async def process_reminders() -> None:
                 logger.exception("Error processing reminders for user %s", user.id)
 
 
+def _reminder_minutes_for(event: CalendarEvent) -> int:
+    """Return how many minutes before an event the reminder should fire.
+
+    Uses the per-event override if set, otherwise:
+      - 60 min for meetings, training, deadlines (bigger events)
+      - 15 min for everything else (routine, reminder, errand, etc.)
+    """
+    if event.reminder_minutes_before and event.reminder_minutes_before > 0:
+        return event.reminder_minutes_before
+    if event.event_type in ("meeting", "training", "deadline"):
+        return 60
+    return 15
+
+
 async def _check_calendar_reminders(
     session: AsyncSession, user: User, now_berlin: datetime, today_start: datetime
 ) -> None:
-    """Send reminder for calendar events starting in the next 30–90 minutes."""
+    """Send reminder for upcoming calendar events based on per-event lead time."""
     now_utc = now_berlin.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    window_start = now_utc + timedelta(minutes=30)
-    window_end = now_utc + timedelta(minutes=90)
+    # Query a generous window (0-75 min ahead) to catch both 15-min and 60-min reminders
+    window_end = now_utc + timedelta(minutes=75)
 
     result = await session.execute(
         select(CalendarEvent).where(and_(
             CalendarEvent.user_id == user.id,
-            CalendarEvent.start_time >= window_start,
+            CalendarEvent.start_time >= now_utc,
             CalendarEvent.start_time <= window_end,
         ))
     )
@@ -91,8 +105,14 @@ async def _check_calendar_reminders(
         if await _already_reminded(session, user.id, reminder_type, today_start):
             continue
 
-        delta = event.start_time - now_utc
-        minutes = int(delta.total_seconds() / 60)
+        lead = _reminder_minutes_for(event)
+        delta_min = (event.start_time - now_utc).total_seconds() / 60
+
+        # Only fire if we are within the reminder window (event is ≤lead minutes away)
+        if delta_min > lead:
+            continue
+
+        minutes = int(delta_min)
         msg = f"⏰ In {minutes} Minuten: *{event.title}*"
         if event.event_type == "training":
             msg += "\n💪 Zeit für dein Training!"
@@ -103,7 +123,7 @@ async def _check_calendar_reminders(
 
         await send_message(user.telegram_id, msg)
         await _mark_reminder(session, user.id, reminder_type, msg)
-        logger.info("Calendar reminder sent to user %s for event %s", user.id, event.id)
+        logger.info("Calendar reminder sent to user %s for event %s (%d min lead)", user.id, event.id, lead)
 
 
 async def _check_due_today_tasks(
@@ -399,7 +419,7 @@ async def _check_commitment_reminders(
 
     msg = "\n".join(lines)
     await send_message(user.telegram_id, msg)
-    await _mark_reminded(session, user.id, reminder_type, msg)
+    await _mark_reminder(session, user.id, reminder_type, msg)
 
 
 # Legacy stubs — kept for import compatibility
