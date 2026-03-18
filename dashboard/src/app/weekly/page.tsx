@@ -146,7 +146,7 @@ export default function WeeklyPage() {
         )}
 
         {weekTasks.due.length === 0 && activeObjectives.length === 0 && (
-          <EmptyState message="Keine Wochenziele vorhanden. Erstelle Objectives und Tasks mit Fälligkeitsdaten." />
+          <EmptyState emoji="📖" message="Keine Wochenziele vorhanden. Erstelle Objectives und Tasks mit Fälligkeitsdaten." />
         )}
       </main>
     </div>
