@@ -1055,6 +1055,8 @@ export const api = {
     apiFetch<{ events: CalendarEvent[] }>(`/api/calendar?days=${days}&days_past=${daysPast}`),
   updateCalendarEvent: (id: number, body: Partial<{ title: string; description: string | null; start_time: string; end_time: string | null; all_day: boolean; event_type: string }>) =>
     apiPut<CalendarEvent>(`/api/calendar/${id}`, body),
+  createCalendarEvent: (body: { title: string; start_time: string; event_type?: string; end_time?: string; linked_routine_id?: number; linked_task_id?: number }) =>
+    apiPost<CalendarEvent>("/api/calendar", body),
   deleteCalendarEvent: (id: number) => apiDelete<{ ok: boolean }>(`/api/calendar/${id}`),
   addCalendarNotes: (id: number, notes: string) =>
     apiPost<CalendarEvent>(`/api/calendar/${id}/notes`, { notes }),

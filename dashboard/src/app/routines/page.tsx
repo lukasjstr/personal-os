@@ -10,7 +10,7 @@ import { useRoutines } from "@/hooks/useApi";
 import { api } from "@/lib/api";
 import type { Routine } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Pencil, Plus, Trash2, Check } from "lucide-react";
+import { Pencil, Plus, Trash2, Check, CalendarPlus } from "lucide-react";
 
 // ─── Time-of-day config ───────────────────────────────────────────────────────
 
@@ -210,6 +210,32 @@ function EditRoutineModal({
   );
 }
 
+// ─── Frequency badge helpers ─────────────────────────────────────────────────
+
+function FrequencyBadge({ freq }: { freq: string | null }) {
+  if (!freq) return null;
+  const f = freq.toLowerCase();
+  let color = "bg-zinc-800 text-zinc-400 border-zinc-700";
+  let label = freq;
+  if (f.includes("täglich") || f === "daily") {
+    color = "bg-green-950/60 text-green-400 border-green-800/50";
+    label = "Täglich";
+  } else if (f.includes("wöchentlich") || f === "weekly") {
+    color = "bg-blue-950/60 text-blue-400 border-blue-800/50";
+    label = "Wöchentlich";
+  } else if (f.includes("monat") || f === "monthly") {
+    color = "bg-purple-950/60 text-purple-400 border-purple-800/50";
+    label = "Monatlich";
+  } else if (f.includes("pro woche") || f.includes("x pro")) {
+    color = "bg-cyan-950/60 text-cyan-400 border-cyan-800/50";
+  }
+  return (
+    <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", color)}>
+      {label}
+    </span>
+  );
+}
+
 // ─── Routine Card ─────────────────────────────────────────────────────────────
 
 function RoutineCard({
@@ -217,12 +243,14 @@ function RoutineCard({
   onComplete,
   onEdit,
   onDelete,
+  onSchedule,
   completing,
 }: {
   routine: Routine;
   onComplete: (id: number) => void;
   onEdit: (r: Routine) => void;
   onDelete: (r: Routine) => void;
+  onSchedule?: (r: Routine) => void;
   completing: number | null;
 }) {
   return (
@@ -253,26 +281,28 @@ function RoutineCard({
       </button>
 
       <div className="flex-1 min-w-0">
-        <div
-          className={cn(
-            "font-medium text-sm",
-            routine.completed_today ? "text-zinc-400 line-through" : "text-white"
-          )}
-        >
-          {routine.title}
+        <div className="flex items-center gap-2 mb-0.5">
+          <div
+            className={cn(
+              "font-medium text-sm",
+              routine.completed_today ? "text-zinc-400 line-through" : "text-white"
+            )}
+          >
+            {routine.title}
+          </div>
         </div>
         {routine.description && (
           <p className="text-zinc-500 text-xs mt-0.5 truncate">{routine.description}</p>
         )}
-        {routine.frequency_human && (
-          <p className="text-zinc-600 text-xs mt-0.5">{routine.frequency_human}</p>
-        )}
+        <div className="flex items-center gap-1.5 mt-1">
+          <FrequencyBadge freq={routine.frequency_human} />
+        </div>
       </div>
 
       <div className="shrink-0 flex flex-col items-end gap-1.5">
         {routine.completed_today ? (
           <span className="text-green-400 text-xs font-medium bg-green-950/60 px-2 py-0.5 rounded-full border border-green-900/60">
-            Done ✅
+            Erledigt
           </span>
         ) : (
           <span className="text-zinc-500 text-xs bg-zinc-800/60 px-2 py-0.5 rounded-full">
@@ -280,6 +310,15 @@ function RoutineCard({
           </span>
         )}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onSchedule && (
+            <button
+              onClick={() => onSchedule(routine)}
+              className="text-zinc-500 hover:text-orange-400 transition-colors p-1 rounded"
+              title="In Kalender planen"
+            >
+              <CalendarPlus size={12} />
+            </button>
+          )}
           <button
             onClick={() => onEdit(routine)}
             className="text-zinc-500 hover:text-blue-400 transition-colors p-1 rounded"
@@ -402,6 +441,27 @@ export default function RoutinesPage() {
     }
   }, [deletingRoutine, mutate, addToast]);
 
+  const handleSchedule = useCallback(
+    async (routine: Routine) => {
+      // Create a calendar event for this routine
+      try {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const dateStr = tomorrow.toISOString().slice(0, 10);
+        await api.createCalendarEvent({
+          title: routine.title,
+          start_time: `${dateStr} 10:00`,
+          event_type: "routine",
+          linked_routine_id: routine.id,
+        });
+        addToast(`"${routine.title}" für morgen 10:00 eingeplant`, "success");
+      } catch {
+        addToast("Fehler beim Einplanen", "error");
+      }
+    },
+    [addToast]
+  );
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorState message={error.message} />;
   if (!data) return <LoadingSpinner />;
@@ -471,6 +531,7 @@ export default function RoutinesPage() {
                         onComplete={handleComplete}
                         onEdit={setEditingRoutine}
                         onDelete={setDeletingRoutine}
+                        onSchedule={key === "anytime" ? handleSchedule : undefined}
                         completing={completing}
                       />
                     ))}
