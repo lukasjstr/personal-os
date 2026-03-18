@@ -66,7 +66,7 @@ export default function WeeklyPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <Header title="Wochenziele" emoji="📖" />
+      <Header title="Wochenziele" />
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-8">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
