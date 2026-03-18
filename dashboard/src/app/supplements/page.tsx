@@ -21,7 +21,7 @@ interface Protocol {
   hydration: { water_l_min: number; water_l_max: number; electrolytes: string };
   micro_targets: Record<string, string>;
   stacks: { daily: Supplement[]; morning: Supplement[]; midday: Supplement[]; evening: Supplement[]; optional: Supplement[] };
-  cycles: { key: string; label: string; days_on: number; days_off: number }[];
+  cycles: Record<string, { days_on: number; days_off: number }>;
 }
 
 const STACK_CONFIG = [
@@ -78,7 +78,7 @@ export default function SupplementsPage() {
   if (!data || !data.stacks) return <ErrorState message="Kein Protokoll vorhanden" />;
 
   const protocol = data;
-  const cycleMap = Object.fromEntries((protocol.cycles || []).map((c) => [c.key, c]));
+  const cycleMap = protocol.cycles || {};
 
   return (
     <div>
@@ -131,7 +131,7 @@ export default function SupplementsPage() {
                         <span className="text-white text-sm font-medium">{item.name}</span>
                         {item.cycle_key && cycleMap[item.cycle_key] && (
                           <CycleIndicator
-                            cycle={cycleMap[item.cycle_key]}
+                            cycle={{ key: item.cycle_key, label: item.name, ...cycleMap[item.cycle_key] }}
                             anchorDate={protocol.meta.cycle_anchor_date}
                           />
                         )}
@@ -148,20 +148,20 @@ export default function SupplementsPage() {
       </div>
 
       {/* Cycles Overview */}
-      {protocol.cycles && protocol.cycles.length > 0 && (
+      {protocol.cycles && Object.keys(protocol.cycles).length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-6">
           <div className="flex items-center gap-2 mb-3">
             <RefreshCw className="h-4 w-4 text-purple-400" />
             <h3 className="text-white font-semibold text-sm">Zyklen</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {protocol.cycles.map((cycle) => (
-              <div key={cycle.key} className="flex items-center justify-between bg-zinc-800/50 rounded-lg px-3 py-2.5">
+            {Object.entries(protocol.cycles).map(([key, cycle]) => (
+              <div key={key} className="flex items-center justify-between bg-zinc-800/50 rounded-lg px-3 py-2.5">
                 <div>
-                  <div className="text-white text-sm">{cycle.label}</div>
+                  <div className="text-white text-sm capitalize">{key}</div>
                   <div className="text-zinc-500 text-xs">{cycle.days_on}d on / {cycle.days_off}d off</div>
                 </div>
-                <CycleIndicator cycle={cycle} anchorDate={protocol.meta.cycle_anchor_date} />
+                <CycleIndicator cycle={{ key, label: key, ...cycle }} anchorDate={protocol.meta.cycle_anchor_date} />
               </div>
             ))}
           </div>
