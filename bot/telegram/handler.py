@@ -44,6 +44,7 @@ from bot.telegram.commands import (
     handle_ical,
     handle_next,
     handle_organize,
+    handle_plan,
     handle_settings,
     handle_shopping,
     handle_start,
@@ -51,6 +52,7 @@ from bot.telegram.commands import (
     handle_times,
     handle_toggle,
     handle_token,
+    handle_woche,
 )
 from bot.telegram.sender import send_message, send_typing
 
@@ -494,6 +496,8 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("organize", handle_organize))
     application.add_handler(CommandHandler("next", handle_next))
     application.add_handler(CommandHandler("goal", handle_goal))
+    application.add_handler(CommandHandler("plan", handle_plan))
+    application.add_handler(CommandHandler("woche", handle_woche))
 
     # Inline button callbacks (daily intelligence flows)
     application.add_handler(CallbackQueryHandler(handle_callback_query))

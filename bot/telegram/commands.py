@@ -75,6 +75,8 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "  'Mittwoch 14 Uhr Zahnarzt' → Kalender\n\n"
         "**Befehle:**\n"
         "  /goal — Geführtes Ziel-Coaching starten\n"
+        "  /plan — Heutigen Tagesplan mit Konflikten anzeigen\n"
+        "  /woche — Wochenübersicht + Konflikte anzeigen\n"
         "  /next — Bester nächster Schritt\n"
         "  /status — Tagesübersicht\n"
         "  /settings — Einstellungen\n"
@@ -529,3 +531,64 @@ async def handle_goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await session.commit()
 
     await send_message(chat_id, intro)
+
+
+async def handle_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/plan — Show today's calendar plan with conflict detection."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    await send_typing(chat_id)
+
+    from bot.telegram.sender import get_bot
+    from bot.core.plan_coherence import get_day_events, detect_conflicts, format_day_plan
+    from datetime import date
+    from zoneinfo import ZoneInfo
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        today = date.today()
+        events = await get_day_events(session, user.id, today)
+        if not events:
+            await send_message(chat_id, "📅 Heute keine Events im Kalender.")
+            return
+        conflicts = detect_conflicts(events)
+        text = format_day_plan(today, events, conflicts)
+
+    await send_message(chat_id, text)
+
+
+async def handle_woche(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/woche — Show this week's calendar overview with conflict detection."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    await send_typing(chat_id)
+
+    from bot.core.plan_coherence import get_day_events, detect_conflicts, format_week_overview
+    from datetime import date, timedelta
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        today = date.today()
+        # Start from Monday of the current week
+        week_start = today - timedelta(days=today.weekday())
+        days_events = {}
+        all_conflicts = []
+        for i in range(7):
+            day = week_start + timedelta(days=i)
+            days_events[day] = await get_day_events(session, user.id, day)
+            all_conflicts.extend(detect_conflicts(days_events[day]))
+
+    text = format_week_overview(week_start, days_events)
+    if all_conflicts:
+        conflict_lines = ["\n⚠️ *Konflikte diese Woche:*"]
+        for c in all_conflicts[:5]:
+            conflict_lines.append(c["msg"])
+        text += "\n" + "\n".join(conflict_lines)
+
+    await send_message(chat_id, text)
