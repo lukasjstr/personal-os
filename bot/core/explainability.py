@@ -31,13 +31,19 @@ def get_task_reason(task, objective_title: Optional[str] = None) -> str:
     else:
         due = task.due_date
         priority = task.priority
-        # Epic 4.1: pull objective title from loaded ORM relations if not passed explicitly
+        # Epic 4.1: pull objective title from loaded ORM relations if not passed explicitly.
+        # Use __dict__ to avoid triggering lazy-loads in async SQLAlchemy context (MissingGreenlet).
         if not objective_title:
-            obj = getattr(task, "objective", None)
+            loaded = task.__dict__
+            obj = loaded.get("objective")
             if obj:
                 objective_title = obj.title
-            elif getattr(task, "key_result", None) and getattr(task.key_result, "objective", None):
-                objective_title = task.key_result.objective.title
+            else:
+                kr = loaded.get("key_result")
+                if kr is not None:
+                    obj2 = kr.__dict__.get("objective")
+                    if obj2:
+                        objective_title = obj2.title
 
     if due and due < today:
         n = (today - due).days
