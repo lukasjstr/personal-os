@@ -79,6 +79,8 @@ SIGNAL-REFERENZ (Erkennungsbeispiele pro Dimension)
 
 📝 AUFGABE: "ich muss", "erledigen", "kümmern um", "kaufen", "machen"
   → create_task(objective_id=..., key_result_id=..., due_date=...)
+  → Bei wichtigen Deadlines (Auszug, Packen, Abgabe, Vorbereitung) IMMER AUCH:
+     create_calendar_event(event_type="deadline", start_time=due_date+" 10:00")
 
 📈 FORTSCHRITT: "gemacht", "fertig", "erledigt", "war beim Sport", Zahl + Einheit
   → log_progress für ALLE passenden KRs + complete_task/complete_routine
