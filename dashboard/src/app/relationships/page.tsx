@@ -383,7 +383,21 @@ export default function RelationshipsPage() {
                         {contact.last_contacted_at && (
                           <> · Zuletzt: {new Date(contact.last_contacted_at).toLocaleDateString("de-DE")}</>
                         )}
+                        {contact.birthday && (
+                          <> · 🎂 {new Date(contact.birthday + "T00:00:00").toLocaleDateString("de-DE", { day: "numeric", month: "long" })}</>
+                        )}
                       </div>
+                      {contact.notes && (
+                        <div className="text-zinc-400 text-xs mt-1.5 bg-zinc-800/60 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                          📝 {contact.notes}
+                        </div>
+                      )}
+                      {(contact.phone || contact.email) && (
+                        <div className="text-zinc-500 text-xs mt-1 flex gap-3">
+                          {contact.phone && <span>📞 {contact.phone}</span>}
+                          {contact.email && <span>✉️ {contact.email}</span>}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
