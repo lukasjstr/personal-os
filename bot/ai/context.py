@@ -14,9 +14,19 @@ from bot.database.models import (
 
 async def build_context(session: AsyncSession, user: User) -> str:
     """Build a rich context string for the AI prompt (max ~2000 tokens)."""
-    today = date.today()
+    from zoneinfo import ZoneInfo
+    now_berlin = datetime.now(tz=ZoneInfo("Europe/Berlin"))
+    today = now_berlin.date()
     today_start = datetime.combine(today, datetime.min.time())
     lines: list[str] = []
+
+    # ─── Current date/time — always first so the AI can resolve relative dates ─
+    weekdays_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    weekday_de = weekdays_de[today.weekday()]
+    lines.append(
+        f"📅 HEUTE: {weekday_de}, {today.strftime('%d.%m.%Y')} · Uhrzeit: {now_berlin.strftime('%H:%M')} Uhr (Europe/Berlin)"
+    )
+    lines.append("")
 
     # ─── Life Profile (prepended for persistent memory) ───────────────────────
     try:
