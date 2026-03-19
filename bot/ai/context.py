@@ -133,7 +133,11 @@ async def build_context(session: AsyncSession, user: User) -> str:
     if events:
         lines.append("=== TERMINE HEUTE ===")
         for e in events:
-            lines.append(f"  {e.start_time.strftime('%H:%M')} {e.title}")
+            # Localise start_time for comparison (DB stores UTC-naive, treat as Berlin)
+            event_time_str = e.start_time.strftime("%H:%M")
+            is_past = e.start_time < now_berlin.replace(tzinfo=None)
+            status = "✅" if is_past else "▶️"
+            lines.append(f"  {status} {event_time_str} {e.title}" + (" (bereits vorbei)" if is_past else " (noch ausstehend)"))
         lines.append("")
 
     # ─── Recent Logs (last 8) ─────────────────────────────────────────────────
