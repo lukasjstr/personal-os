@@ -191,6 +191,13 @@ async def handle_ctx_focus(bot: Bot, user: User, session: AsyncSession, callback
         except Exception:
             logger.exception("Failed to send fallback context confirmation to user %s", user.id)
 
+    # Send calendar plan brief with conflict detection
+    try:
+        from bot.core.plan_coherence import send_morning_plan_brief
+        await send_morning_plan_brief(bot, user, session)
+    except Exception:
+        logger.exception("Failed to send morning plan brief to user %s", user.id)
+
 
 # ── Evening check-in ───────────────────────────────────────────────────────────
 
@@ -401,6 +408,13 @@ async def _finish_evening_checkin(
             )
         except Exception:
             logger.exception("Failed to send fallback gap message to user %s", user.id)
+
+    # Send tomorrow's calendar preview with conflict detection
+    try:
+        from bot.core.plan_coherence import send_tomorrow_preview
+        await send_tomorrow_preview(bot, user, session)
+    except Exception:
+        logger.exception("Failed to send tomorrow preview to user %s", user.id)
 
 
 # ── Streak risk alerts ─────────────────────────────────────────────────────────

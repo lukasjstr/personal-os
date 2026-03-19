@@ -9,6 +9,7 @@ from bot.core.daily_intelligence import (
     run_morning_context_collection,
     run_streak_risk_check,
 )
+from bot.core.plan_coherence import run_weekly_kickoff
 from bot.jobs.daily_suggestions import generate_daily_suggestions
 from bot.jobs.evening_review import send_evening_review
 from bot.jobs.morning_brief import send_morning_brief
@@ -196,6 +197,15 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # Weekly calendar kickoff: Mondays at 08:15 (calendar overview + conflict detection)
+    _scheduler.add_job(
+        run_weekly_kickoff,
+        CronTrigger(hour=8, minute=15, day_of_week="mon", timezone="Europe/Berlin"),
+        id="weekly_kickoff",
+        max_instances=1,
+        coalesce=True,
+    )
+
     # Life profile update: Mondays at 05:00 (weekly compressed memory update)
     async def _run_life_profile_update() -> None:
         import logging as _logging
@@ -343,12 +353,13 @@ def setup_scheduler() -> AsyncIOScheduler:
     )
 
     logger.info(
-        "Scheduler initialized with 24 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 25 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "
         "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
         "quarterly_review, learning_reminders, life_profile_update, "
-        "action_engine_morning, action_engine_evening, action_engine_weekly"
+        "action_engine_morning, action_engine_evening, action_engine_weekly, "
+        "weekly_kickoff"
     )
     return _scheduler
