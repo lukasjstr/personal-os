@@ -270,6 +270,14 @@ function MonthView({
   const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: calStart, end: calEnd });
 
+  // Priority order for month view: important events first, routines last/hidden
+  const EVENT_TYPE_PRIORITY: Record<string, number> = {
+    meeting: 0, training: 1, deadline: 2, travel: 3,
+    reminder: 4, errand: 5, work_block: 6, routine: 99,
+  };
+  const sortByPriority = (a: CalendarEvent, b: CalendarEvent) =>
+    (EVENT_TYPE_PRIORITY[a.event_type] ?? 50) - (EVENT_TYPE_PRIORITY[b.event_type] ?? 50);
+
   const eventsByDay = new Map<string, CalendarEvent[]>();
   events.forEach((e) => {
     const d = format(parseISO(e.start_time), "yyyy-MM-dd");
@@ -289,7 +297,11 @@ function MonthView({
       <div className="grid grid-cols-7">
         {days.map((day) => {
           const key = format(day, "yyyy-MM-dd");
-          const dayEvents = eventsByDay.get(key) ?? [];
+          const allDayEvents = eventsByDay.get(key) ?? [];
+          // Month grid: hide routines, sort by importance
+          const dayEvents = allDayEvents
+            .filter((e) => e.event_type !== "routine")
+            .sort(sortByPriority);
           const inMonth = isSameMonth(day, currentMonth);
           const today = isToday(day);
           const selected = selectedDay && isSameDay(day, selectedDay);
@@ -326,8 +338,8 @@ function MonthView({
                     {EVENT_TYPE_EMOJI[e.event_type] ?? "📌"} {e.title}
                   </div>
                 ))}
-                {dayEvents.length > 3 && (
-                  <div className="text-xs text-zinc-500 px-1">+{dayEvents.length - 3}</div>
+                {allDayEvents.length > 3 && (
+                  <div className="text-xs text-zinc-500 px-1">+{allDayEvents.length - 3}</div>
                 )}
               </div>
             </div>
