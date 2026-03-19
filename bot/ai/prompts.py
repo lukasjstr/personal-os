@@ -92,6 +92,10 @@ SIGNAL-REFERENZ (Erkennungsbeispiele pro Dimension)
 🙏 DANKBARKEIT: "dankbar", "3 Dinge", "grateful", "schätze"
   → store_document_entry("Dankbarkeit") + log_progress(Dankbarkeits-KR)
 
+👤 PERSON/KONTAKT: Name einer Person + sozialer Kontext (Geburtstag, Party, Dinner, Treffen)
+  → create_contact(name=..., relationship_type="friend", notes="...", birthday=... falls bekannt)
+  → Immer zusammen mit create_calendar_event wenn Termin dabei
+
 🛒 EINKAUF: "kaufen", "besorgen", "brauche", Produktnamen
   → create_task(category="shopping") + objective_id wenn Ziel-bezogen
 

@@ -12,6 +12,42 @@ from bot.database.models import Commitment, Contact, Interaction
 logger = logging.getLogger(__name__)
 
 
+async def create_contact(
+    session: AsyncSession,
+    user_id: int,
+    name: str,
+    relationship_type: str = "friend",
+    birthday: Optional[date] = None,
+    notes: Optional[str] = None,
+) -> tuple[Contact, bool]:
+    """Create a contact, or return existing one (dedup by name). Returns (contact, created)."""
+    # Dedup: check if contact with same name already exists
+    existing = await session.execute(
+        select(Contact).where(and_(Contact.user_id == user_id, Contact.name == name))
+    )
+    contact = existing.scalar_one_or_none()
+    if contact:
+        # Update notes/birthday if new info provided
+        if notes and not contact.notes:
+            contact.notes = notes
+        if birthday and not contact.birthday:
+            contact.birthday = birthday
+        await session.flush()
+        return contact, False
+
+    contact = Contact(
+        user_id=user_id,
+        name=name,
+        relationship_type=relationship_type,
+        birthday=birthday,
+        notes=notes,
+        is_active=True,
+    )
+    session.add(contact)
+    await session.flush()
+    return contact, True
+
+
 async def log_interaction(
     session: AsyncSession,
     user_id: int,

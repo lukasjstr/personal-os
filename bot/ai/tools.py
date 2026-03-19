@@ -328,6 +328,38 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ─── Contact Tool ─────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_contact",
+            "description": (
+                "Legt eine Person als Kontakt an. Nutze wenn eine Person namentlich erwähnt wird "
+                "im Kontext von: Geburtstag, Party, Treffen, Dinner, Verabredung, Meeting (privat). "
+                "Prüft automatisch auf Duplikate. Setzt birthday wenn ein Geburtstag erwähnt wird."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Vollständiger Name der Person"},
+                    "relationship_type": {
+                        "type": "string",
+                        "enum": ["friend", "family", "colleague", "mentor", "partner"],
+                        "description": "Art der Beziehung (Standard: friend)",
+                    },
+                    "birthday": {
+                        "type": "string",
+                        "description": "Geburtstag im Format YYYY-MM-DD (falls bekannt)",
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Kurze Notiz z.B. 'Geburtstag 21. März', 'Treffen im Steakhouse'",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
     # ─── Document Store Tool ──────────────────────────────────────────────────
     {
         "type": "function",

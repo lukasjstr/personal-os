@@ -300,6 +300,23 @@ async def _execute_tool(
                 f"   {event.start_time.strftime('%d.%m.%Y %H:%M')}"
             )
 
+        # ─── Contact ──────────────────────────────────────────────────────────
+        elif name == "create_contact":
+            from bot.core.relationships import create_contact as _create_contact
+            from datetime import date as _date
+            birthday_raw = args.pop("birthday", None)
+            birthday = None
+            if birthday_raw:
+                try:
+                    birthday = _date.fromisoformat(birthday_raw)
+                except ValueError:
+                    pass
+            contact, created = await _create_contact(session, user.id, birthday=birthday, **args)
+            if created:
+                return f"👤 Kontakt angelegt: *{contact.name}*" + (f"\n   📝 {contact.notes}" if contact.notes else "")
+            else:
+                return f"👤 Kontakt bereits vorhanden: *{contact.name}* (aktualisiert)"
+
         # ─── Document Store ───────────────────────────────────────────────────
         elif name == "store_document_entry":
             from bot.core.smart_detector import (
