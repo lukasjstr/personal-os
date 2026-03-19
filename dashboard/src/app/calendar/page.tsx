@@ -26,8 +26,6 @@ import {
   getHours,
   getMinutes,
   differenceInMinutes,
-  setHours,
-  setMinutes,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, X, Save, Clock, Tag, FileText, Pencil, Trash2 } from "lucide-react";
@@ -340,6 +338,80 @@ function MonthView({
   );
 }
 
+// ─── Overlap layout helper ────────────────────────────────────────────────────
+
+interface LayoutEvent {
+  event: CalendarEvent;
+  col: number;
+  totalCols: number;
+  topPx: number;
+  heightPx: number;
+}
+
+function layoutEvents(events: CalendarEvent[]): LayoutEvent[] {
+  // Sort by start time
+  const sorted = [...events].sort(
+    (a, b) => parseISO(a.start_time).getTime() - parseISO(b.start_time).getTime()
+  );
+
+  const getTopPx = (e: CalendarEvent) => {
+    const dt = parseISO(e.start_time);
+    return Math.max(0, (getHours(dt) - 6) * HOUR_HEIGHT + (getMinutes(dt) / 60) * HOUR_HEIGHT);
+  };
+
+  const getHeightPx = (e: CalendarEvent) => {
+    if (!e.end_time) return Math.max(24, HOUR_HEIGHT * 0.75);
+    const mins = differenceInMinutes(parseISO(e.end_time), parseISO(e.start_time));
+    return Math.max(24, (mins / 60) * HOUR_HEIGHT);
+  };
+
+  // Assign columns within overlap groups
+  const result: LayoutEvent[] = sorted.map((e) => ({
+    event: e,
+    col: 0,
+    totalCols: 1,
+    topPx: getTopPx(e),
+    heightPx: getHeightPx(e),
+  }));
+
+  // Find groups of overlapping events
+  for (let i = 0; i < result.length; i++) {
+    const a = result[i];
+    const aEnd = a.topPx + a.heightPx;
+
+    // Collect all events that overlap with a
+    const group = result.filter((b) => {
+      const bEnd = b.topPx + b.heightPx;
+      return a.topPx < bEnd && aEnd > b.topPx;
+    });
+
+    if (group.length <= 1) continue;
+
+    // Assign columns greedily
+    const cols: number[][] = [];
+    for (const item of group) {
+      let placed = false;
+      for (let c = 0; c < cols.length; c++) {
+        const colEnd = Math.max(...cols[c].map((idx) => result[idx].topPx + result[idx].heightPx));
+        if (item.topPx >= colEnd) {
+          cols[c].push(result.indexOf(item));
+          item.col = c;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        item.col = cols.length;
+        cols.push([result.indexOf(item)]);
+      }
+    }
+    const totalCols = cols.length;
+    group.forEach((item) => (item.totalCols = Math.max(item.totalCols, totalCols)));
+  }
+
+  return result;
+}
+
 // ─── Time Grid (shared by Week + Day) ────────────────────────────────────────
 
 function TimeGrid({
@@ -352,6 +424,7 @@ function TimeGrid({
   onSelectEvent: (e: CalendarEvent) => void;
 }) {
   const dayWidth = `${100 / days.length}%`;
+  const totalGridPx = DAY_HOURS.length * HOUR_HEIGHT;
 
   // Group events by day
   const byDay = new Map<string, CalendarEvent[]>();
@@ -361,31 +434,17 @@ function TimeGrid({
     byDay.get(key)!.push(e);
   });
 
-  const getEventTop = (e: CalendarEvent) => {
-    const dt = parseISO(e.start_time);
-    const mins = (getHours(dt) - 6) * 60 + getMinutes(dt);
-    return Math.max(0, mins);
-  };
-
-  const getEventHeight = (e: CalendarEvent) => {
-    if (!e.end_time) return 45;
-    const start = parseISO(e.start_time);
-    const end = parseISO(e.end_time);
-    const mins = differenceInMinutes(end, start);
-    return Math.max(25, mins);
-  };
-
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
       {/* Day headers */}
       <div className="flex border-b border-zinc-800">
-        <div className="w-12 shrink-0 border-r border-zinc-800" />
+        <div className="w-14 shrink-0 border-r border-zinc-800" />
         {days.map((d) => (
           <div
             key={d.toISOString()}
             style={{ width: dayWidth }}
             className={cn(
-              "text-center py-2 text-sm border-r border-zinc-800 last:border-r-0",
+              "text-center py-2.5 text-sm border-r border-zinc-800 last:border-r-0",
               isToday(d) ? "text-blue-400 font-semibold" : "text-zinc-400"
             )}
           >
@@ -403,16 +462,18 @@ function TimeGrid({
       </div>
 
       {/* Time slots */}
-      <div className="flex overflow-y-auto" style={{ maxHeight: "70vh" }}>
+      <div className="flex overflow-y-auto" style={{ maxHeight: "72vh" }}>
         {/* Hour labels */}
-        <div className="w-12 shrink-0 border-r border-zinc-800">
+        <div className="w-14 shrink-0 border-r border-zinc-800 select-none">
           {DAY_HOURS.map((h) => (
             <div
               key={h}
               style={{ height: HOUR_HEIGHT }}
-              className="border-b border-zinc-800/50 flex items-start pt-1 px-1"
+              className="border-b border-zinc-800/40 flex items-start justify-end pr-2 pt-1"
             >
-              <span className="text-zinc-600 text-xs">{String(h).padStart(2, "0")}:00</span>
+              <span className="text-zinc-500 text-[11px] font-mono">
+                {String(h).padStart(2, "0")}:00
+              </span>
             </div>
           ))}
         </div>
@@ -422,7 +483,7 @@ function TimeGrid({
           const key = format(d, "yyyy-MM-dd");
           const dayEvents = (byDay.get(key) ?? []).filter((e) => !e.all_day);
           const allDayEvents = (byDay.get(key) ?? []).filter((e) => e.all_day);
-          const totalMinutes = DAY_HOURS.length * 60;
+          const laid = layoutEvents(dayEvents);
 
           return (
             <div
@@ -438,51 +499,82 @@ function TimeGrid({
                 <div
                   key={h}
                   style={{ height: HOUR_HEIGHT }}
-                  className="border-b border-zinc-800/40"
+                  className={cn(
+                    "border-b",
+                    h % 2 === 0 ? "border-zinc-800/60" : "border-zinc-800/25"
+                  )}
                 />
               ))}
 
-              {/* All-day events */}
+              {/* All-day events banner */}
               {allDayEvents.map((e) => (
                 <div
                   key={e.id}
                   onClick={() => onSelectEvent(e)}
                   className={cn(
-                    "absolute left-0.5 right-0.5 top-0 px-1 py-0.5 rounded text-xs truncate border cursor-pointer hover:brightness-125 transition-all z-10",
+                    "absolute left-1 right-1 top-1 px-2 py-1 rounded-md text-xs truncate border cursor-pointer hover:brightness-125 transition-all z-10",
                     EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600"
                   )}
                 >
-                  {e.title}
+                  {EVENT_TYPE_EMOJI[e.event_type] ?? "📌"} {e.title}
                 </div>
               ))}
 
-              {/* Timed events */}
-              {dayEvents.map((e) => {
-                const topMins = getEventTop(e);
-                const heightMins = getEventHeight(e);
-                const topPct = (topMins / totalMinutes) * 100;
-                const heightPct = (heightMins / totalMinutes) * 100;
+              {/* Timed events with overlap columns */}
+              {laid.map(({ event: e, col, totalCols, topPx, heightPx }) => {
+                const colWidthPct = 100 / totalCols;
+                const leftPct = col * colWidthPct;
+                // Small gap between columns
+                const gapPx = totalCols > 1 ? 2 : 1;
 
                 return (
                   <div
                     key={e.id}
                     onClick={() => onSelectEvent(e)}
                     style={{
-                      top: `${topPct}%`,
-                      height: `${heightPct}%`,
-                      minHeight: "20px",
+                      position: "absolute",
+                      top: `${topPx}px`,
+                      height: `${Math.max(heightPx, 22)}px`,
+                      left: `calc(${leftPct}% + ${gapPx}px)`,
+                      width: `calc(${colWidthPct}% - ${gapPx * 2}px)`,
+                      zIndex: 10 + col,
                     }}
                     className={cn(
-                      "absolute left-0.5 right-0.5 px-1 py-0.5 rounded text-xs border cursor-pointer hover:brightness-125 transition-all z-10 overflow-hidden",
+                      "px-1.5 py-0.5 rounded-md text-xs border cursor-pointer hover:brightness-125 hover:z-20 transition-all overflow-hidden shadow-sm",
                       EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600"
                     )}
-                    title={e.title}
+                    title={`${e.title} · ${formatTime(e.start_time)}${e.end_time ? ` – ${formatTime(e.end_time)}` : ""}`}
                   >
-                    <div className="font-medium truncate">{e.title}</div>
-                    <div className="opacity-70 text-[10px]">{formatTime(e.start_time)}</div>
+                    <div className="font-semibold truncate leading-tight">
+                      {EVENT_TYPE_EMOJI[e.event_type] ? `${EVENT_TYPE_EMOJI[e.event_type]} ` : ""}{e.title}
+                    </div>
+                    {heightPx > 28 && (
+                      <div className="opacity-75 text-[10px] leading-tight mt-0.5">
+                        {formatTime(e.start_time)}{e.end_time ? ` – ${formatTime(e.end_time)}` : ""}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+
+              {/* Current time indicator */}
+              {isToday(d) && (() => {
+                const now = new Date();
+                const nowMins = (getHours(now) - 6) * 60 + getMinutes(now);
+                if (nowMins < 0 || nowMins > totalGridPx) return null;
+                const topPx = (nowMins / 60) * HOUR_HEIGHT;
+                return (
+                  <div
+                    style={{ top: `${topPx}px` }}
+                    className="absolute left-0 right-0 z-20 pointer-events-none"
+                  >
+                    <div className="relative flex items-center">
+                      <div className="w-2 h-2 bg-red-500 rounded-full -ml-1 shrink-0" />
+                      <div className="flex-1 h-px bg-red-500/70" />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

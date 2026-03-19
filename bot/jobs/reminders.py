@@ -88,8 +88,8 @@ async def _check_calendar_reminders(
 ) -> None:
     """Send reminder for upcoming calendar events based on per-event lead time."""
     now_utc = now_berlin.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    # Query a generous window (0-75 min ahead) to catch both 15-min and 60-min reminders
-    window_end = now_utc + timedelta(minutes=75)
+    # Query window: 0-62 min ahead (catches both 15-min and 60-min lead times)
+    window_end = now_utc + timedelta(minutes=62)
 
     result = await session.execute(
         select(CalendarEvent).where(and_(

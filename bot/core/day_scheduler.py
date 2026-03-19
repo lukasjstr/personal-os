@@ -11,6 +11,17 @@ import json
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+_BERLIN = ZoneInfo("Europe/Berlin")
+_UTC = ZoneInfo("UTC")
+
+
+def _berlin_to_utc(dt: datetime) -> datetime:
+    """Convert naive Berlin-local datetime to naive UTC for DB storage."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(_UTC).replace(tzinfo=None)
+    return dt.replace(tzinfo=_BERLIN).astimezone(_UTC).replace(tzinfo=None)
 
 from openai import AsyncOpenAI
 from sqlalchemy import and_, delete, or_, select
@@ -190,7 +201,7 @@ Regeln:
             continue
 
         duration = max(15, int(entry.get("duration_minutes") or 60))
-        start_dt = datetime.combine(target_date, time(h, m))
+        start_dt = _berlin_to_utc(datetime.combine(target_date, time(h, m)))
         end_dt = start_dt + timedelta(minutes=duration)
 
         ref_id = entry.get("ref_id")
