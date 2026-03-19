@@ -28,7 +28,7 @@ import {
   differenceInMinutes,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, X, Save, Clock, Tag, FileText, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Save, Clock, Tag, FileText, Pencil, Trash2, RefreshCw } from "lucide-react";
 import type { CalendarEvent } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastContainer, useToast } from "@/components/Toast";
@@ -737,6 +737,13 @@ export default function CalendarPage() {
             className="text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0"
           >
             Heute
+          </button>
+          <button
+            onClick={() => mutate()}
+            className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
+            title="Kalender aktualisieren"
+          >
+            <RefreshCw size={13} />
           </button>
         </div>
         <button
