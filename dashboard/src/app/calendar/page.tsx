@@ -78,11 +78,95 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
 };
 
 const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
-const DAY_HOURS = Array.from({ length: 17 }, (_, i) => i + 6); // 06:00–22:00
 const HOUR_HEIGHT = 60; // px per hour
 
 type ViewMode = "month" | "week" | "day";
+
+// ─── Day Time Settings ────────────────────────────────────────────────────────
+
+interface DayTimeSettings {
+  wakeHour: number;   // first visible hour (e.g. 5 = 05:00)
+  sleepHour: number;  // last visible hour (e.g. 23 = 23:00)
+}
+
+const DEFAULT_SETTINGS: DayTimeSettings = { wakeHour: 6, sleepHour: 23 };
+
+function loadDaySettings(): DayTimeSettings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  try {
+    const raw = localStorage.getItem("cal_day_settings");
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {}
+  return DEFAULT_SETTINGS;
+}
+
+function saveDaySettings(s: DayTimeSettings) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("cal_day_settings", JSON.stringify(s));
+}
+
+function DaySettingsPanel({
+  settings,
+  onChange,
+  onClose,
+}: {
+  settings: DayTimeSettings;
+  onChange: (s: DayTimeSettings) => void;
+  onClose: () => void;
+}) {
+  const [wake, setWake] = useState(settings.wakeHour);
+  const [sleep, setSleep] = useState(settings.sleepHour);
+
+  const save = () => {
+    const s = { wakeHour: wake, sleepHour: Math.max(wake + 1, sleep) };
+    onChange(s);
+    saveDaySettings(s);
+    onClose();
+  };
+
+  return (
+    <div className="absolute top-full right-0 z-50 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-64">
+      <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">⚙️ Tageszeiten</h3>
+      <div className="space-y-3 mb-4">
+        <div>
+          <label className="text-zinc-400 text-xs mb-1.5 block">🌅 Aufstehen (erste Stunde)</label>
+          <div className="flex gap-1 flex-wrap">
+            {[4, 5, 6, 7, 8].map((h) => (
+              <button key={h} onClick={() => setWake(h)}
+                className={cn("px-2.5 py-1 rounded-lg text-xs border transition-colors",
+                  wake === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
+                {String(h).padStart(2, "0")}:00
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-zinc-400 text-xs mb-1.5 block">🌙 Schlafen gehen (letzte Stunde)</label>
+          <div className="flex gap-1 flex-wrap">
+            {[21, 22, 23, 24].map((h) => (
+              <button key={h} onClick={() => setSleep(h)}
+                className={cn("px-2.5 py-1 rounded-lg text-xs border transition-colors",
+                  sleep === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
+                {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="text-zinc-600 text-xs mb-3">
+        Sichtbarer Bereich: {String(wake).padStart(2,"0")}:00 – {sleep === 24 ? "00:00" : `${String(sleep).padStart(2,"0")}:00`}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium py-2 rounded-lg transition-colors">
+          Speichern
+        </button>
+        <button onClick={onClose} className="px-3 py-2 text-zinc-500 hover:text-white text-xs transition-colors">
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Event Detail Modal ───────────────────────────────────────────────────────
 
@@ -375,7 +459,7 @@ interface LayoutEvent {
   heightPx: number;
 }
 
-function layoutEvents(events: CalendarEvent[]): LayoutEvent[] {
+function layoutEvents(events: CalendarEvent[], wakeHour: number): LayoutEvent[] {
   // Sort by start time
   const sorted = [...events].sort(
     (a, b) => parseISO(a.start_time).getTime() - parseISO(b.start_time).getTime()
@@ -383,7 +467,7 @@ function layoutEvents(events: CalendarEvent[]): LayoutEvent[] {
 
   const getTopPx = (e: CalendarEvent) => {
     const dt = parseISO(e.start_time);
-    return Math.max(0, (getHours(dt) - 6) * HOUR_HEIGHT + (getMinutes(dt) / 60) * HOUR_HEIGHT);
+    return Math.max(0, (getHours(dt) - wakeHour) * HOUR_HEIGHT + (getMinutes(dt) / 60) * HOUR_HEIGHT);
   };
 
   const getHeightPx = (e: CalendarEvent) => {
@@ -445,13 +529,16 @@ function TimeGrid({
   days,
   events,
   onSelectEvent,
+  settings,
 }: {
   days: Date[];
   events: CalendarEvent[];
   onSelectEvent: (e: CalendarEvent) => void;
+  settings: DayTimeSettings;
 }) {
+  const dayHours = Array.from({ length: settings.sleepHour - settings.wakeHour + 1 }, (_, i) => i + settings.wakeHour);
   const dayWidth = `${100 / days.length}%`;
-  const totalGridPx = DAY_HOURS.length * HOUR_HEIGHT;
+  const totalGridPx = dayHours.length * HOUR_HEIGHT;
 
   // Group events by day
   const byDay = new Map<string, CalendarEvent[]>();
@@ -492,7 +579,7 @@ function TimeGrid({
       <div className="flex overflow-y-auto" style={{ maxHeight: "72vh" }}>
         {/* Hour labels */}
         <div className="w-14 shrink-0 border-r border-zinc-800 select-none">
-          {DAY_HOURS.map((h) => (
+          {dayHours.map((h) => (
             <div
               key={h}
               style={{ height: HOUR_HEIGHT }}
@@ -510,7 +597,7 @@ function TimeGrid({
           const key = format(d, "yyyy-MM-dd");
           const dayEvents = (byDay.get(key) ?? []).filter((e) => !e.all_day);
           const allDayEvents = (byDay.get(key) ?? []).filter((e) => e.all_day);
-          const laid = layoutEvents(dayEvents);
+          const laid = layoutEvents(dayEvents, settings.wakeHour);
 
           return (
             <div
@@ -522,7 +609,7 @@ function TimeGrid({
               )}
             >
               {/* Hour grid lines */}
-              {DAY_HOURS.map((h) => (
+              {dayHours.map((h) => (
                 <div
                   key={h}
                   style={{ height: HOUR_HEIGHT }}
@@ -587,7 +674,7 @@ function TimeGrid({
               {/* Current time indicator */}
               {isToday(d) && (() => {
                 const now = new Date();
-                const nowMins = (getHours(now) - 6) * 60 + getMinutes(now);
+                const nowMins = (getHours(now) - settings.wakeHour) * 60 + getMinutes(now);
                 if (nowMins < 0 || nowMins > totalGridPx) return null;
                 const topPx = (nowMins / 60) * HOUR_HEIGHT;
                 return (
@@ -616,10 +703,12 @@ function WeekView({
   events,
   weekStart,
   onSelectEvent,
+  settings,
 }: {
   events: CalendarEvent[];
   weekStart: Date;
   onSelectEvent: (e: CalendarEvent) => void;
+  settings: DayTimeSettings;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const weekEvents = events.filter((e) => {
@@ -627,7 +716,7 @@ function WeekView({
     return d >= days[0] && d <= addDays(days[6], 1);
   });
 
-  return <TimeGrid days={days} events={weekEvents} onSelectEvent={onSelectEvent} />;
+  return <TimeGrid days={days} events={weekEvents} onSelectEvent={onSelectEvent} settings={settings} />;
 }
 
 // ─── Day View ─────────────────────────────────────────────────────────────────
@@ -636,13 +725,15 @@ function DayView({
   events,
   currentDay,
   onSelectEvent,
+  settings,
 }: {
   events: CalendarEvent[];
   currentDay: Date;
   onSelectEvent: (e: CalendarEvent) => void;
+  settings: DayTimeSettings;
 }) {
   const dayEvents = events.filter((e) => isSameDay(parseISO(e.start_time), currentDay));
-  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} />;
+  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} settings={settings} />;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -654,6 +745,8 @@ export default function CalendarPage() {
   const [currentDay, setCurrentDay] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
+  const [daySettings, setDaySettings] = useState<DayTimeSettings>(loadDaySettings);
+  const [showSettings, setShowSettings] = useState(false);
   const { data, error, isLoading, mutate } = useCalendar(90, 30);
   const { toasts, addToast, dismissToast } = useToast();
 
@@ -779,6 +872,29 @@ export default function CalendarPage() {
         >
           <ChevronRight size={16} />
         </button>
+
+        {/* Day settings gear */}
+        {(view === "week" || view === "day") && (
+          <div className="relative">
+            <button
+              onClick={() => setShowSettings((v) => !v)}
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                showSettings ? "text-blue-400 bg-zinc-800" : "text-zinc-500 hover:text-white hover:bg-zinc-800"
+              )}
+              title="Tageszeiten einstellen"
+            >
+              ⚙️
+            </button>
+            {showSettings && (
+              <DaySettingsPanel
+                settings={daySettings}
+                onChange={setDaySettings}
+                onClose={() => setShowSettings(false)}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Category Legend */}
@@ -813,6 +929,7 @@ export default function CalendarPage() {
             events={events}
             weekStart={currentWeek}
             onSelectEvent={setActiveEvent}
+            settings={daySettings}
           />
         )}
         {view === "day" && (
@@ -820,6 +937,7 @@ export default function CalendarPage() {
             events={events}
             currentDay={currentDay}
             onSelectEvent={setActiveEvent}
+            settings={daySettings}
           />
         )}
       </div>
@@ -853,7 +971,9 @@ export default function CalendarPage() {
                   {!e.all_day && (
                     <div className="text-zinc-500 text-xs mt-0.5">
                       ⏰ {formatTime(e.start_time)}
-                      {e.end_time ? ` – ${formatTime(e.end_time)}` : ""}
+                      {e.end_time && e.event_type === "reminder"
+                        ? ` → erinnert an ${formatTime(e.end_time)}`
+                        : e.end_time ? ` – ${formatTime(e.end_time)}` : ""}
                     </div>
                   )}
                   {e.description && (
@@ -904,7 +1024,12 @@ export default function CalendarPage() {
                   <div className="text-zinc-500 text-xs mt-0.5">
                     📅 {formatDate(e.start_time)}
                     {!e.all_day && ` · ⏰ ${formatTime(e.start_time)}`}
-                    {e.end_time && !e.all_day && ` – ${formatTime(e.end_time)}`}
+                    {/* For reminders: end_time = the referenced event's time, show as "→ HH:MM" not a range */}
+                    {e.end_time && !e.all_day && e.event_type === "reminder"
+                      ? ` → erinnert an ${formatTime(e.end_time)}`
+                      : e.end_time && !e.all_day
+                      ? ` – ${formatTime(e.end_time)}`
+                      : null}
                   </div>
                   {e.description && (
                     <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {e.description}</div>
