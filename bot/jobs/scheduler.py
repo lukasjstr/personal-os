@@ -500,8 +500,44 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # ── Huawei Health Kit Sync (daily at 06:00) ──────────────────────────────
+    async def _run_huawei_sync():
+        """Sync yesterday's health data from Huawei Health Kit for all connected users."""
+        try:
+            from bot.core.huawei_health_kit import sync_huawei_health
+            from bot.database.connection import AsyncSessionLocal
+            from bot.database.models import User
+            from sqlalchemy import select
+
+            async with AsyncSessionLocal() as session:
+                users = (await session.execute(
+                    select(User).where(User.is_active.is_(True))
+                )).scalars().all()
+
+                for user in users:
+                    settings = user.settings or {}
+                    if not settings.get("huawei_refresh_token"):
+                        continue  # Not connected
+                    try:
+                        result = await sync_huawei_health(session, user)
+                        if result.get("stored"):
+                            _log.info("Huawei sync for user %d: %s", user.id, result["stored"])
+                    except Exception:
+                        _log.exception("Huawei sync failed for user %d", user.id)
+                await session.commit()
+        except Exception:
+            _log.exception("Huawei Health sync job failed")
+
+    _scheduler.add_job(
+        _run_huawei_sync,
+        CronTrigger(hour=6, minute=0, timezone="Europe/Berlin"),
+        id="huawei_health_sync",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 29 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 30 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "
@@ -509,6 +545,6 @@ def setup_scheduler() -> AsyncIOScheduler:
         "quarterly_review, learning_reminders, life_profile_update, "
         "action_engine_morning, action_engine_evening, action_engine_weekly, "
         "weekly_kickoff, realtime_interventions, prediction_engine, "
-        "adaptive_goals, nutrition_daily_summary"
+        "adaptive_goals, nutrition_daily_summary, huawei_health_sync"
     )
     return _scheduler

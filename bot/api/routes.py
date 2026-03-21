@@ -9556,3 +9556,124 @@ async def get_interventions(
     from bot.core.realtime_interventions import run_all_interventions
     interventions = await run_all_interventions(session, user.id)
     return {"interventions": interventions}
+
+
+# ─── Huawei Health Kit Integration ──────────────────────────────────────────
+
+
+@router.get("/health/huawei/auth-url")
+async def huawei_auth_url(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Get Huawei Health Kit OAuth2 authorization URL."""
+    from bot.core.huawei_health_kit import get_authorization_url
+    redirect_uri = "https://95.111.252.176/api/health/huawei/callback"
+    url = await get_authorization_url(user.id, redirect_uri)
+    return {"auth_url": url}
+
+
+@router.get("/health/huawei/callback")
+async def huawei_oauth_callback(
+    code: str,
+    state: str,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """OAuth2 callback — exchange code for tokens and store them."""
+    from bot.core.huawei_health_kit import exchange_code_for_tokens, store_huawei_tokens
+    redirect_uri = "https://95.111.252.176/api/health/huawei/callback"
+
+    user_id = int(state)
+    user = (await session.execute(
+        select(User).where(User.id == user_id)
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token_data = await exchange_code_for_tokens(code, redirect_uri)
+    await store_huawei_tokens(session, user, token_data)
+    await session.commit()
+
+    return {"ok": True, "message": "Huawei Health verbunden! Daten werden ab sofort synchronisiert."}
+
+
+@router.post("/health/huawei/sync")
+async def huawei_sync_now(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    body: dict = None,
+) -> dict:
+    """Manually trigger Huawei Health sync for a specific date or yesterday."""
+    from bot.core.huawei_health_kit import sync_huawei_health
+    target_date = None
+    if body and body.get("date"):
+        target_date = date.fromisoformat(body["date"])
+    result = await sync_huawei_health(session, user, target_date=target_date)
+    await session.commit()
+    return {"ok": True, **result}
+
+
+@router.post("/health/huawei/backfill")
+async def huawei_backfill(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    body: dict = None,
+) -> dict:
+    """Backfill last N days of Huawei Health data (default 30)."""
+    from bot.core.huawei_health_kit import backfill_huawei_health
+    days = int((body or {}).get("days", 30))
+    result = await backfill_huawei_health(session, user, days=min(days, 90))
+    await session.commit()
+    return {"ok": True, **result}
+
+
+@router.get("/health/huawei/status")
+async def huawei_status(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Check if Huawei Health Kit is connected."""
+    settings = user.settings or {}
+    connected = bool(settings.get("huawei_refresh_token"))
+    expires = settings.get("huawei_token_expires", "")
+    return {
+        "connected": connected,
+        "token_expires": expires,
+    }
+
+
+# ─── Privacy & Encryption Management ────────────────────────────────────────
+
+
+@router.post("/privacy/encrypt-existing")
+async def encrypt_existing_data(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Encrypt all existing sensitive data (contacts, finance) with field-level encryption."""
+    try:
+        from bot.core.encryption import encrypt_existing_contacts, encrypt_existing_finance
+        contacts_count = await encrypt_existing_contacts(session)
+        finance_count = await encrypt_existing_finance(session)
+        await session.commit()
+        return {
+            "ok": True,
+            "contacts_encrypted": contacts_count,
+            "transactions_encrypted": finance_count,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/privacy/status")
+async def privacy_status(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Show current privacy/encryption status."""
+    import os
+    encryption_configured = bool(os.getenv("ENCRYPTION_KEY"))
+    settings = user.settings or {}
+    return {
+        "encryption_enabled": encryption_configured,
+        "huawei_connected": bool(settings.get("huawei_refresh_token")),
+        "data_export_available": True,
+        "gdpr_delete_available": True,
+    }
