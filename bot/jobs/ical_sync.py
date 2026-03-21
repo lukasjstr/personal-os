@@ -77,7 +77,12 @@ async def sync_ical_for_user(session: AsyncSession, user: User) -> int:
                 )
             )
         )
-        existing = existing_result.scalar_one_or_none()
+        all_existing = existing_result.scalars().all()
+        # Clean up duplicates: keep first, delete rest
+        if len(all_existing) > 1:
+            for dup in all_existing[1:]:
+                await session.delete(dup)
+        existing = all_existing[0] if all_existing else None
 
         if existing:
             existing.title = summary
