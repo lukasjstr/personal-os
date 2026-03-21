@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_secret_key: str = "change-me"
 
+    # Encryption (optional — used for encrypting sensitive fields)
+    encryption_key: str = ""
+
     # Web Push (VAPID)
     vapid_private_key: str = ""
     vapid_public_key: str = ""
