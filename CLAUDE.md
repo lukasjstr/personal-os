@@ -10,8 +10,10 @@ Personal COO Telegram Bot + Web Dashboard
 - Deploy target: /opt/personal-os/
 
 ## After building locally
-- Copy files to server: `rsync -avz --exclude venv --exclude __pycache__ --exclude .git ./ root@95.111.252.176:/opt/personal-os/`
-- Then on server: set up venv, install deps, run migrations, start service
+- Copy files to server: `rsync -avz --exclude venv --exclude __pycache__ --exclude .git --exclude .env --exclude node_modules --exclude .next ./ root@95.111.252.176:/opt/personal-os/`
+- NEVER use `--delete` with rsync (it will wipe the server .env with secrets)
+- Then on server: `cd /opt/personal-os && source venv/bin/activate && alembic upgrade head && systemctl restart personal-os`
+- Dashboard: `cd /opt/personal-os/dashboard && npm run build && systemctl restart personal-os-dashboard`
 
 ## Tech Stack
 - Python 3.12, FastAPI, uvicorn

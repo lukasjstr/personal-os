@@ -56,7 +56,8 @@ const NAV_SECTIONS: NavSection[] = [
     title: "HEUTE",
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard, emoji: "🏠" },
-      { href: "/kanban", label: "Tagesplan", icon: Kanban, emoji: "📅" },
+      { href: "/calendar", label: "Kalender", icon: Calendar, emoji: "📅" },
+      { href: "/kanban", label: "Tagesplan", icon: Kanban, emoji: "📋" },
     ],
   },
   {
@@ -85,7 +86,6 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/fitness", label: "Fitness", icon: Dumbbell, emoji: "🏋️" },
       { href: "/supplements", label: "Supplements", icon: Zap, emoji: "💊" },
       { href: "/shopping", label: "Einkaufen", icon: ShoppingCart, emoji: "🛒", badge: "shopping_items" },
-      { href: "/calendar", label: "Kalender", icon: Calendar, emoji: "📊" },
     ],
   },
   {

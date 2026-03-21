@@ -135,6 +135,72 @@ function SessionCard({ session }: { session: { date: string; exercises: FitnessE
   );
 }
 
+function WarmupSection() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-gradient-to-r from-orange-600/15 to-amber-500/10 border border-orange-500/30 rounded-xl mb-6 overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 p-4 text-left hover:bg-white/5 transition-colors"
+      >
+        <span className="text-xl">🔥</span>
+        <div className="flex-1">
+          <div className="text-white font-semibold text-sm">Aufwärmen</div>
+          <div className="text-zinc-400 text-xs">~10 min · Cardio + Mobilität + Aktivierung</div>
+        </div>
+        <span className={cn("text-zinc-400 transition-transform text-xs", open && "rotate-180")}>▼</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-orange-900/30 pt-3">
+          {/* Cardio */}
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+              <span className="text-orange-300 text-xs font-semibold uppercase tracking-wide">Cardio · 5 min</span>
+            </div>
+            <div className="ml-4 text-zinc-300 text-sm">Laufband locker / Crosstrainer / Rudergerät</div>
+          </div>
+          {/* Mobilität */}
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="text-amber-300 text-xs font-semibold uppercase tracking-wide">Mobilität · 3 min</span>
+            </div>
+            <div className="ml-4 space-y-0.5">
+              {["Schulterkreisen (10× pro Richtung)", "Hüftkreisen (10× pro Richtung)", "Armkreisen (10× pro Richtung)", "Cat-Cow Stretch (8×)"].map((ex) => (
+                <div key={ex} className="text-zinc-300 text-sm flex items-center gap-2">
+                  <span className="text-zinc-600 text-xs">·</span> {ex}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Aktivierung */}
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+              <span className="text-yellow-300 text-xs font-semibold uppercase tracking-wide">Aktivierung · 2 min</span>
+            </div>
+            <div className="ml-4 space-y-0.5">
+              {["Scapula Pull-Ups (8×)", "Band Pull-Aparts (15×)", "Dead Hangs (20s)"].map((ex) => (
+                <div key={ex} className="text-zinc-300 text-sm flex items-center gap-2">
+                  <span className="text-zinc-600 text-xs">·</span> {ex}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Aufwärmsatz-Hinweis */}
+          <div className="bg-zinc-900/50 rounded-lg px-3 py-2 mt-2">
+            <div className="text-zinc-400 text-xs">
+              💡 <span className="text-zinc-300">Aufwärmsätze bei jeder Übung:</span> 1× leicht (50%) + 1× mittel (70%) vor Arbeitssätzen
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NextWorkoutBanner({ split }: { split: FitnessSplit }) {
   const exList = (split.exercises || []).slice(0, 5);
   const dayLabel = split.day_of_week !== null ? ` (${["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"][split.day_of_week]})` : "";
@@ -346,6 +412,9 @@ export default function FitnessPage() {
       )}
 
       {/* Next workout recommendation */}
+      {/* Warmup */}
+      <WarmupSection />
+
       {nextSplit && !fromProtocol && <NextWorkoutBanner split={nextSplit} />}
 
       {/* Workout Calendar Heatmap */}

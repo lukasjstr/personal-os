@@ -42,6 +42,36 @@
       ]
     }
   },
+  "warmup": {
+    "duration_min": 10,
+    "sections": [
+      {
+        "name": "Cardio",
+        "duration": "5 min",
+        "exercises": ["Laufband locker / Crosstrainer / Rudergerät"]
+      },
+      {
+        "name": "Mobilität",
+        "duration": "3 min",
+        "exercises": [
+          "Schulterkreisen (10× pro Richtung)",
+          "Hüftkreisen (10× pro Richtung)",
+          "Armkreisen (10× pro Richtung)",
+          "Cat-Cow Stretch (8×)"
+        ]
+      },
+      {
+        "name": "Aktivierung",
+        "duration": "2 min",
+        "exercises": [
+          "Scapula Pull-Ups (8×)",
+          "Band Pull-Aparts (15×)",
+          "Dead Hangs (20s)"
+        ]
+      }
+    ],
+    "note": "Aufwärmsätze bei jeder Übung: 1× leicht (50%) + 1× mittel (70%) vor Arbeitssätzen"
+  },
   "notes": [
     "Technik-Übungen (Muscle Up/Pike/Front Lever) kontrolliert und sauber priorisieren",
     "Volumen und Intensität an Schlaf/Stress/Regeneration anpassen"

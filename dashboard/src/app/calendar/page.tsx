@@ -41,6 +41,11 @@ const EVENT_TYPE_BADGE: Record<string, string> = {
   routine: "bg-purple-900/60 text-purple-300 border-purple-800/60",
   deadline: "bg-red-900/60 text-red-300 border-red-800/60",
   reminder: "bg-yellow-900/60 text-yellow-300 border-yellow-800/60",
+  wellness: "bg-teal-900/60 text-teal-300 border-teal-800/60",
+  fokus: "bg-indigo-900/60 text-indigo-300 border-indigo-800/60",
+  social: "bg-pink-900/60 text-pink-300 border-pink-800/60",
+  gesundheit: "bg-rose-900/60 text-rose-300 border-rose-800/60",
+  reise: "bg-sky-900/60 text-sky-300 border-sky-800/60",
   errand: "bg-orange-900/60 text-orange-300 border-orange-800/60",
 };
 
@@ -50,6 +55,11 @@ const EVENT_TYPE_DOT: Record<string, string> = {
   routine: "bg-purple-500",
   deadline: "bg-red-500",
   reminder: "bg-yellow-500",
+  wellness: "bg-teal-500",
+  fokus: "bg-indigo-500",
+  social: "bg-pink-500",
+  gesundheit: "bg-rose-500",
+  reise: "bg-sky-500",
   errand: "bg-orange-500",
 };
 
@@ -58,8 +68,13 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
   meeting: "Meeting",
   routine: "Routine",
   deadline: "Deadline",
-  reminder: "Reminder",
-  errand: "Errand",
+  reminder: "Erinnerung",
+  wellness: "Wellness",
+  fokus: "Fokuszeit",
+  social: "Social",
+  gesundheit: "Gesundheit",
+  reise: "Reise",
+  errand: "Besorgung",
 };
 
 const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -764,6 +779,22 @@ export default function CalendarPage() {
         >
           <ChevronRight size={16} />
         </button>
+      </div>
+
+      {/* Category Legend */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {Object.entries(EVENT_TYPE_LABEL).map(([type, label]) => (
+          <span
+            key={type}
+            className={cn(
+              "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border",
+              EVENT_TYPE_BADGE[type] ?? "bg-zinc-800/60 text-zinc-400 border-zinc-700"
+            )}
+          >
+            <span className={cn("w-2 h-2 rounded-full", EVENT_TYPE_DOT[type] ?? "bg-zinc-500")} />
+            {EVENT_TYPE_EMOJI[type] ?? "📌"} {label}
+          </span>
+        ))}
       </div>
 
       {/* Calendar View */}

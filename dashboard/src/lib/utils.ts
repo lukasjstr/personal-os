@@ -60,10 +60,16 @@ export const LOG_TYPE_EMOJI: Record<string, string> = {
 
 export const EVENT_TYPE_EMOJI: Record<string, string> = {
   training: "🏋️",
-  meeting: "📅",
+  meeting: "👥",
   routine: "🔄",
   deadline: "⏰",
   reminder: "🔔",
+  wellness: "🧖",
+  fokus: "🎯",
+  social: "🍻",
+  gesundheit: "🏥",
+  reise: "✈️",
+  errand: "🛒",
   default: "📌",
 };
 
