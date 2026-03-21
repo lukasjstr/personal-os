@@ -249,12 +249,19 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "log_food",
-            "description": "Loggt eine Mahlzeit oder Nahrungsaufnahme.",
+            "description": (
+                "Loggt eine Mahlzeit mit automatischer Nährstoffanalyse. "
+                "GPT schätzt Makros (Protein, Kohlenhydrate, Fett) und Mikros "
+                "(Natrium, Kalium, Koffein, Ballaststoffe, Zucker) aus der Beschreibung. "
+                "Löst automatisch Nährstoff-Alerts aus wenn Tageswerte kritisch sind "
+                "(z.B. zu viel Natrium, zu wenig Protein). "
+                "IMMER bei Essen/Trinken/Mahlzeiten nutzen."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "description": {"type": "string", "description": "Beschreibung der Mahlzeit"},
-                    "calories": {"type": "integer", "description": "Kalorien (optional)"},
+                    "description": {"type": "string", "description": "Beschreibung der Mahlzeit (so detailliert wie möglich für bessere Nährstoff-Schätzung)"},
+                    "calories": {"type": "integer", "description": "Kalorien wenn bekannt (optional — wird sonst geschätzt)"},
                     "meal_type": {
                         "type": "string",
                         "enum": ["breakfast", "lunch", "dinner", "snack"],
@@ -263,6 +270,43 @@ TOOLS: list[dict[str, Any]] = [
                     "notes": {"type": "string", "description": "Zusätzliche Notizen (optional)"},
                 },
                 "required": ["description"],
+            },
+        },
+    },
+    # ─── Nutrition Intelligence Tools ────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nutrition_summary",
+            "description": (
+                "Zeigt die heutige Nährstoffbilanz: Kalorien, Makros (Protein/Fett/Kohlenhydrate), "
+                "Mikros (Natrium, Kalium, Koffein), Alerts und historische Vergleiche. "
+                "Nutze wenn User fragt: 'Was habe ich heute gegessen?', 'Nährstoffbilanz', "
+                "'Wie viel Protein?', 'Natriumwert?', 'Kalorien heute?'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute)"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nutrition_insights",
+            "description": (
+                "Zeigt Ernährungs-Trends und Korrelationen über die letzten 30 Tage: "
+                "Welche Nährstoffe korrelieren mit Schlafqualität, Energie, Stimmung? "
+                "Nutze bei: 'Ernährungsanalyse', 'Warum schlafe ich schlecht?', "
+                "'Gibt es Zusammenhänge?', 'Ernährungs-Insights'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -721,6 +765,73 @@ TOOLS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["setting_key", "setting_value"],
+            },
+        },
+    },
+    # ─── Prediction Tools ────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_predictions",
+            "description": (
+                "Zeigt KI-Vorhersagen: Wann wird ein Ziel erreicht? Wie entwickelt sich das Budget? "
+                "Welche Routinen werden diese Woche wahrscheinlich geskippt? Wie ist die Energie morgen? "
+                "Nutze bei: 'Vorhersage', 'Wann erreiche ich mein Ziel?', 'Budget-Prognose', "
+                "'Wie sieht es nächste Woche aus?', 'Trend', 'Prognose'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    # ─── Adaptive Goal Tools ─────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_goal_adjustments",
+            "description": (
+                "Zeigt vorgeschlagene Ziel-Anpassungen: Ziele die zu ambitioniert oder zu leicht sind. "
+                "Das System erkennt automatisch wenn ein KR konstant verfehlt (<40%) oder übererfüllt (>95%) wird "
+                "und schlägt Anpassungen vor. Nutze bei: 'Sind meine Ziele realistisch?', "
+                "'Soll ich mein Ziel anpassen?', 'Ziel-Check', 'Progressive Overload'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "accept_goal_adjustment",
+            "description": "Akzeptiert eine vorgeschlagene Ziel-Anpassung und wendet sie an.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "adjustment_id": {"type": "integer", "description": "ID der Anpassung"},
+                },
+                "required": ["adjustment_id"],
+            },
+        },
+    },
+    # ─── Data Export Tool ────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "export_my_data",
+            "description": (
+                "Exportiert ALLE Nutzerdaten als JSON (DSGVO-konform). "
+                "Enthält: Ziele, Tasks, Routinen, Logs, Kalender, Finanzen, Kontakte, Ernährung, alles. "
+                "Nutze wenn User 'Daten exportieren', 'Meine Daten', 'DSGVO Export' sagt."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         },
     },

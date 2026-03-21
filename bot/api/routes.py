@@ -9264,3 +9264,295 @@ async def goal_onboarding_cancel(
     cancelled = await cancel_onboarding(session, user.id)
     await session.commit()
     return {"ok": True, "cancelled": cancelled}
+
+
+# ─── Nutrition Intelligence Routes ────────────────────────────────────────────
+
+
+@router.get("/nutrition/today")
+async def nutrition_today(
+    target_date: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get today's nutrition summary with macro/micro totals and alerts."""
+    from bot.core.nutrition_intelligence import get_daily_totals, check_nutrient_alerts, get_historical_rank
+    d = date.fromisoformat(target_date) if target_date else date.today()
+    totals = await get_daily_totals(session, user.id, d)
+    alerts = await check_nutrient_alerts(session, user.id, d)
+
+    # Add historical rank for notable nutrients
+    rankings = {}
+    for nutrient in ["sodium_mg", "caffeine_mg", "calories", "protein_g"]:
+        val = totals.get(nutrient, 0)
+        if val > 0:
+            rank = await get_historical_rank(session, user.id, nutrient, val)
+            if rank and rank.get("percentile", 0) >= 80:
+                rankings[nutrient] = rank
+
+    return {
+        "date": d.isoformat(),
+        "totals": totals,
+        "alerts": alerts,
+        "historical_rankings": rankings,
+    }
+
+
+@router.get("/nutrition/trends")
+async def nutrition_trends(
+    days: int = 30,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get nutrition trends over last N days."""
+    from bot.core.nutrition_intelligence import get_nutrition_trends
+    return await get_nutrition_trends(session, user.id, days)
+
+
+@router.get("/nutrition/correlations")
+async def nutrition_correlations(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get nutrition-health correlations (sodium↔sleep, caffeine↔sleep, etc.)."""
+    from bot.core.nutrition_intelligence import get_nutrient_correlations
+    correlations = await get_nutrient_correlations(session, user.id)
+    # Enrich with causal explanations
+    try:
+        from bot.core.causal_knowledge import enrich_insight
+        correlations = [enrich_insight(c) for c in correlations]
+    except Exception:
+        pass
+    return {"correlations": correlations}
+
+
+@router.get("/nutrition/entries")
+async def nutrition_entries(
+    target_date: Optional[str] = None,
+    days: int = 7,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get nutrition entry history."""
+    from bot.database.models import NutritionEntry
+    d = date.fromisoformat(target_date) if target_date else date.today()
+    since = d - timedelta(days=days)
+    result = await session.execute(
+        select(NutritionEntry)
+        .where(and_(NutritionEntry.user_id == user.id, NutritionEntry.date >= since))
+        .order_by(NutritionEntry.date.desc(), NutritionEntry.created_at.desc())
+    )
+    entries = result.scalars().all()
+    return {
+        "entries": [
+            {
+                "id": e.id, "date": e.date.isoformat(), "food_description": e.food_description,
+                "meal_type": e.meal_type, "calories": e.calories, "protein_g": e.protein_g,
+                "carbs_g": e.carbs_g, "fat_g": e.fat_g, "fiber_g": e.fiber_g,
+                "sugar_g": e.sugar_g, "sodium_mg": e.sodium_mg, "potassium_mg": e.potassium_mg,
+                "caffeine_mg": e.caffeine_mg, "water_ml": e.water_ml,
+            }
+            for e in entries
+        ],
+    }
+
+
+@router.post("/nutrition/targets")
+async def set_nutrition_targets(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Initialize default nutrient targets for the user."""
+    from bot.core.nutrition_intelligence import set_default_targets
+    targets = await set_default_targets(session, user.id)
+    await session.commit()
+    return {"targets": [{"nutrient": t.nutrient, "min": t.target_min, "max": t.target_max, "unit": t.unit} for t in targets]}
+
+
+# ─── Prediction Routes ────────────────────────────────────────────────────────
+
+
+@router.get("/predictions")
+async def get_predictions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get all active predictions (goal completion, budget, routines, energy)."""
+    from bot.database.models import Prediction
+    result = await session.execute(
+        select(Prediction)
+        .where(and_(Prediction.user_id == user.id, Prediction.is_active == True))
+        .order_by(Prediction.created_at.desc())
+    )
+    preds = result.scalars().all()
+    return {
+        "predictions": [
+            {
+                "id": p.id, "type": p.prediction_type, "entity_type": p.entity_type,
+                "entity_id": p.entity_id, "predicted_value": p.predicted_value,
+                "predicted_date": p.predicted_date.isoformat() if p.predicted_date else None,
+                "confidence": p.confidence, "explanation": p.explanation,
+                "data": p.data, "created_at": p.created_at.isoformat(),
+            }
+            for p in preds
+        ],
+    }
+
+
+@router.post("/predictions/refresh")
+async def refresh_predictions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Manually trigger prediction engine."""
+    from bot.core.prediction_engine import run_all_predictions
+    result = await run_all_predictions(session, user.id)
+    await session.commit()
+    return result
+
+
+# ─── Adaptive Goal Routes ─────────────────────────────────────────────────────
+
+
+@router.get("/goal-adjustments")
+async def get_goal_adjustments(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get suggested goal adjustments."""
+    from bot.database.models import GoalAdjustment
+    result = await session.execute(
+        select(GoalAdjustment)
+        .where(and_(GoalAdjustment.user_id == user.id, GoalAdjustment.status == "suggested"))
+        .order_by(GoalAdjustment.created_at.desc())
+    )
+    adjustments = result.scalars().all()
+    return {
+        "adjustments": [
+            {
+                "id": a.id, "entity_type": a.entity_type, "entity_id": a.entity_id,
+                "adjustment_type": a.adjustment_type, "old_value": a.old_value,
+                "new_value": a.new_value, "reason": a.reason, "status": a.status,
+                "created_at": a.created_at.isoformat(),
+            }
+            for a in adjustments
+        ],
+    }
+
+
+@router.post("/goal-adjustments/{adjustment_id}/accept")
+async def accept_adjustment(
+    adjustment_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Accept a goal adjustment suggestion."""
+    from bot.core.adaptive_goals import accept_adjustment
+    result = await accept_adjustment(session, adjustment_id)
+    await session.commit()
+    return result
+
+
+@router.post("/goal-adjustments/{adjustment_id}/reject")
+async def reject_adjustment(
+    adjustment_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Reject a goal adjustment suggestion."""
+    from bot.core.adaptive_goals import reject_adjustment
+    result = await reject_adjustment(session, adjustment_id)
+    await session.commit()
+    return result
+
+
+@router.post("/goal-adjustments/analyze")
+async def analyze_adjustments(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Run adaptive goal analysis manually."""
+    from bot.core.adaptive_goals import run_adaptive_analysis
+    result = await run_adaptive_analysis(session, user.id)
+    await session.commit()
+    return result
+
+
+# ─── Data Export Routes ───────────────────────────────────────────────────────
+
+
+@router.get("/export")
+async def export_data(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Export all user data as JSON (GDPR Article 20)."""
+    from bot.core.data_export import export_user_data
+    data = await export_user_data(session, user.id)
+    return JSONResponse(content=data, headers={
+        "Content-Disposition": f"attachment; filename=personal-os-export-{date.today().isoformat()}.json",
+    })
+
+
+# ─── Causal Health Insights ──────────────────────────────────────────────────
+
+
+@router.get("/health/causal-insights")
+async def causal_health_insights(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get causal health insights based on today's data."""
+    try:
+        from bot.core.causal_knowledge import get_relevant_explanations, get_daily_health_tips
+        from bot.core.nutrition_intelligence import get_daily_totals
+
+        today_nutrition = await get_daily_totals(session, user.id, date.today())
+
+        # Get sleep/workout/water from logs
+        today_start = datetime.combine(date.today(), datetime.min.time())
+        sleep_log = (await session.execute(
+            select(Log).where(and_(
+                Log.user_id == user.id, Log.log_type == "sleep",
+                Log.logged_at >= today_start - timedelta(days=1),
+            )).order_by(Log.logged_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        sleep_hours = sleep_log.data.get("hours") if sleep_log else None
+
+        workout_log = (await session.execute(
+            select(Log).where(and_(
+                Log.user_id == user.id, Log.log_type == "workout",
+                Log.logged_at >= today_start,
+            )).limit(1)
+        )).scalar_one_or_none()
+        workout_done = workout_log is not None
+
+        water_logs = (await session.execute(
+            select(Log).where(and_(
+                Log.user_id == user.id, Log.log_type == "water",
+                Log.logged_at >= today_start,
+            ))
+        )).scalars().all()
+        water_liters = sum(l.data.get("amount", 0) for l in water_logs)
+
+        health_data = {"sleep_hours": sleep_hours, "workout_done": workout_done, "water_liters": water_liters}
+        explanations = get_relevant_explanations(today_nutrition, health_data)
+        tips = get_daily_health_tips(today_nutrition, sleep_hours, workout_done, water_liters)
+
+        return {"explanations": explanations, "daily_tips": tips}
+    except Exception as e:
+        return {"explanations": [], "daily_tips": [], "error": str(e)}
+
+
+# ─── Real-time Interventions ────────────────────────────────────────────────
+
+
+@router.get("/interventions")
+async def get_interventions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get currently applicable real-time interventions."""
+    from bot.core.realtime_interventions import run_all_interventions
+    interventions = await run_all_interventions(session, user.id)
+    return {"interventions": interventions}

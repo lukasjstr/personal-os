@@ -300,6 +300,48 @@ async def build_context(session: AsyncSession, user: User) -> str:
     except Exception:
         pass
 
+    # ─── Nutrition Today ─────────────────────────────────────────────────────
+    try:
+        from bot.core.nutrition_intelligence import get_daily_totals, check_nutrient_alerts
+        nutrition = await get_daily_totals(session, user.id, today)
+        if nutrition and any(v > 0 for v in nutrition.values()):
+            lines.append("=== ERNÄHRUNG HEUTE ===")
+            cal = nutrition.get("calories", 0)
+            pro = nutrition.get("protein_g", 0)
+            carb = nutrition.get("carbs_g", 0)
+            fat = nutrition.get("fat_g", 0)
+            sod = nutrition.get("sodium_mg", 0)
+            caf = nutrition.get("caffeine_mg", 0)
+            lines.append(f"  Kalorien: {cal:.0f} | Protein: {pro:.0f}g | Kohlenhydrate: {carb:.0f}g | Fett: {fat:.0f}g")
+            if sod > 0:
+                lines.append(f"  Natrium: {sod:.0f}mg | Koffein: {caf:.0f}mg")
+            alerts = await check_nutrient_alerts(session, user.id, today)
+            for alert in alerts[:3]:
+                lines.append(f"  ⚠️ {alert.get('message', '')}")
+            lines.append("")
+    except Exception:
+        pass
+
+    # ─── Predictions ──────────────────────────────────────────────────────────
+    try:
+        from bot.core.prediction_engine import get_prediction_summary
+        pred_ctx = await get_prediction_summary(session, user.id)
+        if pred_ctx:
+            lines.append(pred_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
+    # ─── Adaptive Goal Suggestions ────────────────────────────────────────────
+    try:
+        from bot.core.adaptive_goals import get_adaptive_summary
+        adapt_ctx = await get_adaptive_summary(session, user.id)
+        if adapt_ctx:
+            lines.append(adapt_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
     # ─── Pending Prompt State ─────────────────────────────────────────────────
     try:
         from bot.core.smart_detector import get_pending_prompt

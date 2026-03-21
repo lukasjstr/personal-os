@@ -255,7 +255,46 @@ async def _execute_tool(
 
         elif name == "log_food":
             log = await log_food(session, user.id, **args)
-            return f"🍽️ Mahlzeit geloggt: {args['description']}"
+            # ─── Nutrition Intelligence: estimate nutrients + check alerts ─────
+            nutrition_info = ""
+            try:
+                from bot.core.nutrition_intelligence import estimate_nutrients, log_nutrition, get_daily_totals, check_nutrient_alerts, get_historical_rank
+                nutrients = await estimate_nutrients(args["description"])
+                if nutrients:
+                    entry = await log_nutrition(
+                        session, user.id, log.id,
+                        args["description"], args.get("meal_type"),
+                        nutrients,
+                    )
+                    # Show macro summary
+                    cal = nutrients.get("calories", 0)
+                    pro = nutrients.get("protein_g", 0)
+                    fat = nutrients.get("fat_g", 0)
+                    carb = nutrients.get("carbs_g", 0)
+                    nutrition_info = f"\n📊 Geschätzt: {cal:.0f} kcal | {pro:.0f}g Protein | {fat:.0f}g Fett | {carb:.0f}g KH"
+
+                    # Check for alerts
+                    today = date.today()
+                    alerts = await check_nutrient_alerts(session, user.id, today)
+                    if alerts:
+                        nutrition_info += "\n"
+                        for alert in alerts[:3]:
+                            nutrition_info += f"\n⚠️ {alert.get('message', '')}"
+                            if alert.get("explanation"):
+                                nutrition_info += f"\n   💡 {alert['explanation']}"
+
+                    # Check historical rankings for notable nutrients
+                    totals = await get_daily_totals(session, user.id, today)
+                    for nutrient_key in ["sodium_mg", "caffeine_mg"]:
+                        val = totals.get(nutrient_key, 0)
+                        if val > 0:
+                            rank = await get_historical_rank(session, user.id, nutrient_key, val)
+                            if rank and rank.get("percentile", 0) >= 90:
+                                nutrition_info += f"\n🏆 {rank.get('message', '')}"
+            except Exception as e:
+                logger.warning("Nutrition estimation failed: %s", e)
+
+            return f"🍽️ Mahlzeit geloggt: {args['description']}{nutrition_info}"
 
         # ─── Routines ─────────────────────────────────────────────────────────
         elif name == "create_routine":
@@ -698,6 +737,99 @@ async def _execute_tool(
             await update_setting(session, user.id, key, value)
             status = "✅ AN" if value is True else "❌ AUS" if value is False else str(value)
             return f"⚙️ Einstellung *{key}* → {status}"
+
+        # ─── Nutrition Intelligence ──────────────────────────────────────────
+        elif name == "get_nutrition_summary":
+            from bot.core.nutrition_intelligence import get_daily_totals, check_nutrient_alerts, get_historical_rank
+            target = date.fromisoformat(args["date"]) if args.get("date") else date.today()
+            totals = await get_daily_totals(session, user.id, target)
+            if not totals or all(v == 0 for v in totals.values()):
+                return "Keine Ernährungsdaten für diesen Tag vorhanden."
+            alerts = await check_nutrient_alerts(session, user.id, target)
+            lines = [f"🍽️ *Ernährungsbilanz {target.strftime('%d.%m.%Y')}*\n"]
+            lines.append(f"Kalorien: {totals.get('calories', 0):.0f}")
+            lines.append(f"Protein: {totals.get('protein_g', 0):.0f}g | Fett: {totals.get('fat_g', 0):.0f}g | KH: {totals.get('carbs_g', 0):.0f}g")
+            lines.append(f"Ballaststoffe: {totals.get('fiber_g', 0):.0f}g | Zucker: {totals.get('sugar_g', 0):.0f}g")
+            sod = totals.get("sodium_mg", 0)
+            pot = totals.get("potassium_mg", 0)
+            caf = totals.get("caffeine_mg", 0)
+            if sod > 0 or pot > 0 or caf > 0:
+                lines.append(f"Natrium: {sod:.0f}mg | Kalium: {pot:.0f}mg | Koffein: {caf:.0f}mg")
+            if alerts:
+                lines.append("\n⚠️ *Hinweise:*")
+                for a in alerts[:5]:
+                    lines.append(f"• {a.get('message', '')}")
+                    if a.get("explanation"):
+                        lines.append(f"  💡 {a['explanation']}")
+            return "\n".join(lines)
+
+        elif name == "get_nutrition_insights":
+            from bot.core.nutrition_intelligence import get_nutrition_trends, get_nutrient_correlations
+            trends = await get_nutrition_trends(session, user.id, 30)
+            correlations = await get_nutrient_correlations(session, user.id)
+            try:
+                from bot.core.causal_knowledge import enrich_insight
+                correlations = [enrich_insight(c) for c in correlations]
+            except Exception:
+                pass
+            lines = ["📊 *Ernährungs-Insights (30 Tage)*\n"]
+            avgs = trends.get("daily_averages", {})
+            if avgs:
+                lines.append(f"Ø Kalorien: {avgs.get('calories', 0):.0f} | Ø Protein: {avgs.get('protein_g', 0):.0f}g")
+                lines.append(f"Ø Natrium: {avgs.get('sodium_mg', 0):.0f}mg | Ø Koffein: {avgs.get('caffeine_mg', 0):.0f}mg")
+            if correlations:
+                lines.append("\n🔗 *Korrelationen:*")
+                for c in correlations[:5]:
+                    lines.append(f"• {c.get('title', '')}: {c.get('description', '')}")
+                    if c.get("mechanism"):
+                        lines.append(f"  🧬 {c['mechanism'][:120]}")
+            return "\n".join(lines)
+
+        # ─── Predictions ─────────────────────────────────────────────────────
+        elif name == "get_predictions":
+            from bot.core.prediction_engine import run_all_predictions
+            result = await run_all_predictions(session, user.id)
+            preds = result.get("predictions", [])
+            if not preds:
+                return "Noch nicht genug Daten für Vorhersagen. Logge weiter — nach 2 Wochen gibt es erste Prognosen."
+            lines = ["🔮 *Vorhersagen & Prognosen*\n"]
+            for p in preds[:8]:
+                lines.append(f"• {p.get('explanation', p.get('prediction_type', ''))}")
+            return "\n".join(lines)
+
+        # ─── Adaptive Goals ──────────────────────────────────────────────────
+        elif name == "get_goal_adjustments":
+            from bot.core.adaptive_goals import run_adaptive_analysis
+            result = await run_adaptive_analysis(session, user.id)
+            reductions = result.get("reductions", [])
+            increases = result.get("increases", [])
+            overloads = result.get("progressive_overloads", [])
+            if not reductions and not increases and not overloads:
+                return "Keine Anpassungen nötig — deine Ziele sind gut kalibriert. 👌"
+            lines = ["🎯 *Ziel-Anpassungsvorschläge*\n"]
+            for r in reductions:
+                lines.append(f"⬇️ *{r.get('title', '')}*: {r.get('old_value', '')} → {r.get('new_value', '')} ({r.get('reason', '')})")
+            for i in increases:
+                lines.append(f"⬆️ *{i.get('title', '')}*: {i.get('old_value', '')} → {i.get('new_value', '')} ({i.get('reason', '')})")
+            for o in overloads:
+                lines.append(f"💪 *{o.get('title', '')}*: {o.get('message', '')}")
+            return "\n".join(lines)
+
+        elif name == "accept_goal_adjustment":
+            from bot.core.adaptive_goals import accept_adjustment
+            result = await accept_adjustment(session, args["adjustment_id"])
+            return f"✅ {result.get('message', 'Anpassung angewendet.')}"
+
+        # ─── Data Export ─────────────────────────────────────────────────────
+        elif name == "export_my_data":
+            from bot.core.data_export import export_user_data, export_to_json
+            data = await export_user_data(session, user.id)
+            sections = len(data) - 2  # minus export_version and exported_at
+            total_records = sum(len(v) for v in data.values() if isinstance(v, list))
+            return (
+                f"📦 Datenexport bereit: {sections} Kategorien, {total_records} Datensätze.\n"
+                f"Download über Dashboard: /api/export"
+            )
 
         return f"Unbekanntes Tool: {name}"
 

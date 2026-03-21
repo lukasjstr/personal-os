@@ -83,6 +83,10 @@ class User(Base):
     life_profile: Mapped[Optional["LifeProfile"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     learning_items: Mapped[list["LearningItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     learning_reviews: Mapped[list["LearningReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    nutrition_entries: Mapped[list["NutritionEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    nutrient_targets: Mapped[list["NutrientTarget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    predictions: Mapped[list["Prediction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    goal_adjustments: Mapped[list["GoalAdjustment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -1144,3 +1148,106 @@ class PushSubscription(Base):
 
     def __repr__(self) -> str:
         return f"<PushSubscription id={self.id} user_id={self.user_id}>"
+
+
+# ─── Nutrition Intelligence ───────────────────────────────────────────────────
+
+class NutritionEntry(Base):
+    """Per-meal nutrient breakdown estimated by GPT-4o."""
+    __tablename__ = "nutrition_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    log_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("logs.id", ondelete="SET NULL"), index=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    food_description: Mapped[str] = mapped_column(Text, nullable=False)
+    meal_type: Mapped[Optional[str]] = mapped_column(String(20))  # breakfast, lunch, dinner, snack
+    calories: Mapped[Optional[float]] = mapped_column(Float)
+    protein_g: Mapped[Optional[float]] = mapped_column(Float)
+    carbs_g: Mapped[Optional[float]] = mapped_column(Float)
+    fat_g: Mapped[Optional[float]] = mapped_column(Float)
+    fiber_g: Mapped[Optional[float]] = mapped_column(Float)
+    sugar_g: Mapped[Optional[float]] = mapped_column(Float)
+    sodium_mg: Mapped[Optional[float]] = mapped_column(Float)
+    potassium_mg: Mapped[Optional[float]] = mapped_column(Float)
+    caffeine_mg: Mapped[Optional[float]] = mapped_column(Float)
+    water_ml: Mapped[Optional[float]] = mapped_column(Float)
+    additional_nutrients: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="nutrition_entries")
+
+    def __repr__(self) -> str:
+        return f"<NutritionEntry id={self.id} date={self.date} food={self.food_description[:30]!r}>"
+
+
+class NutrientTarget(Base):
+    """Daily nutrient targets (min/max) per user."""
+    __tablename__ = "nutrient_targets"
+    __table_args__ = (
+        UniqueConstraint("user_id", "nutrient", name="uq_nutrient_target_user_nutrient"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    nutrient: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_min: Mapped[Optional[float]] = mapped_column(Float)
+    target_max: Mapped[Optional[float]] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False, default="g")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="nutrient_targets")
+
+    def __repr__(self) -> str:
+        return f"<NutrientTarget id={self.id} nutrient={self.nutrient}>"
+
+
+# ─── Predictions ─────────────────────────────────────────────────────────────
+
+class Prediction(Base):
+    """Predictive analytics results — goal completion, budget, routine, energy."""
+    __tablename__ = "predictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    prediction_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    entity_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    entity_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    predicted_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    predicted_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="predictions")
+
+    def __repr__(self) -> str:
+        return f"<Prediction id={self.id} type={self.prediction_type} confidence={self.confidence}>"
+
+
+# ─── Adaptive Goal Adjustment ─────────────────────────────────────────────────
+
+class GoalAdjustment(Base):
+    """Suggested or applied adjustments to KR targets or routine parameters."""
+    __tablename__ = "goal_adjustments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)  # key_result, routine
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    adjustment_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # target_reduced, target_increased, frequency_changed, progressive_overload
+    old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="suggested", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    user: Mapped["User"] = relationship(back_populates="goal_adjustments")
+
+    def __repr__(self) -> str:
+        return f"<GoalAdjustment id={self.id} type={self.adjustment_type} status={self.status}>"

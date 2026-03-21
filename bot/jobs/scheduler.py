@@ -352,14 +352,163 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # ── Realtime Interventions: every 60 minutes during active hours ────────
+    async def _run_realtime_interventions():
+        try:
+            from bot.database.connection import get_session
+            from bot.database.models import User
+            from bot.core.realtime_interventions import run_all_interventions, format_intervention_message
+            from bot.telegram.sender import send_message
+            from sqlalchemy import select
+            from zoneinfo import ZoneInfo
+            from datetime import datetime as _dt
+            now_berlin = _dt.now(tz=ZoneInfo("Europe/Berlin"))
+            if not (8 <= now_berlin.hour <= 22):
+                return
+            async with get_session() as session:
+                users = (await session.execute(
+                    select(User).where(User.is_active == True)  # noqa: E712
+                )).scalars().all()
+                for user in users:
+                    try:
+                        interventions = await run_all_interventions(session, user.id)
+                        for intervention in interventions[:2]:
+                            msg = format_intervention_message(intervention)
+                            await send_message(user.telegram_id, msg)
+                    except Exception:
+                        _log.exception("Intervention failed for user %d", user.id)
+        except Exception:
+            _log.exception("Realtime interventions job failed")
+
+    _scheduler.add_job(
+        _run_realtime_interventions,
+        "interval",
+        minutes=60,
+        id="realtime_interventions",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # ── Prediction Engine: daily at 05:30 ─────────────────────────────────
+    async def _run_predictions():
+        try:
+            from bot.database.connection import get_session
+            from bot.database.models import User
+            from bot.core.prediction_engine import run_all_predictions
+            from sqlalchemy import select
+            async with get_session() as session:
+                users = (await session.execute(
+                    select(User).where(User.is_active == True)  # noqa: E712
+                )).scalars().all()
+                for user in users:
+                    try:
+                        await run_all_predictions(session, user.id)
+                        await session.commit()
+                        _log.info("Predictions updated for user %d", user.id)
+                    except Exception:
+                        _log.exception("Prediction engine failed for user %d", user.id)
+        except Exception:
+            _log.exception("Prediction engine job failed")
+
+    _scheduler.add_job(
+        _run_predictions,
+        CronTrigger(hour=5, minute=30, timezone="Europe/Berlin"),
+        id="prediction_engine",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # ── Adaptive Goals: Sundays at 09:30 ──────────────────────────────────
+    async def _run_adaptive_goals():
+        try:
+            from bot.database.connection import get_session
+            from bot.database.models import User
+            from bot.core.adaptive_goals import run_adaptive_analysis
+            from bot.telegram.sender import send_message
+            from sqlalchemy import select
+            async with get_session() as session:
+                users = (await session.execute(
+                    select(User).where(User.is_active == True)  # noqa: E712
+                )).scalars().all()
+                for user in users:
+                    try:
+                        result = await run_adaptive_analysis(session, user.id)
+                        await session.commit()
+                        total = len(result.get("reductions", [])) + len(result.get("increases", [])) + len(result.get("progressive_overloads", []))
+                        if total > 0:
+                            await send_message(
+                                user.telegram_id,
+                                f"🎯 *Ziel-Check abgeschlossen*\n\n"
+                                f"{total} Anpassungsvorschläge für dich. "
+                                f"Schreib 'Ziel-Check' um sie zu sehen."
+                            )
+                    except Exception:
+                        _log.exception("Adaptive goals failed for user %d", user.id)
+        except Exception:
+            _log.exception("Adaptive goals job failed")
+
+    _scheduler.add_job(
+        _run_adaptive_goals,
+        CronTrigger(hour=9, minute=30, day_of_week="sun", timezone="Europe/Berlin"),
+        id="adaptive_goals",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # ── Nutrition Daily Summary: daily at 21:45 ───────────────────────────
+    async def _run_nutrition_summary():
+        try:
+            from bot.database.connection import get_session
+            from bot.database.models import User
+            from bot.core.nutrition_intelligence import get_daily_totals, check_nutrient_alerts
+            from bot.core.causal_knowledge import get_daily_health_tips
+            from bot.telegram.sender import send_message
+            from sqlalchemy import select
+            from datetime import date as _date
+            async with get_session() as session:
+                users = (await session.execute(
+                    select(User).where(User.is_active == True)  # noqa: E712
+                )).scalars().all()
+                for user in users:
+                    try:
+                        today = _date.today()
+                        totals = await get_daily_totals(session, user.id, today)
+                        if not totals or totals.get("calories", 0) == 0:
+                            continue
+                        alerts = await check_nutrient_alerts(session, user.id, today)
+                        lines = ["🍽️ *Ernährungs-Tagesbilanz*\n"]
+                        lines.append(f"Kalorien: {totals.get('calories', 0):.0f}")
+                        lines.append(f"Protein: {totals.get('protein_g', 0):.0f}g | Fett: {totals.get('fat_g', 0):.0f}g | KH: {totals.get('carbs_g', 0):.0f}g")
+                        sod = totals.get("sodium_mg", 0)
+                        if sod > 0:
+                            lines.append(f"Natrium: {sod:.0f}mg | Koffein: {totals.get('caffeine_mg', 0):.0f}mg")
+                        if alerts:
+                            lines.append("\n⚠️ *Hinweise:*")
+                            for a in alerts[:3]:
+                                lines.append(f"• {a.get('message', '')}")
+                        await send_message(user.telegram_id, "\n".join(lines))
+                    except Exception:
+                        _log.exception("Nutrition summary failed for user %d", user.id)
+        except Exception:
+            _log.exception("Nutrition summary job failed")
+
+    _scheduler.add_job(
+        _run_nutrition_summary,
+        CronTrigger(hour=21, minute=45, timezone="Europe/Berlin"),
+        id="nutrition_daily_summary",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 25 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 29 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "
         "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
         "quarterly_review, learning_reminders, life_profile_update, "
         "action_engine_morning, action_engine_evening, action_engine_weekly, "
-        "weekly_kickoff"
+        "weekly_kickoff, realtime_interventions, prediction_engine, "
+        "adaptive_goals, nutrition_daily_summary"
     )
     return _scheduler
