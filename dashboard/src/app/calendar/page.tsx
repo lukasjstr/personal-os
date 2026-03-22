@@ -20,6 +20,7 @@ import {
   addDays,
   subDays,
   isToday,
+  isTomorrow,
   isSameDay,
   startOfWeek,
   endOfWeek,
@@ -795,7 +796,25 @@ export default function CalendarPage() {
 
   const events = data?.events ?? [];
   const now = new Date();
-  const upcoming = events.filter((e) => parseISO(e.start_time) >= now).slice(0, 8);
+  // Include events from start of today so past-today events appear greyed out
+  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+  const upcoming = events
+    .filter((e) => parseISO(e.start_time) >= startOfToday)
+    .slice(0, 30);
+
+  // Group upcoming by day
+  const upcomingByDay = upcoming.reduce<{ label: string; date: Date; events: typeof upcoming }[]>((acc, e) => {
+    const d = parseISO(e.start_time);
+    const key = format(d, "yyyy-MM-dd");
+    let group = acc.find((g) => format(g.date, "yyyy-MM-dd") === key);
+    if (!group) {
+      const label = isToday(d) ? "Heute" : isTomorrow(d) ? "Morgen" : format(d, "EEEE, dd. MMM", { locale: de });
+      group = { label, date: d, events: [] };
+      acc.push(group);
+    }
+    group.events.push(e);
+    return acc;
+  }, []);
   const monthEvents = events.filter((e) => isSameMonth(parseISO(e.start_time), currentMonth));
 
   const selectedDayEvents = selectedDay
@@ -1004,42 +1023,69 @@ export default function CalendarPage() {
         <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
           <span>⏰</span> Bevorstehende Events
         </h2>
-        {upcoming.length === 0 ? (
+        {upcomingByDay.length === 0 ? (
           <EmptyState emoji="📅" message="Keine bevorstehenden Events" />
         ) : (
-          <div>
-            {upcoming.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => setActiveEvent(e)}
-                className="w-full flex items-start gap-4 py-3 border-b border-zinc-800 last:border-0 text-left hover:bg-zinc-800/30 rounded-lg px-2 transition-colors"
-              >
-                <div
-                  className={cn(
-                    "w-2 h-2 rounded-full mt-1.5 shrink-0",
-                    EVENT_TYPE_DOT[e.event_type] ?? "bg-zinc-500"
-                  )}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-white text-sm font-medium">{e.title}</span>
-                    <span
-                      className={cn(
-                        "text-xs px-1.5 py-0.5 rounded border",
-                        EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600"
-                      )}
-                    >
-                      {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
-                    </span>
-                  </div>
-                  <div className="text-zinc-500 text-xs mt-0.5">
-                    📅 {formatDate(e.start_time)}{!e.all_day && ` · ⏰ ${eventTimeStr(e)}`}
-                  </div>
-                  {e.description && (
-                    <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {e.description}</div>
-                  )}
+          <div className="space-y-4">
+            {upcomingByDay.map((group) => (
+              <div key={group.label}>
+                {/* Day header */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={cn(
+                    "text-xs font-semibold uppercase tracking-wider",
+                    isToday(group.date) ? "text-blue-400" : "text-zinc-500"
+                  )}>
+                    {group.label}
+                  </span>
+                  <div className="flex-1 h-px bg-zinc-800" />
                 </div>
-              </button>
+                {/* Events for this day */}
+                <div className="space-y-0.5">
+                  {group.events.map((e) => {
+                    const isPast = parseISO(e.start_time) < now;
+                    const minsUntil = differenceInMinutes(parseISO(e.start_time), now);
+                    const isImminent = minsUntil >= 0 && minsUntil <= 60;
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => setActiveEvent(e)}
+                        className={cn(
+                          "w-full flex items-start gap-3 py-2.5 px-2 rounded-lg text-left transition-colors",
+                          isPast ? "opacity-40 hover:opacity-60" : "hover:bg-zinc-800/40"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-2 h-2 rounded-full mt-1.5 shrink-0",
+                          EVENT_TYPE_DOT[e.event_type] ?? "bg-zinc-500"
+                        )} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn("text-sm font-medium", isPast ? "text-zinc-400 line-through" : "text-white")}>
+                              {e.title}
+                            </span>
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded border", EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600")}>
+                              {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
+                            </span>
+                            {isImminent && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30 font-medium">
+                                {minsUntil === 0 ? "Jetzt" : `in ${minsUntil} Min.`}
+                              </span>
+                            )}
+                          </div>
+                          {!e.all_day && (
+                            <div className="text-zinc-500 text-xs mt-0.5">
+                              ⏰ {eventTimeStr(e)}
+                            </div>
+                          )}
+                          {e.description && (
+                            <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {e.description}</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         )}
