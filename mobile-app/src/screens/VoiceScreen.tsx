@@ -11,7 +11,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -102,7 +102,7 @@ export default function VoiceScreen() {
   const listRef = useRef<FlatList>(null);
 
   // Request mic permissions on mount
-  useState(() => { Audio.requestPermissionsAsync(); });
+  useEffect(() => { Audio.requestPermissionsAsync(); }, []);
 
   const scrollToBottom = () => {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);

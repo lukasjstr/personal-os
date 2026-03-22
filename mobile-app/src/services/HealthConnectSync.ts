@@ -53,8 +53,9 @@ export interface HealthMetrics {
 
 async function readAndroidHealthConnect(targetDate: Date): Promise<HealthMetrics | null> {
   try {
-    // Dynamic import — only available in native build (not Expo Go)
-    const HC = await import('react-native-health-connect').catch(() => null);
+    // Dynamic require — only available in native build (not Expo Go)
+    let HC: any;
+    try { HC = require('react-native-health-connect'); } catch { return null; }
     if (!HC) return null;
 
     const { initialize, requestPermission, readRecords, getSdkStatus, SdkAvailabilityStatus } = HC;
@@ -73,7 +74,7 @@ async function readAndroidHealthConnect(targetDate: Date): Promise<HealthMetrics
       { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
       { accessType: 'read', recordType: 'Distance' },
       { accessType: 'read', recordType: 'Weight' },
-      { accessType: 'read', recordType: 'HeartRateVariabilitySdnn' },
+      { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },
       { accessType: 'read', recordType: 'OxygenSaturation' },
       { accessType: 'read', recordType: 'RestingHeartRate' },
     ]);
@@ -97,7 +98,7 @@ async function readAndroidHealthConnect(targetDate: Date): Promise<HealthMetrics
         readRecords('SleepSession', { timeRangeFilter: timeRange }),
         readRecords('Distance', { timeRangeFilter: timeRange }),
         readRecords('Weight', { timeRangeFilter: timeRange }),
-        readRecords('HeartRateVariabilitySdnn', { timeRangeFilter: timeRange }),
+        readRecords('HeartRateVariabilityRmssd', { timeRangeFilter: timeRange }),
         readRecords('OxygenSaturation', { timeRangeFilter: timeRange }),
         readRecords('RestingHeartRate', { timeRangeFilter: timeRange }),
       ]);
@@ -185,7 +186,8 @@ async function readAndroidHealthConnect(targetDate: Date): Promise<HealthMetrics
 
 async function readiOSHealthKit(targetDate: Date): Promise<HealthMetrics | null> {
   try {
-    const AppleHealthKit = await import('react-native-health').catch(() => null);
+    let AppleHealthKit: any;
+    try { AppleHealthKit = require('react-native-health'); } catch { return null; }
     if (!AppleHealthKit) return null;
 
     const { default: HealthKit, Permissions } = AppleHealthKit as any;
@@ -329,10 +331,10 @@ export async function startBackgroundSync(): Promise<void> {
 
   // Sync whenever app comes to foreground via AppState listener
   // (Background fetch requires expo-background-fetch + native build)
-  const { AppState } = await import('react-native');
+  const { AppState } = require('react-native');
   let lastSync = Date.now();
 
-  AppState.addEventListener('change', async (nextState) => {
+  AppState.addEventListener('change', async (nextState: string) => {
     if (nextState === 'active') {
       const now = Date.now();
       // Throttle: max once every 15 minutes
