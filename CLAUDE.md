@@ -13,7 +13,7 @@ Personal COO Telegram Bot + Web Dashboard
 - Copy files to server: `rsync -avz --exclude venv --exclude __pycache__ --exclude .git --exclude .env --exclude node_modules --exclude .next ./ root@95.111.252.176:/opt/personal-os/`
 - NEVER use `--delete` with rsync (it will wipe the server .env with secrets)
 - Then on server: `cd /opt/personal-os && source venv/bin/activate && alembic upgrade head && systemctl restart personal-os`
-- Dashboard: `cd /opt/personal-os/dashboard && npm run build && systemctl restart personal-os-dashboard`
+- Dashboard: `cd /opt/personal-os/dashboard && npm run build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && systemctl restart personal-os-dashboard`
 
 ## Tech Stack
 - Python 3.12, FastAPI, uvicorn
