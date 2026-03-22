@@ -181,8 +181,12 @@ function loadDaySettings(): WeekSettings {
     const raw = localStorage.getItem("cal_week_settings");
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Merge with defaults so new keys are filled
-      return { ...DEFAULT_WEEK_SETTINGS, ...parsed };
+      // JSON keys are always strings — explicitly convert to numbers so ws[6] works correctly
+      const normalized: WeekSettings = { ...DEFAULT_WEEK_SETTINGS };
+      Object.entries(parsed).forEach(([k, v]) => {
+        normalized[Number(k)] = v as DayTimeSettings;
+      });
+      return normalized;
     }
     // Migrate old single-setting format
     const old = localStorage.getItem("cal_day_settings");
@@ -901,7 +905,10 @@ function DayView({
   weekSettings: WeekSettings;
 }) {
   const dayEvents = events.filter((e) => isSameDay(parseISO(e.start_time), currentDay));
-  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} weekSettings={weekSettings} />;
+  // In day view: use only this day's settings so the grid starts/ends exactly at the configured hours
+  const idx = getDayIdx(currentDay);
+  const singleDaySettings: WeekSettings = { [idx]: weekSettings[idx] ?? DEFAULT_WEEK_SETTINGS[idx] } as WeekSettings;
+  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} weekSettings={singleDaySettings} />;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
