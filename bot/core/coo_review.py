@@ -92,11 +92,15 @@ async def generate_coo_weekly_review(
 
     # Save as WeeklyReflection
     try:
+        iso = week_start.isocalendar()
         reflection = WeeklyReflection(
             user_id=user.id,
             week_start=week_start,
-            ai_summary=review_text,
-            answers={},
+            week_number=iso[1],
+            year=iso[0],
+            ai_summary={"text": review_text},
+            raw_answers={},
+            status="completed",
         )
         session.add(reflection)
         await session.flush()
@@ -228,11 +232,11 @@ async def _gather_week_data(
             high_sodium_days.append((d, round(v)))
 
     # Finance totals
-    total_expenses = sum(abs(t.amount) for t in finance_logs if t.transaction_type == "expense")
-    total_income = sum(t.amount for t in finance_logs if t.transaction_type == "income")
+    total_expenses = sum(abs(t.amount) for t in finance_logs if t.type == "expense")
+    total_income = sum(t.amount for t in finance_logs if t.type == "income")
 
     # Wins from evening check-ins
-    wins = [c.win_text for c in evening_checkins if c.win_text]
+    wins = [c.win_of_day for c in evening_checkins if c.win_of_day]
 
     return {
         "objectives": objectives,
