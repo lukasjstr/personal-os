@@ -275,7 +275,7 @@ def _build_label(
         days_since = len(history)
         return f"Niedrigste {label_name} in {days_since} Tagen"
     elif z_score > 2.0:
-        return f"{label_name} {int(abs(z_score)):.1f}x über deinem 30-Tage-Durchschnitt ({mean_30d:.0f})"
+        return f"{label_name} {abs(z_score):.1f}x über deinem 30-Tage-Durchschnitt ({mean_30d:.0f})"
     elif z_score > 1.5:
         pct_above = int(((current_value - mean_30d) / mean_30d) * 100)
         return f"{label_name} {pct_above}% über deinem 30-Tage-Durchschnitt"

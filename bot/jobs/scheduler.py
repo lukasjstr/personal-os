@@ -490,12 +490,3 @@ async def _send_nutrition_anomaly_alert(session, user) -> None:
     if alerts:
         msg = "🤖 *Ernährungs-Insights heute:*\n\n" + "\n\n".join(alerts)
         await send_message(user.telegram_id, msg)
-        "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
-        "streak_risk_check, weekly_auto_plan, morning_context_collection, "
-        "evening_checkin, streak_risk_check_intelligence, day_planner, "
-        "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
-        "quarterly_review, learning_reminders, life_profile_update, "
-        "action_engine_morning, action_engine_evening, action_engine_weekly, "
-        "weekly_kickoff"
-    )
-    return _scheduler

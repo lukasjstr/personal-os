@@ -14,7 +14,7 @@ from bot.ai.tools import TOOLS
 from bot.config import settings
 from bot.core.brain_dumps import create_brain_dump
 from bot.core.calendar import create_calendar_event
-from bot.core.logs import log_food, log_mood, log_progress, log_water, log_workout
+from bot.core.logs import log_mood, log_progress, log_water, log_workout
 from bot.core.objectives import (
     create_key_result,
     create_objective,
