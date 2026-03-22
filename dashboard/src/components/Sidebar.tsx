@@ -84,6 +84,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "GESUNDHEIT",
     items: [
       { href: "/fitness", label: "Fitness", icon: Dumbbell, emoji: "🏋️" },
+      { href: "/nutrition", label: "Ernährung", icon: BarChart3, emoji: "🍽️" },
       { href: "/supplements", label: "Supplements", icon: Zap, emoji: "💊" },
       { href: "/shopping", label: "Einkaufen", icon: ShoppingCart, emoji: "🛒", badge: "shopping_items" },
     ],

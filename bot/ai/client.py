@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from openai import AsyncOpenAI
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.ai.context import build_context
@@ -254,8 +254,57 @@ async def _execute_tool(
             return f"📈 Fortschritt geloggt: {args['value']} für KR#{args['key_result_id']}"
 
         elif name == "log_food":
-            log = await log_food(session, user.id, **args)
-            return f"🍽️ Mahlzeit geloggt: {args['description']}"
+            from bot.core.nutrition import create_food_entry, get_daily_nutrition
+            from bot.core.personal_baseline import get_anomaly_score
+            entry = await create_food_entry(
+                session,
+                user_id=user.id,
+                food_name=args["food_name"],
+                meal_type=args.get("meal_type", "snack"),
+                quantity=args.get("quantity"),
+                unit=args.get("unit"),
+                calories=args.get("calories"),
+                protein_g=args.get("protein_g"),
+                carbs_g=args.get("carbs_g"),
+                fat_g=args.get("fat_g"),
+                fiber_g=args.get("fiber_g"),
+                sodium_mg=args.get("sodium_mg"),
+                sugar_g=args.get("sugar_g"),
+                notes=args.get("notes"),
+                source="text",
+            )
+            # Build confirmation message
+            meal_emoji = {"breakfast": "🌅", "lunch": "☀️", "dinner": "🌙", "snack": "🍎"}
+            emoji = meal_emoji.get(entry.meal_type, "🍽️")
+            parts = [f"{emoji} *{entry.food_name}*"]
+            macro_parts = []
+            if entry.calories:
+                macro_parts.append(f"{int(entry.calories)} kcal")
+            if entry.protein_g:
+                macro_parts.append(f"P: {int(entry.protein_g)}g")
+            if entry.carbs_g:
+                macro_parts.append(f"K: {int(entry.carbs_g)}g")
+            if entry.fat_g:
+                macro_parts.append(f"F: {int(entry.fat_g)}g")
+            if macro_parts:
+                parts.append(f"({', '.join(macro_parts)})")
+            result = " ".join(parts)
+
+            # Add sodium anomaly warning if high
+            if entry.sodium_mg and entry.sodium_mg > 0:
+                try:
+                    # Get today's total sodium including this entry
+                    daily = await get_daily_nutrition(session, user.id)
+                    total_sodium = daily["totals"].get("sodium_mg") or 0
+                    if total_sodium > 1500:
+                        anomaly = await get_anomaly_score(session, user.id, "sodium_mg", total_sodium)
+                        if anomaly.is_anomaly and anomaly.direction == "high":
+                            result += f"\n⚠️ Natrium heute gesamt: {int(total_sodium)}mg — {anomaly.label}"
+                except Exception:
+                    pass
+
+            await _notify_achievements(session, user)
+            return result
 
         # ─── Routines ─────────────────────────────────────────────────────────
         elif name == "create_routine":
@@ -685,6 +734,36 @@ async def _execute_tool(
             }, source="telegram")
             quality = "sehr gut" if hrv > 60 else "gut" if hrv > 45 else "mittel" if hrv > 30 else "niedrig"
             return f"💓 HRV geloggt: {hrv}ms ({quality})"
+
+        # ─── Life Mode ────────────────────────────────────────────────────────
+        elif name == "set_life_mode":
+            from bot.core.life_context import set_life_mode as _set_mode, format_life_mode_message
+            from datetime import date as _date
+            active_until = None
+            if args.get("active_until"):
+                try:
+                    active_until = _date.fromisoformat(args["active_until"])
+                except ValueError:
+                    pass
+            ctx = await _set_mode(
+                session, user.id,
+                mode=args["mode"],
+                notes=args.get("notes"),
+                active_until=active_until,
+            )
+            return format_life_mode_message(ctx.mode, ctx.notes, ctx.active_until)
+
+        # ─── Nutrition Summary ────────────────────────────────────────────────
+        elif name == "get_nutrition_summary":
+            from bot.core.nutrition import format_daily_nutrition_summary
+            from datetime import date as _date
+            target_date = None
+            if args.get("date"):
+                try:
+                    target_date = _date.fromisoformat(args["date"])
+                except ValueError:
+                    pass
+            return await format_daily_nutrition_summary(session, user.id, target_date)
 
         # ─── Settings ─────────────────────────────────────────────────────────
         elif name == "update_user_settings":

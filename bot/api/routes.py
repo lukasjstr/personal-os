@@ -9318,3 +9318,149 @@ async def goal_onboarding_cancel(
     cancelled = await cancel_onboarding(session, user.id)
     await session.commit()
     return {"ok": True, "cancelled": cancelled}
+
+
+# ─── Nutrition Endpoints ──────────────────────────────────────────────────────
+
+@router.get("/nutrition/daily")
+async def get_nutrition_daily(
+    date: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get daily nutrition summary with macro totals and meal breakdown."""
+    from bot.core.nutrition import get_daily_nutrition
+    from datetime import date as date_cls
+    target_date = None
+    if date:
+        try:
+            target_date = date_cls.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    return await get_daily_nutrition(session, user.id, target_date)
+
+
+@router.get("/nutrition/history")
+async def get_nutrition_history_endpoint(
+    days: int = 30,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> list:
+    """Get nutrition history (per-day aggregates) for the last N days."""
+    from bot.core.nutrition import get_nutrition_history
+    days = min(max(days, 1), 365)
+    return await get_nutrition_history(session, user.id, days)
+
+
+@router.post("/nutrition/log")
+async def log_nutrition(
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Log a food entry with structured nutrition data."""
+    from bot.core.nutrition import create_food_entry
+    from datetime import date as date_cls
+    logged_date = None
+    if body.get("logged_date"):
+        try:
+            logged_date = date_cls.fromisoformat(body["logged_date"])
+        except ValueError:
+            pass
+    entry = await create_food_entry(
+        session,
+        user_id=user.id,
+        food_name=body.get("food_name", "Unbekannt"),
+        meal_type=body.get("meal_type", "snack"),
+        quantity=body.get("quantity"),
+        unit=body.get("unit"),
+        calories=body.get("calories"),
+        protein_g=body.get("protein_g"),
+        carbs_g=body.get("carbs_g"),
+        fat_g=body.get("fat_g"),
+        fiber_g=body.get("fiber_g"),
+        sodium_mg=body.get("sodium_mg"),
+        sugar_g=body.get("sugar_g"),
+        notes=body.get("notes"),
+        source=body.get("source", "api"),
+        logged_date=logged_date,
+    )
+    await session.commit()
+    return {
+        "id": entry.id,
+        "food_name": entry.food_name,
+        "meal_type": entry.meal_type,
+        "calories": entry.calories,
+        "protein_g": entry.protein_g,
+        "carbs_g": entry.carbs_g,
+        "fat_g": entry.fat_g,
+        "sodium_mg": entry.sodium_mg,
+        "logged_date": entry.logged_date.isoformat(),
+    }
+
+
+@router.get("/nutrition/baseline/{metric_key}")
+async def get_nutrition_baseline(
+    metric_key: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get personal baseline for a metric (anomaly detection context)."""
+    from bot.core.personal_baseline import get_cached_baseline
+    baseline = await get_cached_baseline(session, user.id, metric_key)
+    if not baseline:
+        return {"metric_key": metric_key, "status": "no_data", "days_tracked": 0}
+    return {
+        "metric_key": baseline.metric_key,
+        "mean_30d": baseline.mean_30d,
+        "std_30d": baseline.std_30d,
+        "mean_90d": baseline.mean_90d,
+        "min_ever": baseline.min_ever,
+        "max_ever": baseline.max_ever,
+        "days_tracked": baseline.days_tracked,
+        "last_updated": baseline.last_updated.isoformat() if baseline.last_updated else None,
+    }
+
+
+# ─── Life Context Endpoints ───────────────────────────────────────────────────
+
+@router.get("/life-context")
+async def get_life_context(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get current life mode."""
+    from bot.core.life_context import get_active_life_mode, get_life_mode_config
+    config = await get_life_mode_config(session, user.id)
+    return config
+
+
+@router.post("/life-context")
+async def set_life_context(
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Set life mode (normal/travel/sick/vacation/intense/recovery)."""
+    from bot.core.life_context import set_life_mode, format_life_mode_message
+    from datetime import date as date_cls
+    active_until = None
+    if body.get("active_until"):
+        try:
+            active_until = date_cls.fromisoformat(body["active_until"])
+        except ValueError:
+            pass
+    ctx = await set_life_mode(
+        session, user.id,
+        mode=body.get("mode", "normal"),
+        notes=body.get("notes"),
+        active_until=active_until,
+    )
+    await session.commit()
+    return {
+        "mode": ctx.mode,
+        "notes": ctx.notes,
+        "active_from": ctx.active_from.isoformat(),
+        "active_until": ctx.active_until.isoformat() if ctx.active_until else None,
+        "message": format_life_mode_message(ctx.mode, ctx.notes, ctx.active_until),
+    }

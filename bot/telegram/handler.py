@@ -338,7 +338,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     tg_user = update.effective_user
     chat_id = update.message.chat_id
-    caption = update.message.caption or "Was siehst du auf dem Bild? Erkenne Trainingsgeräte, Gewichte, Essen oder andere relevante Dinge."
+    caption = update.message.caption or (
+        "Analysiere dieses Bild. Falls es Essen/Mahlzeiten zeigt: "
+        "Erkenne alle Lebensmittel, schätze Portionsgrößen und logge die Mahlzeit mit log_food "
+        "(inkl. geschätzter Kalorien, Protein, Kohlenhydrate, Fett, Natrium). "
+        "Falls Trainingsgeräte oder Gewichte zu sehen sind: logge das Workout. "
+        "Antworte kurz was du erkannt hast und was du geloggt hast."
+    )
 
     await send_typing(chat_id)
 

@@ -249,20 +249,34 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "log_food",
-            "description": "Loggt eine Mahlzeit oder Nahrungsaufnahme.",
+            "description": (
+                "Loggt eine Mahlzeit mit vollständigen Nährstoffwerten. "
+                "Schätze Makros (Kalorien, Protein, Kohlenhydrate, Fett, Natrium) "
+                "aus dem Kontext, auch wenn der User sie nicht explizit nennt. "
+                "Nutze dein Ernährungswissen für realistische Schätzungen. "
+                "Beispiel: 'Hähnchenbrust 200g + Reis' → calories≈400, protein_g≈45, carbs_g≈40, fat_g≈5, sodium_mg≈120."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "description": {"type": "string", "description": "Beschreibung der Mahlzeit"},
-                    "calories": {"type": "integer", "description": "Kalorien (optional)"},
+                    "food_name": {"type": "string", "description": "Name der Mahlzeit oder des Lebensmittels"},
                     "meal_type": {
                         "type": "string",
                         "enum": ["breakfast", "lunch", "dinner", "snack"],
-                        "description": "Mahlzeitentyp (optional)",
+                        "description": "Mahlzeitentyp",
                     },
+                    "quantity": {"type": "number", "description": "Menge (z.B. 200 für 200g oder 1 für 1 Portion). Optional."},
+                    "unit": {"type": "string", "description": "Einheit: g, ml, Portion, Stück etc. Optional."},
+                    "calories": {"type": "number", "description": "Kalorien (kcal) — schätze wenn nicht genannt"},
+                    "protein_g": {"type": "number", "description": "Protein in Gramm — schätze wenn nicht genannt"},
+                    "carbs_g": {"type": "number", "description": "Kohlenhydrate in Gramm — schätze wenn nicht genannt"},
+                    "fat_g": {"type": "number", "description": "Fett in Gramm — schätze wenn nicht genannt"},
+                    "fiber_g": {"type": "number", "description": "Ballaststoffe in Gramm (optional)"},
+                    "sodium_mg": {"type": "number", "description": "Natrium in Milligramm — schätze wenn nicht genannt. Besonders wichtig!"},
+                    "sugar_g": {"type": "number", "description": "Zucker in Gramm (optional)"},
                     "notes": {"type": "string", "description": "Zusätzliche Notizen (optional)"},
                 },
-                "required": ["description"],
+                "required": ["food_name", "meal_type"],
             },
         },
     },
@@ -691,6 +705,55 @@ TOOLS: list[dict[str, Any]] = [
                     "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute)"},
                 },
                 "required": ["score"],
+            },
+        },
+    },
+    # ─── Settings Tool ────────────────────────────────────────────────────────
+    # ─── Life Context Tool ────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "set_life_mode",
+            "description": (
+                "Setzt den aktuellen Lebenskontext-Modus. Nutze wenn der User signalisiert: "
+                "'Ich bin krank' → sick, 'Ich reise/bin auf Reisen' → travel, "
+                "'Ich bin im Urlaub' → vacation, 'Ich brauche Erholung/Recovery' → recovery, "
+                "'Alles zurück zur Normal' oder 'wieder gesund' → normal, "
+                "'Intensivphase/Fokus-Modus/maximale Produktivität' → intense. "
+                "Der Modus passt automatisch Routinen-Erwartungen, Aufgabenlast und Erinnerungen an."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "travel", "sick", "vacation", "intense", "recovery"],
+                        "description": "Der neue Lebensmodus",
+                    },
+                    "notes": {"type": "string", "description": "Optionale Notiz (z.B. 'Erkältung', 'Urlaub in Spanien', 'Sprint-Woche')"},
+                    "active_until": {"type": "string", "description": "Enddatum YYYY-MM-DD (optional, z.B. Urlaubsende)"},
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    # ─── Nutrition Summary Tool ───────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nutrition_summary",
+            "description": (
+                "Gibt die Ernährungsübersicht für heute (oder ein bestimmtes Datum) zurück: "
+                "Kalorien, Makros, Natrium, Wasser, Anomalie-Warnungen. "
+                "Nutze bei 'Was habe ich heute gegessen?', 'Wie viele Kalorien?', "
+                "'Ernährungsübersicht', 'Natrium heute'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Datum YYYY-MM-DD (default: heute)"},
+                },
+                "required": [],
             },
         },
     },

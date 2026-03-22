@@ -352,8 +352,144 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # Nutrition anomaly alerts: daily at 21:45 (after food logging day is done)
+    async def _run_nutrition_anomaly_alerts():
+        from bot.core.kill_switches import is_enabled
+        if not is_enabled("autopilot_nudges"):
+            return
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    await _send_nutrition_anomaly_alert(session, user)
+                    await session.commit()
+                except Exception:
+                    _log.exception("Nutrition anomaly alert failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_nutrition_anomaly_alerts,
+        CronTrigger(hour=21, minute=45, timezone="Europe/Berlin"),
+        id="nutrition_anomaly_alerts",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Personal baseline update: daily at 05:30 (before morning brief)
+    async def _run_baseline_update():
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from bot.core.personal_baseline import update_baselines_for_user
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    await update_baselines_for_user(session, user.id)
+                    await session.commit()
+                except Exception:
+                    _log.exception("Baseline update failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_baseline_update,
+        CronTrigger(hour=5, minute=30, timezone="Europe/Berlin"),
+        id="baseline_update",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # COO Sunday Strategic Review: Sundays at 19:00
+    async def _run_coo_sunday_review():
+        from bot.database.connection import get_session
+        from bot.database.models import User
+        from bot.core.coo_review import generate_coo_weekly_review
+        from bot.telegram.sender import send_message
+        from sqlalchemy import select
+        async with get_session() as session:
+            users = (await session.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )).scalars().all()
+            for user in users:
+                try:
+                    settings_data = user.settings or {}
+                    if not settings_data.get("reflection_enabled", True):
+                        continue
+                    review = await generate_coo_weekly_review(session, user)
+                    await session.commit()
+                    await send_message(user.telegram_id, review)
+                    _log.info("COO Sunday review sent to user %d", user.id)
+                except Exception:
+                    _log.exception("COO Sunday review failed for user %d", user.id)
+
+    _scheduler.add_job(
+        _run_coo_sunday_review,
+        CronTrigger(hour=19, minute=0, day_of_week="sun", timezone="Europe/Berlin"),
+        id="coo_sunday_review",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
-        "Scheduler initialized with 25 active jobs: daily_suggestions, morning_brief, "
+        "Scheduler initialized with 29 active jobs: daily_suggestions, morning_brief, "
+        "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
+        "streak_risk_check, weekly_auto_plan, morning_context_collection, "
+        "evening_checkin, streak_risk_check_intelligence, day_planner, "
+        "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
+        "quarterly_review, learning_reminders, life_profile_update, "
+        "action_engine_morning, action_engine_evening, action_engine_weekly, "
+        "weekly_kickoff, nutrition_anomaly_alerts, baseline_update, coo_sunday_review"
+    )
+    return _scheduler
+
+
+async def _send_nutrition_anomaly_alert(session, user) -> None:
+    """Check today's nutrition for anomalies and send proactive alerts."""
+    from datetime import date
+    from bot.core.nutrition import get_daily_nutrition
+    from bot.core.personal_baseline import get_anomaly_score
+    from bot.telegram.sender import send_message
+    from bot.core.life_context import get_active_life_mode
+
+    # Skip if on vacation or no notifications
+    mode = await get_active_life_mode(session, user.id)
+    if mode in ("vacation",):
+        return
+
+    daily = await get_daily_nutrition(session, user.id)
+    if not daily["has_data"]:
+        return
+
+    totals = daily["totals"]
+    alerts = []
+
+    # Check sodium anomaly
+    if totals.get("sodium_mg") and totals["sodium_mg"] > 1200:
+        anomaly = await get_anomaly_score(session, user.id, "sodium_mg", totals["sodium_mg"])
+        if anomaly.is_anomaly and anomaly.direction == "high":
+            sodium_val = int(totals["sodium_mg"])
+            alert = f"🧂 *Natrium-Alert:* {sodium_val}mg heute — {anomaly.label}"
+            # Add correlation insight if available
+            if anomaly.mean_30d and anomaly.mean_30d > 0:
+                alert += f"\n   💡 Dein Durchschnitt: {int(anomaly.mean_30d)}mg — Das könnte deine morgige Energie beeinflussen."
+            alerts.append(alert)
+
+    # Check calories anomaly (only if significantly high)
+    if totals.get("calories") and totals["calories"] > 500:
+        cal_anomaly = await get_anomaly_score(session, user.id, "calories", totals["calories"])
+        if cal_anomaly.z_score and cal_anomaly.z_score > 2.5:
+            alerts.append(
+                f"🔥 *Kalorien-Alert:* {int(totals['calories'])} kcal heute — {cal_anomaly.label}"
+            )
+
+    if alerts:
+        msg = "🤖 *Ernährungs-Insights heute:*\n\n" + "\n\n".join(alerts)
+        await send_message(user.telegram_id, msg)
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
         "streak_risk_check, weekly_auto_plan, morning_context_collection, "
         "evening_checkin, streak_risk_check_intelligence, day_planner, "

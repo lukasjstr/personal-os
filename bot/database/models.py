@@ -83,6 +83,9 @@ class User(Base):
     life_profile: Mapped[Optional["LifeProfile"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     learning_items: Mapped[list["LearningItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     learning_reviews: Mapped[list["LearningReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    food_entries: Mapped[list["FoodEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    life_contexts: Mapped[list["LifeContext"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    personal_baselines: Mapped[list["PersonalBaseline"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -1144,3 +1147,83 @@ class PushSubscription(Base):
 
     def __repr__(self) -> str:
         return f"<PushSubscription id={self.id} user_id={self.user_id}>"
+
+
+# ─── Food Entries ─────────────────────────────────────────────────────────────
+
+class FoodEntry(Base):
+    """Structured nutrition log — per meal with full macro breakdown."""
+    __tablename__ = "food_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    logged_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    meal_type: Mapped[str] = mapped_column(String(20), default="snack")  # breakfast, lunch, dinner, snack
+    food_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    unit: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # g, ml, piece, portion
+    calories: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    protein_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    carbs_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fat_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fiber_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sodium_mg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sugar_g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="text")  # text, photo, voice
+    raw_input: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="food_entries")
+
+    def __repr__(self) -> str:
+        return f"<FoodEntry id={self.id} date={self.logged_date} meal={self.meal_type} food={self.food_name!r}>"
+
+
+# ─── Life Context ─────────────────────────────────────────────────────────────
+
+class LifeContext(Base):
+    """Current life mode — affects routine expectations, task load, and reminders."""
+    __tablename__ = "life_contexts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    # normal, travel, sick, vacation, intense, recovery
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active_from: Mapped[date] = mapped_column(Date, nullable=False)
+    active_until: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="life_contexts")
+
+    def __repr__(self) -> str:
+        return f"<LifeContext id={self.id} mode={self.mode} active={self.is_active}>"
+
+
+# ─── Personal Baseline ────────────────────────────────────────────────────────
+
+class PersonalBaseline(Base):
+    """Cached personal baseline for anomaly detection — updated daily."""
+    __tablename__ = "personal_baselines"
+    __table_args__ = (
+        UniqueConstraint("user_id", "metric_key", name="uq_baseline_user_metric"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    metric_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    # sleep_hours, sodium_mg, calories, mood, water_liters, steps, hrv, protein_g, carbs_g, fat_g
+    mean_30d: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    std_30d: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mean_90d: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    min_ever: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_ever: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    days_tracked: Mapped[int] = mapped_column(Integer, default=0)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="personal_baselines")
+
+    def __repr__(self) -> str:
+        return f"<PersonalBaseline user={self.user_id} metric={self.metric_key} mean30={self.mean_30d}>"

@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database.models import DailyContext, Log, RoutineCompletion
+from bot.database.models import DailyContext, FoodEntry, Log, RoutineCompletion
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,11 @@ async def run_correlation_analysis(
     routines = await _get_routine_counts_by_date(session, user_id, since)
 
     insights: list[dict] = []
+
+    # Gather nutrition vectors
+    sodium = await _get_nutrition_metric_by_date(session, user_id, since, "sodium_mg")
+    calories_food = await _get_nutrition_metric_by_date(session, user_id, since, "calories")
+    protein = await _get_nutrition_metric_by_date(session, user_id, since, "protein_g")
 
     # ── Correlation pairs ────────────────────────────────────────────────────
 
@@ -88,6 +93,41 @@ async def run_correlation_analysis(
     _check_binary(insights, workout, energy, "Training", "Energie",
                   template_pos="An Trainingstagen ist deine Energie {diff:.1f} Punkte höher ({avg_yes:.1f} vs {avg_no:.1f})",
                   template_neg="An Trainingstagen ist deine Energie {diff:.1f} Punkte niedriger")
+
+    # ── Nutrition correlations ────────────────────────────────────────────────
+
+    # Sodium → Sleep next day (the key example from the vision!)
+    if sodium:
+        _check_lagged(insights, sodium, sleep, "Natrium (mg)", "Schlaf (Stunden)", lag=1,
+                      template_pos="Nach niedrigem Natrium schläfst du am nächsten Tag {diff:.1f}h besser",
+                      template_neg="Hohe Natriumaufnahme korreliert mit {diff:.1f}h weniger Schlaf am Folgetag",
+                      threshold_fn=lambda vals: sorted(vals)[len(vals) // 2],  # median split
+                      label_above="hohes Natrium", label_below="niedriges Natrium")
+
+    # Sodium → Sleep quality next day
+    if sodium:
+        _check_lagged(insights, sodium, mood, "Natrium (mg)", "Mood (Folgetag)", lag=1,
+                      template_pos="Niedrige Natriumaufnahme korreliert mit besserem Mood am Folgetag (+{diff:.1f})",
+                      template_neg="Hohe Natriumaufnahme korreliert mit schlechterem Mood am Folgetag ({diff:.1f} Punkte)",
+                      threshold_fn=lambda vals: sorted(vals)[len(vals) // 2],
+                      label_above="hohes Natrium", label_below="niedriges Natrium")
+
+    # Calories → Mood (same day)
+    if calories_food:
+        _check_pearson(insights, calories_food, mood, "Kalorien", "Mood",
+                       template="Kalorienzufuhr korreliert mit Mood (r={r:.2f})")
+
+    # Calories → Energy (same day)
+    if calories_food:
+        _check_pearson(insights, calories_food, energy, "Kalorien", "Energie",
+                       template="Kalorienzufuhr korreliert mit Energielevel (r={r:.2f})")
+
+    # Protein → Energy (same day)
+    if protein:
+        _check_split(insights, protein, energy, "Protein (g)", "Energie",
+                     template_pos="An Tagen mit viel Protein ist deine Energie {diff:.1f} Punkte höher",
+                     template_neg="Mehr Protein korreliert mit weniger Energie ({diff:.1f})",
+                     threshold_fn=lambda vals: sorted(vals)[len(vals) // 2])
 
     if insights:
         logger.info("Correlation analysis: %d insights for user %d", len(insights), user_id)
@@ -174,6 +214,27 @@ async def _get_energy_by_date(session: AsyncSession, user_id: int, since: dateti
         ctx.date.isoformat(): float(ctx.energy)
         for ctx in contexts if ctx.energy
     }
+
+
+async def _get_nutrition_metric_by_date(
+    session: AsyncSession,
+    user_id: int,
+    since: datetime,
+    field: str,
+) -> dict[str, float]:
+    """Sum a nutrition metric (e.g. sodium_mg, calories) per day from food_entries."""
+    entries = (await session.execute(
+        select(FoodEntry).where(and_(
+            FoodEntry.user_id == user_id,
+            FoodEntry.logged_at >= since,
+        ))
+    )).scalars().all()
+    daily: dict[str, float] = defaultdict(float)
+    for e in entries:
+        val = getattr(e, field, None)
+        if val is not None:
+            daily[e.logged_date.isoformat()] += float(val)
+    return dict(daily) if daily else {}
 
 
 async def _get_routine_counts_by_date(session: AsyncSession, user_id: int, since: datetime) -> dict[str, float]:
