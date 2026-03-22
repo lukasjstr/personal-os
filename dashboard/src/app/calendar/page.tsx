@@ -33,6 +33,22 @@ import type { CalendarEvent } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastContainer, useToast } from "@/components/Toast";
 
+// ─── Time display helper ─────────────────────────────────────────────────────
+
+function eventTimeStr(e: { start_time: string; end_time?: string | null; all_day: boolean; event_type: string }): string {
+  if (e.all_day) return "Ganztägig";
+  const start = formatTime(e.start_time);
+  if (e.event_type === "reminder") {
+    // end_time is just a block placeholder — only show it if it's an actual cross-day deadline
+    if (e.end_time && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))) {
+      return `${start} → fällig: ${formatDate(e.end_time)} ${formatTime(e.end_time)}`;
+    }
+    return start;
+  }
+  if (e.end_time) return `${start} – ${formatTime(e.end_time)}`;
+  return start;
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const EVENT_TYPE_BADGE: Record<string, string> = {
@@ -300,11 +316,7 @@ function EventModal({
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-3">
                 <Clock size={14} />
                 <span>
-                  {event.all_day
-                    ? `${formatDate(event.start_time)} · Ganztägig`
-                    : event.end_time && event.event_type === "reminder" && !isSameDay(parseISO(event.start_time), parseISO(event.end_time))
-                    ? `${formatDate(event.start_time)} · ${formatTime(event.start_time)} → fällig: ${formatDate(event.end_time)} ${formatTime(event.end_time)}`
-                    : `${formatDate(event.start_time)} · ${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`}
+                  {`${formatDate(event.start_time)} · ${eventTimeStr(event)}`}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-4">
@@ -972,10 +984,7 @@ export default function CalendarPage() {
                   </div>
                   {!e.all_day && (
                     <div className="text-zinc-500 text-xs mt-0.5">
-                      ⏰ {formatTime(e.start_time)}
-                      {e.end_time && e.event_type === "reminder" && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))
-                        ? ` → erinnert an ${formatDate(e.end_time)} ${formatTime(e.end_time)}`
-                        : e.end_time ? ` – ${formatTime(e.end_time)}` : ""}
+                      ⏰ {eventTimeStr(e)}
                     </div>
                   )}
                   {e.description && (
@@ -1024,13 +1033,7 @@ export default function CalendarPage() {
                     </span>
                   </div>
                   <div className="text-zinc-500 text-xs mt-0.5">
-                    📅 {formatDate(e.start_time)}
-                    {!e.all_day && ` · ⏰ ${formatTime(e.start_time)}`}
-                    {e.end_time && !e.all_day && e.event_type === "reminder" && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))
-                      ? ` → fällig: ${formatDate(e.end_time)} ${formatTime(e.end_time)}`
-                      : e.end_time && !e.all_day
-                      ? ` – ${formatTime(e.end_time)}`
-                      : null}
+                    📅 {formatDate(e.start_time)}{!e.all_day && ` · ⏰ ${eventTimeStr(e)}`}
                   </div>
                   {e.description && (
                     <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {e.description}</div>
