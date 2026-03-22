@@ -4,15 +4,14 @@
  * Flow:
  * 1. Tippen → Aufnahme startet (expo-av)
  * 2. Nochmal tippen → Aufnahme stoppt, Audio → POST /api/voice/command (Whisper)
- * 3. KI-Antwort kommt zurück → wird vorgelesen (expo-speech) + angezeigt
+ * 3. KI-Antwort wird angezeigt
  * 4. Verlauf der Session bleibt sichtbar
  *
  * Fallback: Texteingabe direkt möglich (Tastatur-Icon).
  */
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -99,18 +98,11 @@ export default function VoiceScreen() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [showTextInput, setShowTextInput] = useState(false);
   const [textDraft, setTextDraft] = useState('');
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const listRef = useRef<FlatList>(null);
 
-  useEffect(() => {
-    // Request mic permissions on mount
-    Audio.requestPermissionsAsync();
-    return () => {
-      // Stop any ongoing speech when leaving screen
-      Speech.stop();
-    };
-  }, []);
+  // Request mic permissions on mount
+  useState(() => { Audio.requestPermissionsAsync(); });
 
   const scrollToBottom = () => {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
@@ -121,19 +113,6 @@ export default function VoiceScreen() {
     setMessages((prev) => [...prev, full]);
     scrollToBottom();
     return full;
-  };
-
-  const speakResponse = (text: string) => {
-    Speech.stop();
-    setIsSpeaking(true);
-    Speech.speak(text, {
-      language: 'de-DE',
-      rate: 1.0,
-      pitch: 1.0,
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-    });
   };
 
   // ── Recording ───────────────────────────────────────────────────────────────
@@ -168,7 +147,6 @@ export default function VoiceScreen() {
       const { transcribed, response } = await sendVoiceAudio(uri);
       addMessage({ role: 'user', text: transcribed });
       addMessage({ role: 'assistant', text: response });
-      speakResponse(response);
     } catch (e: any) {
       addMessage({ role: 'assistant', text: `⚠️ ${e.message}` });
     } finally {
@@ -196,7 +174,6 @@ export default function VoiceScreen() {
     try {
       const { response } = await sendVoiceText(t);
       addMessage({ role: 'assistant', text: response });
-      speakResponse(response);
     } catch (e: any) {
       addMessage({ role: 'assistant', text: `⚠️ ${e.message}` });
     } finally {
@@ -239,15 +216,8 @@ export default function VoiceScreen() {
             ? 'Aufnahme läuft…'
             : recordingState === 'processing'
             ? 'KI denkt nach…'
-            : isSpeaking
-            ? 'Spricht…'
             : 'Tippe den Mic-Button und sprich'}
         </Text>
-        {isSpeaking && (
-          <TouchableOpacity onPress={() => { Speech.stop(); setIsSpeaking(false); }}>
-            <Ionicons name="volume-mute" size={16} color={C.muted} />
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Chat history */}
