@@ -34,13 +34,22 @@ import type { CalendarEvent } from "@/lib/api";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastContainer, useToast } from "@/components/Toast";
 
-// ─── Time display helper ─────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Detect midnight-to-midnight events that are effectively all-day. */
+function isEffectivelyAllDay(e: { start_time: string; end_time?: string | null; all_day: boolean }): boolean {
+  if (e.all_day) return true;
+  const s = parseISO(e.start_time);
+  if (getHours(s) !== 0 || getMinutes(s) !== 0) return false;
+  if (!e.end_time) return true;
+  const en = parseISO(e.end_time);
+  return getHours(en) === 0 && getMinutes(en) === 0;
+}
 
 function eventTimeStr(e: { start_time: string; end_time?: string | null; all_day: boolean; event_type: string }): string {
-  if (e.all_day) return "Ganztägig";
+  if (isEffectivelyAllDay(e)) return "Ganztägig";
   const start = formatTime(e.start_time);
   if (e.event_type === "reminder") {
-    // end_time is just a block placeholder — only show it if it's an actual cross-day deadline
     if (e.end_time && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))) {
       return `${start} → fällig: ${formatDate(e.end_time)} ${formatTime(e.end_time)}`;
     }
@@ -48,6 +57,20 @@ function eventTimeStr(e: { start_time: string; end_time?: string | null; all_day
   }
   if (e.end_time) return `${start} – ${formatTime(e.end_time)}`;
   return start;
+}
+
+/** Strip HTML tags, convert <br>/<p> to newlines, decode basic entities. */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -314,15 +337,13 @@ function EventModal({
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-3">
-                <Clock size={14} />
-                <span>
-                  {`${formatDate(event.start_time)} · ${eventTimeStr(event)}`}
-                </span>
-              </div>
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-4">
-                <Tag size={14} />
-                <span>{EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}</span>
+                <Clock size={14} className="shrink-0" />
+                <span>
+                  {isEffectivelyAllDay(event)
+                    ? `${formatDate(event.start_time)} · Ganztägig`
+                    : `${formatDate(event.start_time)} · ${eventTimeStr(event)}`}
+                </span>
               </div>
               {event.description && (
                 <div className="mb-4">
@@ -330,7 +351,9 @@ function EventModal({
                     <FileText size={12} />
                     <span>Notizen</span>
                   </div>
-                  <p className="text-zinc-300 text-sm">{event.description}</p>
+                  <p className="text-zinc-300 text-sm whitespace-pre-wrap leading-relaxed">
+                    {stripHtml(event.description)}
+                  </p>
                 </div>
               )}
             </>
