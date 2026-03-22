@@ -213,7 +213,7 @@ function DaySettingsPanel({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<WeekSettings>({ ...settings });
-  const [activeDay, setActiveDay] = useState(0); // 0=Mo
+  const [activeDay, setActiveDay] = useState(() => getDayIdx(new Date())); // default = today
   const [saving, setSaving] = useState(false);
   const [shiftInfo, setShiftInfo] = useState<string | null>(null);
 
