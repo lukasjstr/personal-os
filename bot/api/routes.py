@@ -2,7 +2,8 @@
 import dataclasses
 import math
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional
 
@@ -1465,7 +1466,10 @@ async def link_calendar_task(
 
 class ShiftRoutinesBody(BaseModel):
     weekday: int        # 0=Mon … 6=Sun
-    delta_minutes: int  # positive = later, negative = earlier
+    target_hour: int    # desired local (Berlin) hour for the first routine
+
+
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 @router.post("/calendar/shift-routines")
@@ -1474,28 +1478,37 @@ async def shift_day_routines(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Shift all morning Routine events (start < 14:00 UTC) on a given weekday
-    by delta_minutes.  Used when the user changes their wake-up time."""
-    if body.delta_minutes == 0:
-        return {"shifted": 0}
-
+    """Align all morning Routine events on a weekday so the earliest one
+    starts at target_hour (Berlin time).  Calculates delta from actual DB
+    times so it always works regardless of what was saved before."""
     now = datetime.utcnow()
-    # Python isoweekday: Mon=1 … Sun=7; our weekday: Mon=0 … Sun=6
-    iso_dow = body.weekday + 1
+    iso_dow = body.weekday + 1  # Mon=1 … Sun=7
 
     result = await session.execute(
-        select(CalendarEvent).where(
+        select(CalendarEvent)
+        .where(
             CalendarEvent.user_id == user.id,
             CalendarEvent.event_type == "routine",
             CalendarEvent.start_time >= now,
-            # Only morning routines (before 14:00 UTC ≈ 16:00 Berlin)
             extract("hour", CalendarEvent.start_time) < 14,
-            # Match weekday (PostgreSQL ISODOW: Mon=1 … Sun=7)
             extract("isodow", CalendarEvent.start_time) == iso_dow,
         )
+        .order_by(CalendarEvent.start_time)
     )
     events = result.scalars().all()
-    delta = timedelta(minutes=body.delta_minutes)
+    if not events:
+        return {"shifted": 0}
+
+    # Determine current local hour of the earliest routine
+    first_utc = events[0].start_time.replace(tzinfo=timezone.utc)
+    first_local = first_utc.astimezone(BERLIN_TZ)
+    current_minutes = first_local.hour * 60 + first_local.minute
+    target_minutes = body.target_hour * 60
+    delta = timedelta(minutes=target_minutes - current_minutes)
+
+    if delta.total_seconds() == 0:
+        return {"shifted": 0}
+
     for e in events:
         e.start_time = e.start_time + delta
         if e.end_time:

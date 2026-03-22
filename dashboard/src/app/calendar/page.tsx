@@ -236,15 +236,16 @@ function DaySettingsPanel({
     onChange(fixed);
     saveDaySettings(fixed);
 
-    // Shift morning routines for each day where wake hour changed
+    // Align morning routines for each day where wake hour changed.
+    // Always send target_hour — backend calculates actual delta from DB times,
+    // so this works even if localStorage was already updated before.
     let totalShifted = 0;
     for (let i = 0; i <= 6; i++) {
       const oldWake = settings[i]?.wakeHour ?? DEFAULT_WEEK_SETTINGS[i].wakeHour;
       const newWake = fixed[i]?.wakeHour ?? DEFAULT_WEEK_SETTINGS[i].wakeHour;
-      const delta = (newWake - oldWake) * 60;
-      if (delta !== 0) {
+      if (newWake !== oldWake) {
         try {
-          const res = await api.shiftDayRoutines(i, delta);
+          const res = await api.shiftDayRoutines(i, newWake);
           totalShifted += res.shifted ?? 0;
         } catch {
           // non-fatal — grid settings still saved
@@ -319,6 +320,23 @@ function DaySettingsPanel({
 
       <button onClick={applyToAll} className="w-full mb-2 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white transition-colors">
         Auf alle Tage anwenden
+      </button>
+
+      {/* Sync button: always aligns routines to current wake hour, even if unchanged */}
+      <button
+        onClick={async () => {
+          setSaving(true);
+          try {
+            const res = await api.shiftDayRoutines(activeDay, cur.wakeHour);
+            const n = res.shifted ?? 0;
+            setShiftInfo(n > 0 ? `${n} Routine${n === 1 ? "" : "n"} auf ${String(cur.wakeHour).padStart(2,"0")}:00 ausgerichtet ✓` : "Keine Routinen gefunden");
+          } catch { setShiftInfo("Fehler beim Ausrichten"); }
+          finally { setSaving(false); }
+        }}
+        disabled={saving}
+        className="w-full mb-2 py-1.5 rounded-lg text-xs border border-blue-700/50 text-blue-400 hover:border-blue-500 hover:text-blue-300 disabled:opacity-50 transition-colors"
+      >
+        🔄 Routinen jetzt auf {String(cur.wakeHour).padStart(2,"0")}:00 ausrichten
       </button>
 
       {shiftInfo && (
