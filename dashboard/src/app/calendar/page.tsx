@@ -962,28 +962,28 @@ export default function CalendarPage() {
           <ChevronRight size={16} />
         </button>
 
-        {/* Day settings gear */}
-        {(view === "week" || view === "day") && (
-          <div className="relative">
-            <button
-              onClick={() => setShowSettings((v) => !v)}
-              className={cn(
-                "p-2 rounded-lg transition-colors",
-                showSettings ? "text-blue-400 bg-zinc-800" : "text-zinc-500 hover:text-white hover:bg-zinc-800"
-              )}
-              title="Tageszeiten einstellen"
-            >
-              ⚙️
-            </button>
-            {showSettings && (
-              <DaySettingsPanel
-                settings={daySettings}
-                onChange={setDaySettings}
-                onClose={() => setShowSettings(false)}
-              />
+        {/* Day settings — always visible */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSettings((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors",
+              showSettings
+                ? "bg-zinc-800 border-zinc-600 text-blue-400"
+                : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white"
             )}
-          </div>
-        )}
+            title="Tageszeiten einstellen"
+          >
+            ⚙️ {String(daySettings.wakeHour).padStart(2,"0")}:00–{daySettings.sleepHour === 24 ? "00:00" : `${String(daySettings.sleepHour).padStart(2,"0")}:00`}
+          </button>
+          {showSettings && (
+            <DaySettingsPanel
+              settings={daySettings}
+              onChange={setDaySettings}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
+        </div>
       </div>
 
       {/* Category Legend */}
