@@ -14,6 +14,7 @@ Personal COO Telegram Bot + Web Dashboard
 - NEVER use `--delete` with rsync (it will wipe the server .env with secrets)
 - Then on server: `cd /opt/personal-os && source venv/bin/activate && alembic upgrade head && systemctl restart personal-os`
 - Dashboard: `cd /opt/personal-os/dashboard && npm run build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && systemctl restart personal-os-dashboard`
+- Note: nginx serves `/_next/static/` directly from `.next/standalone/.next/static/` — so the cp step above is required after every build
 
 ## Tech Stack
 - Python 3.12, FastAPI, uvicorn
