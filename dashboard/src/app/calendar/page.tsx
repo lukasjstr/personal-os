@@ -73,6 +73,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+/** Format event duration (e.g. "30 min", "1h 30min"). Returns null if indeterminate. */
+function eventDuration(e: { start_time: string; end_time?: string | null; all_day: boolean; event_type: string }): string | null {
+  if (isEffectivelyAllDay(e) || !e.end_time) return null;
+  const mins = differenceInMinutes(parseISO(e.end_time), parseISO(e.start_time));
+  if (mins <= 0) return null;
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}min` : `${h}h`;
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const EVENT_TYPE_BADGE: Record<string, string> = {
@@ -234,11 +245,13 @@ function EventModal({
   );
   const [notes, setNotes] = useState(event.description ?? "");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const updated = await api.updateCalendarEvent(event.id, {
         title: title.trim() || event.title,
@@ -250,7 +263,7 @@ function EventModal({
       onSaved(updated);
       onClose();
     } catch {
-      // ignore
+      setSaveError("Speichern fehlgeschlagen. Bitte erneut versuchen.");
     } finally {
       setSaving(false);
     }
@@ -258,12 +271,14 @@ function EventModal({
 
   const handleDelete = useCallback(async () => {
     setDeleting(true);
+    setSaveError(null);
     try {
       await api.deleteCalendarEvent(event.id);
       onDeleted(event.id);
       onClose();
     } catch {
-      // ignore
+      setSaveError("Löschen fehlgeschlagen. Bitte erneut versuchen.");
+      setConfirmDelete(false);
     } finally {
       setDeleting(false);
     }
@@ -344,6 +359,11 @@ function EventModal({
                     ? `${formatDate(event.start_time)} · Ganztägig`
                     : `${formatDate(event.start_time)} · ${eventTimeStr(event)}`}
                 </span>
+                {parseISO(event.start_time) < new Date() && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700/60 text-zinc-500 border border-zinc-700 ml-1">
+                    Vergangen
+                  </span>
+                )}
               </div>
               {event.description && (
                 <div className="mb-4">
@@ -357,6 +377,13 @@ function EventModal({
                 </div>
               )}
             </>
+          )}
+
+          {/* Error message */}
+          {saveError && (
+            <div className="mb-3 px-3 py-2 bg-red-900/30 border border-red-800/60 rounded-lg text-red-300 text-xs">
+              {saveError}
+            </div>
           )}
 
           {/* Actions */}
@@ -475,8 +502,8 @@ function MonthView({
                     {EVENT_TYPE_EMOJI[e.event_type] ?? "📌"} {e.title}
                   </div>
                 ))}
-                {allDayEvents.length > 3 && (
-                  <div className="text-xs text-zinc-500 px-1">+{allDayEvents.length - 3}</div>
+                {dayEvents.length > 3 && (
+                  <div className="text-xs text-zinc-500 px-1">+{dayEvents.length - 3} weitere</div>
                 )}
               </div>
             </div>
@@ -693,7 +720,8 @@ function TimeGrid({
                     }}
                     className={cn(
                       "px-1.5 py-0.5 rounded-md text-xs border cursor-pointer hover:brightness-125 hover:z-20 transition-all overflow-hidden shadow-sm",
-                      EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600"
+                      EVENT_TYPE_BADGE[e.event_type] ?? "bg-zinc-700 text-zinc-300 border-zinc-600",
+                      parseISO(e.start_time) < new Date() && "opacity-40"
                     )}
                     title={`${e.title} · ${formatTime(e.start_time)}${e.end_time ? ` – ${formatTime(e.end_time)}` : ""}`}
                   >
@@ -713,7 +741,8 @@ function TimeGrid({
               {isToday(d) && (() => {
                 const now = new Date();
                 const nowMins = (getHours(now) - settings.wakeHour) * 60 + getMinutes(now);
-                if (nowMins < 0 || nowMins > totalGridPx) return null;
+                const totalGridMins = (settings.sleepHour - settings.wakeHour) * 60;
+                if (nowMins < 0 || nowMins > totalGridMins) return null;
                 const topPx = (nowMins / 60) * HOUR_HEIGHT;
                 return (
                   <div
@@ -785,6 +814,8 @@ export default function CalendarPage() {
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
   const [daySettings, setDaySettings] = useState<DayTimeSettings>(loadDaySettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<string>("");
   const { data, error, isLoading, mutate } = useCalendar(90, 30);
   const { toasts, addToast, dismissToast } = useToast();
 
@@ -823,7 +854,9 @@ export default function CalendarPage() {
   const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
   const upcoming = events
     .filter((e) => parseISO(e.start_time) >= startOfToday)
-    .slice(0, 30);
+    .filter((e) => !searchQuery || e.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter((e) => !filterType || e.event_type === filterType)
+    .slice(0, 50);
 
   // Group upcoming by day
   const upcomingByDay = upcoming.reduce<{ label: string; date: Date; events: typeof upcoming }[]>((acc, e) => {
@@ -1031,7 +1064,7 @@ export default function CalendarPage() {
                   )}
                   {e.description && (
                     <div className="text-zinc-500 text-xs mt-0.5 truncate">
-                      📝 {e.description}
+                      📝 {stripHtml(e.description)}
                     </div>
                   )}
                 </div>
@@ -1043,9 +1076,44 @@ export default function CalendarPage() {
 
       {/* Upcoming Events */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-        <h2 className="text-white font-semibold mb-4 flex items-center gap-2">
-          <span>⏰</span> Bevorstehende Events
-        </h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-white font-semibold flex items-center gap-2">
+            <span>⏰</span> Bevorstehende Events
+          </h2>
+          <input
+            type="text"
+            placeholder="Suchen..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500 w-40"
+          />
+        </div>
+        {/* Type filter pills */}
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          <button
+            onClick={() => setFilterType("")}
+            className={cn(
+              "text-xs px-2.5 py-1 rounded-full border transition-colors",
+              !filterType ? "bg-zinc-700 border-zinc-600 text-white" : "border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+            )}
+          >
+            Alle
+          </button>
+          {Object.entries(EVENT_TYPE_LABEL).map(([type, label]) => (
+            <button
+              key={type}
+              onClick={() => setFilterType(filterType === type ? "" : type)}
+              className={cn(
+                "text-xs px-2.5 py-1 rounded-full border transition-colors",
+                filterType === type
+                  ? cn(EVENT_TYPE_BADGE[type] ?? "bg-zinc-700 border-zinc-600 text-white")
+                  : "border-zinc-700 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+              )}
+            >
+              {EVENT_TYPE_EMOJI[type] ?? "📌"} {label}
+            </button>
+          ))}
+        </div>
         {upcomingByDay.length === 0 ? (
           <EmptyState emoji="📅" message="Keine bevorstehenden Events" />
         ) : (
@@ -1095,13 +1163,16 @@ export default function CalendarPage() {
                               </span>
                             )}
                           </div>
-                          {!e.all_day && (
-                            <div className="text-zinc-500 text-xs mt-0.5">
-                              ⏰ {eventTimeStr(e)}
+                          {!isEffectivelyAllDay(e) && (
+                            <div className="text-zinc-500 text-xs mt-0.5 flex items-center gap-2">
+                              <span>⏰ {eventTimeStr(e)}</span>
+                              {eventDuration(e) && (
+                                <span className="text-zinc-600">· {eventDuration(e)}</span>
+                              )}
                             </div>
                           )}
                           {e.description && (
-                            <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {e.description}</div>
+                            <div className="text-zinc-500 text-xs mt-0.5 truncate">📝 {stripHtml(e.description)}</div>
                           )}
                         </div>
                       </button>
