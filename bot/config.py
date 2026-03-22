@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # allow unknown .env keys without crashing
 
 
 @lru_cache()
