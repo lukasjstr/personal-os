@@ -302,6 +302,8 @@ function EventModal({
                 <span>
                   {event.all_day
                     ? `${formatDate(event.start_time)} · Ganztägig`
+                    : event.end_time && event.event_type === "reminder" && !isSameDay(parseISO(event.start_time), parseISO(event.end_time))
+                    ? `${formatDate(event.start_time)} · ${formatTime(event.start_time)} → fällig: ${formatDate(event.end_time)} ${formatTime(event.end_time)}`
                     : `${formatDate(event.start_time)} · ${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`}
                 </span>
               </div>
@@ -971,8 +973,8 @@ export default function CalendarPage() {
                   {!e.all_day && (
                     <div className="text-zinc-500 text-xs mt-0.5">
                       ⏰ {formatTime(e.start_time)}
-                      {e.end_time && e.event_type === "reminder"
-                        ? ` → erinnert an ${formatTime(e.end_time)}`
+                      {e.end_time && e.event_type === "reminder" && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))
+                        ? ` → erinnert an ${formatDate(e.end_time)} ${formatTime(e.end_time)}`
                         : e.end_time ? ` – ${formatTime(e.end_time)}` : ""}
                     </div>
                   )}
@@ -1024,9 +1026,8 @@ export default function CalendarPage() {
                   <div className="text-zinc-500 text-xs mt-0.5">
                     📅 {formatDate(e.start_time)}
                     {!e.all_day && ` · ⏰ ${formatTime(e.start_time)}`}
-                    {/* For reminders: end_time = the referenced event's time, show as "→ HH:MM" not a range */}
-                    {e.end_time && !e.all_day && e.event_type === "reminder"
-                      ? ` → erinnert an ${formatTime(e.end_time)}`
+                    {e.end_time && !e.all_day && e.event_type === "reminder" && !isSameDay(parseISO(e.start_time), parseISO(e.end_time))
+                      ? ` → fällig: ${formatDate(e.end_time)} ${formatTime(e.end_time)}`
                       : e.end_time && !e.all_day
                       ? ` – ${formatTime(e.end_time)}`
                       : null}
