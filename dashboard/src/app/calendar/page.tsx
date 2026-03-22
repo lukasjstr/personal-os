@@ -136,24 +136,67 @@ type ViewMode = "month" | "week" | "day";
 // ─── Day Time Settings ────────────────────────────────────────────────────────
 
 interface DayTimeSettings {
-  wakeHour: number;   // first visible hour (e.g. 5 = 05:00)
-  sleepHour: number;  // last visible hour (e.g. 23 = 23:00)
+  wakeHour: number;
+  sleepHour: number;
 }
 
-const DEFAULT_SETTINGS: DayTimeSettings = { wakeHour: 6, sleepHour: 23 };
+/** 0=Mo, 1=Di, 2=Mi, 3=Do, 4=Fr, 5=Sa, 6=So */
+type WeekSettings = Record<number, DayTimeSettings>;
 
-function loadDaySettings(): DayTimeSettings {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+const DAY_LABELS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+const DEFAULT_WEEK_SETTINGS: WeekSettings = {
+  0: { wakeHour: 6, sleepHour: 23 },
+  1: { wakeHour: 6, sleepHour: 23 },
+  2: { wakeHour: 6, sleepHour: 23 },
+  3: { wakeHour: 6, sleepHour: 23 },
+  4: { wakeHour: 6, sleepHour: 23 },
+  5: { wakeHour: 8, sleepHour: 22 },
+  6: { wakeHour: 9, sleepHour: 22 },
+};
+
+/** Convert JS getDay() (0=Sun) to 0=Mon…6=Sun index */
+function getDayIdx(d: Date): number {
+  const dow = d.getDay();
+  return dow === 0 ? 6 : dow - 1;
+}
+
+/** Get settings for a specific calendar day */
+function settingsForDay(ws: WeekSettings, d: Date): DayTimeSettings {
+  return ws[getDayIdx(d)] ?? DEFAULT_WEEK_SETTINGS[0];
+}
+
+/** Compute the overall grid range (min wake, max sleep) across all days */
+function gridRange(ws: WeekSettings): DayTimeSettings {
+  const vals = Object.values(ws);
+  return {
+    wakeHour: Math.min(...vals.map((s) => s.wakeHour)),
+    sleepHour: Math.max(...vals.map((s) => s.sleepHour)),
+  };
+}
+
+function loadDaySettings(): WeekSettings {
+  if (typeof window === "undefined") return DEFAULT_WEEK_SETTINGS;
   try {
-    const raw = localStorage.getItem("cal_day_settings");
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    const raw = localStorage.getItem("cal_week_settings");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Merge with defaults so new keys are filled
+      return { ...DEFAULT_WEEK_SETTINGS, ...parsed };
+    }
+    // Migrate old single-setting format
+    const old = localStorage.getItem("cal_day_settings");
+    if (old) {
+      const s = JSON.parse(old) as DayTimeSettings;
+      return Object.fromEntries([0,1,2,3,4,5,6].map((i) => [i, s])) as WeekSettings;
+    }
   } catch {}
-  return DEFAULT_SETTINGS;
+  return DEFAULT_WEEK_SETTINGS;
 }
 
-function saveDaySettings(s: DayTimeSettings) {
+function saveDaySettings(s: WeekSettings) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("cal_day_settings", JSON.stringify(s));
+  localStorage.setItem("cal_week_settings", JSON.stringify(s));
 }
 
 function DaySettingsPanel({
@@ -161,52 +204,94 @@ function DaySettingsPanel({
   onChange,
   onClose,
 }: {
-  settings: DayTimeSettings;
-  onChange: (s: DayTimeSettings) => void;
+  settings: WeekSettings;
+  onChange: (s: WeekSettings) => void;
   onClose: () => void;
 }) {
-  const [wake, setWake] = useState(settings.wakeHour);
-  const [sleep, setSleep] = useState(settings.sleepHour);
+  const [draft, setDraft] = useState<WeekSettings>({ ...settings });
+  const [activeDay, setActiveDay] = useState(0); // 0=Mo
+
+  const setWake = (h: number) =>
+    setDraft((prev) => ({ ...prev, [activeDay]: { ...prev[activeDay], wakeHour: h } }));
+  const setSleep = (h: number) =>
+    setDraft((prev) => ({ ...prev, [activeDay]: { ...prev[activeDay], sleepHour: Math.max(h, prev[activeDay].wakeHour + 1) } }));
+
+  const applyToAll = () => {
+    const s = draft[activeDay];
+    setDraft(Object.fromEntries([0,1,2,3,4,5,6].map((i) => [i, { ...s }])) as WeekSettings);
+  };
 
   const save = () => {
-    const s = { wakeHour: wake, sleepHour: Math.max(wake + 1, sleep) };
-    onChange(s);
-    saveDaySettings(s);
+    // Ensure sleepHour > wakeHour for every day
+    const fixed: WeekSettings = Object.fromEntries(
+      Object.entries(draft).map(([k, v]) => [k, { wakeHour: v.wakeHour, sleepHour: Math.max(v.sleepHour, v.wakeHour + 1) }])
+    ) as WeekSettings;
+    onChange(fixed);
+    saveDaySettings(fixed);
     onClose();
   };
 
+  const cur = draft[activeDay];
+
   return (
-    <div className="absolute top-full right-0 z-50 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-64">
-      <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">⚙️ Tageszeiten</h3>
-      <div className="space-y-3 mb-4">
-        <div>
-          <label className="text-zinc-400 text-xs mb-1.5 block">🌅 Aufstehen (erste Stunde)</label>
-          <div className="flex gap-1 flex-wrap">
-            {[4, 5, 6, 7, 8].map((h) => (
-              <button key={h} onClick={() => setWake(h)}
-                className={cn("px-2.5 py-1 rounded-lg text-xs border transition-colors",
-                  wake === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
-                {String(h).padStart(2, "0")}:00
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="text-zinc-400 text-xs mb-1.5 block">🌙 Schlafen gehen (letzte Stunde)</label>
-          <div className="flex gap-1 flex-wrap">
-            {[21, 22, 23, 24].map((h) => (
-              <button key={h} onClick={() => setSleep(h)}
-                className={cn("px-2.5 py-1 rounded-lg text-xs border transition-colors",
-                  sleep === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
-                {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
-              </button>
-            ))}
-          </div>
+    <div className="absolute top-full right-0 z-50 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72">
+      <h3 className="text-white font-semibold text-sm mb-3">⚙️ Tageszeiten pro Wochentag</h3>
+
+      {/* Day tabs */}
+      <div className="grid grid-cols-7 gap-0.5 mb-3">
+        {DAY_LABELS_SHORT.map((label, i) => (
+          <button
+            key={i}
+            onClick={() => setActiveDay(i)}
+            className={cn(
+              "py-1.5 rounded text-xs font-medium transition-colors flex flex-col items-center gap-0.5",
+              activeDay === i ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"
+            )}
+          >
+            <span>{label}</span>
+            <span className={cn("text-[9px] font-mono leading-none", activeDay === i ? "text-blue-200" : "text-zinc-600")}>
+              {String(draft[i].wakeHour).padStart(2,"0")}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Wake hour */}
+      <div className="mb-3">
+        <label className="text-zinc-400 text-xs mb-1.5 block">🌅 Aufstehen</label>
+        <div className="flex gap-1 flex-wrap">
+          {[4, 5, 6, 7, 8, 9, 10].map((h) => (
+            <button key={h} onClick={() => setWake(h)}
+              className={cn("px-2 py-1 rounded-lg text-xs border transition-colors",
+                cur.wakeHour === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
+              {String(h).padStart(2,"0")}:00
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Sleep hour */}
+      <div className="mb-3">
+        <label className="text-zinc-400 text-xs mb-1.5 block">🌙 Schlafen</label>
+        <div className="flex gap-1 flex-wrap">
+          {[20, 21, 22, 23, 24].map((h) => (
+            <button key={h} onClick={() => setSleep(h)}
+              className={cn("px-2 py-1 rounded-lg text-xs border transition-colors",
+                cur.sleepHour === h ? "bg-blue-600/20 border-blue-500 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-600")}>
+              {h === 24 ? "00:00" : `${String(h).padStart(2,"0")}:00`}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="text-zinc-600 text-xs mb-3">
-        Sichtbarer Bereich: {String(wake).padStart(2,"0")}:00 – {sleep === 24 ? "00:00" : `${String(sleep).padStart(2,"0")}:00`}
+        {DAY_LABELS_SHORT[activeDay]}: {String(cur.wakeHour).padStart(2,"0")}:00 – {cur.sleepHour === 24 ? "00:00" : `${String(cur.sleepHour).padStart(2,"0")}:00`}
       </div>
+
+      <button onClick={applyToAll} className="w-full mb-2 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white transition-colors">
+        Auf alle Tage anwenden
+      </button>
+
       <div className="flex gap-2">
         <button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium py-2 rounded-lg transition-colors">
           Speichern
@@ -594,14 +679,15 @@ function TimeGrid({
   days,
   events,
   onSelectEvent,
-  settings,
+  weekSettings,
 }: {
   days: Date[];
   events: CalendarEvent[];
   onSelectEvent: (e: CalendarEvent) => void;
-  settings: DayTimeSettings;
+  weekSettings: WeekSettings;
 }) {
-  const dayHours = Array.from({ length: settings.sleepHour - settings.wakeHour + 1 }, (_, i) => i + settings.wakeHour);
+  const range = gridRange(weekSettings);
+  const dayHours = Array.from({ length: range.sleepHour - range.wakeHour + 1 }, (_, i) => i + range.wakeHour);
   const dayWidth = `${100 / days.length}%`;
   const totalGridPx = dayHours.length * HOUR_HEIGHT;
 
@@ -660,9 +746,10 @@ function TimeGrid({
         {/* Day columns */}
         {days.map((d) => {
           const key = format(d, "yyyy-MM-dd");
+          const daySetting = settingsForDay(weekSettings, d);
           const dayEvents = (byDay.get(key) ?? []).filter((e) => !e.all_day);
           const allDayEvents = (byDay.get(key) ?? []).filter((e) => e.all_day);
-          const laid = layoutEvents(dayEvents, settings.wakeHour);
+          const laid = layoutEvents(dayEvents, range.wakeHour);
 
           return (
             <div
@@ -737,11 +824,25 @@ function TimeGrid({
                 );
               })}
 
+              {/* Grey out hours outside this day's configured range */}
+              {daySetting.wakeHour > range.wakeHour && (
+                <div
+                  className="absolute left-0 right-0 top-0 bg-zinc-950/60 pointer-events-none z-5"
+                  style={{ height: `${(daySetting.wakeHour - range.wakeHour) * HOUR_HEIGHT}px` }}
+                />
+              )}
+              {daySetting.sleepHour < range.sleepHour && (
+                <div
+                  className="absolute left-0 right-0 bottom-0 bg-zinc-950/60 pointer-events-none z-5"
+                  style={{ height: `${(range.sleepHour - daySetting.sleepHour) * HOUR_HEIGHT}px` }}
+                />
+              )}
+
               {/* Current time indicator */}
               {isToday(d) && (() => {
                 const now = new Date();
-                const nowMins = (getHours(now) - settings.wakeHour) * 60 + getMinutes(now);
-                const totalGridMins = (settings.sleepHour - settings.wakeHour) * 60;
+                const nowMins = (getHours(now) - range.wakeHour) * 60 + getMinutes(now);
+                const totalGridMins = (range.sleepHour - range.wakeHour) * 60;
                 if (nowMins < 0 || nowMins > totalGridMins) return null;
                 const topPx = (nowMins / 60) * HOUR_HEIGHT;
                 return (
@@ -770,12 +871,12 @@ function WeekView({
   events,
   weekStart,
   onSelectEvent,
-  settings,
+  weekSettings,
 }: {
   events: CalendarEvent[];
   weekStart: Date;
   onSelectEvent: (e: CalendarEvent) => void;
-  settings: DayTimeSettings;
+  weekSettings: WeekSettings;
 }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const weekEvents = events.filter((e) => {
@@ -783,7 +884,7 @@ function WeekView({
     return d >= days[0] && d <= addDays(days[6], 1);
   });
 
-  return <TimeGrid days={days} events={weekEvents} onSelectEvent={onSelectEvent} settings={settings} />;
+  return <TimeGrid days={days} events={weekEvents} onSelectEvent={onSelectEvent} weekSettings={weekSettings} />;
 }
 
 // ─── Day View ─────────────────────────────────────────────────────────────────
@@ -792,15 +893,15 @@ function DayView({
   events,
   currentDay,
   onSelectEvent,
-  settings,
+  weekSettings,
 }: {
   events: CalendarEvent[];
   currentDay: Date;
   onSelectEvent: (e: CalendarEvent) => void;
-  settings: DayTimeSettings;
+  weekSettings: WeekSettings;
 }) {
   const dayEvents = events.filter((e) => isSameDay(parseISO(e.start_time), currentDay));
-  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} settings={settings} />;
+  return <TimeGrid days={[currentDay]} events={dayEvents} onSelectEvent={onSelectEvent} weekSettings={weekSettings} />;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -812,7 +913,7 @@ export default function CalendarPage() {
   const [currentDay, setCurrentDay] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
-  const [daySettings, setDaySettings] = useState<DayTimeSettings>(loadDaySettings);
+  const [daySettings, setDaySettings] = useState<WeekSettings>(loadDaySettings);
   const [showSettings, setShowSettings] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("");
@@ -974,7 +1075,7 @@ export default function CalendarPage() {
             )}
             title="Tageszeiten einstellen"
           >
-            ⚙️ {String(daySettings.wakeHour).padStart(2,"0")}:00–{daySettings.sleepHour === 24 ? "00:00" : `${String(daySettings.sleepHour).padStart(2,"0")}:00`}
+            ⚙️ Zeiten
           </button>
           {showSettings && (
             <DaySettingsPanel
@@ -1018,7 +1119,7 @@ export default function CalendarPage() {
             events={events}
             weekStart={currentWeek}
             onSelectEvent={setActiveEvent}
-            settings={daySettings}
+            weekSettings={daySettings}
           />
         )}
         {view === "day" && (
@@ -1026,7 +1127,7 @@ export default function CalendarPage() {
             events={events}
             currentDay={currentDay}
             onSelectEvent={setActiveEvent}
-            settings={daySettings}
+            weekSettings={daySettings}
           />
         )}
       </div>
