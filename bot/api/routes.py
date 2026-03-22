@@ -1463,6 +1463,47 @@ async def link_calendar_task(
     return _event_dict(event)
 
 
+class ShiftRoutinesBody(BaseModel):
+    weekday: int        # 0=Mon … 6=Sun
+    delta_minutes: int  # positive = later, negative = earlier
+
+
+@router.post("/calendar/shift-routines")
+async def shift_day_routines(
+    body: ShiftRoutinesBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Shift all morning Routine events (start < 14:00 UTC) on a given weekday
+    by delta_minutes.  Used when the user changes their wake-up time."""
+    if body.delta_minutes == 0:
+        return {"shifted": 0}
+
+    now = datetime.utcnow()
+    # Python isoweekday: Mon=1 … Sun=7; our weekday: Mon=0 … Sun=6
+    iso_dow = body.weekday + 1
+
+    result = await session.execute(
+        select(CalendarEvent).where(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.event_type == "routine",
+            CalendarEvent.start_time >= now,
+            # Only morning routines (before 14:00 UTC ≈ 16:00 Berlin)
+            extract("hour", CalendarEvent.start_time) < 14,
+            # Match weekday (PostgreSQL ISODOW: Mon=1 … Sun=7)
+            extract("isodow", CalendarEvent.start_time) == iso_dow,
+        )
+    )
+    events = result.scalars().all()
+    delta = timedelta(minutes=body.delta_minutes)
+    for e in events:
+        e.start_time = e.start_time + delta
+        if e.end_time:
+            e.end_time = e.end_time + delta
+    await session.commit()
+    return {"shifted": len(events)}
+
+
 @router.delete("/calendar/{event_id}/link-task")
 async def unlink_calendar_task(
     event_id: int,

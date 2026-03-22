@@ -1060,6 +1060,8 @@ export const api = {
   deleteCalendarEvent: (id: number) => apiDelete<{ ok: boolean }>(`/api/calendar/${id}`),
   addCalendarNotes: (id: number, notes: string) =>
     apiPost<CalendarEvent>(`/api/calendar/${id}/notes`, { notes }),
+  shiftDayRoutines: (weekday: number, delta_minutes: number) =>
+    apiPost<{ shifted: number }>("/api/calendar/shift-routines", { weekday, delta_minutes }),
   brainDumps: () => apiFetch<{ brain_dumps: BrainDump[] }>("/api/brain-dumps"),
   shopping: () => apiFetch<{ items: { id: number; title: string; created_at: string }[] }>("/api/shopping"),
   shoppingDefaults: () => apiFetch<{ defaults: ShoppingDefault[] }>("/api/shopping/defaults"),

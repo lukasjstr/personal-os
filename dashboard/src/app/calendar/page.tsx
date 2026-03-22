@@ -214,6 +214,8 @@ function DaySettingsPanel({
 }) {
   const [draft, setDraft] = useState<WeekSettings>({ ...settings });
   const [activeDay, setActiveDay] = useState(0); // 0=Mo
+  const [saving, setSaving] = useState(false);
+  const [shiftInfo, setShiftInfo] = useState<string | null>(null);
 
   const setWake = (h: number) =>
     setDraft((prev) => ({ ...prev, [activeDay]: { ...prev[activeDay], wakeHour: h } }));
@@ -225,14 +227,37 @@ function DaySettingsPanel({
     setDraft(Object.fromEntries([0,1,2,3,4,5,6].map((i) => [i, { ...s }])) as WeekSettings);
   };
 
-  const save = () => {
+  const save = async () => {
+    setSaving(true);
     // Ensure sleepHour > wakeHour for every day
     const fixed: WeekSettings = Object.fromEntries(
       Object.entries(draft).map(([k, v]) => [k, { wakeHour: v.wakeHour, sleepHour: Math.max(v.sleepHour, v.wakeHour + 1) }])
     ) as WeekSettings;
     onChange(fixed);
     saveDaySettings(fixed);
-    onClose();
+
+    // Shift morning routines for each day where wake hour changed
+    let totalShifted = 0;
+    for (let i = 0; i <= 6; i++) {
+      const oldWake = settings[i]?.wakeHour ?? DEFAULT_WEEK_SETTINGS[i].wakeHour;
+      const newWake = fixed[i]?.wakeHour ?? DEFAULT_WEEK_SETTINGS[i].wakeHour;
+      const delta = (newWake - oldWake) * 60;
+      if (delta !== 0) {
+        try {
+          const res = await api.shiftDayRoutines(i, delta);
+          totalShifted += res.shifted ?? 0;
+        } catch {
+          // non-fatal — grid settings still saved
+        }
+      }
+    }
+    setSaving(false);
+    if (totalShifted > 0) {
+      setShiftInfo(`${totalShifted} Routine${totalShifted === 1 ? "" : "n"} verschoben ✓`);
+      setTimeout(() => { onClose(); }, 1200);
+    } else {
+      onClose();
+    }
   };
 
   const cur = draft[activeDay];
@@ -296,9 +321,13 @@ function DaySettingsPanel({
         Auf alle Tage anwenden
       </button>
 
+      {shiftInfo && (
+        <div className="text-green-400 text-xs text-center mb-2">{shiftInfo}</div>
+      )}
+
       <div className="flex gap-2">
-        <button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium py-2 rounded-lg transition-colors">
-          Speichern
+        <button onClick={save} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-medium py-2 rounded-lg transition-colors">
+          {saving ? "Verschiebe Routinen…" : "Speichern"}
         </button>
         <button onClick={onClose} className="px-3 py-2 text-zinc-500 hover:text-white text-xs transition-colors">
           Abbrechen
