@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, extract, func, or_, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9463,4 +9463,178 @@ async def set_life_context(
         "active_from": ctx.active_from.isoformat(),
         "active_until": ctx.active_until.isoformat() if ctx.active_until else None,
         "message": format_life_mode_message(ctx.mode, ctx.notes, ctx.active_until),
+    }
+
+
+# ─── Watch / Voice Endpoints ──────────────────────────────────────────────────
+
+@router.get("/watch/face")
+async def get_watch_face(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Compact real-time data for watch complications and tiles.
+
+    Designed for minimal payload that any watch/widget can poll.
+    Updates every ~15 min from wearable background sync.
+    """
+    today = date.today()
+    today_dt = datetime.combine(today, datetime.min.time())
+
+    # ── Today's health logs ─────────────────────────────────────────────────
+    logs_res = await session.execute(
+        select(Log).where(
+            and_(
+                Log.user_id == user.id,
+                Log.created_at >= today_dt,
+            )
+        )
+    )
+    logs = logs_res.scalars().all()
+
+    steps = calories = hrv = mood = water_ml = 0
+    sleep_hours = None
+    for log in logs:
+        d = log.data or {}
+        if log.log_type == "steps":
+            steps = max(steps, int(d.get("count", 0)))
+        elif log.log_type == "calories":
+            calories = max(calories, int(d.get("kcal", 0)))
+        elif log.log_type == "hrv":
+            hrv = max(hrv, int(d.get("ms", 0)))
+        elif log.log_type == "mood":
+            mood = max(mood, int(d.get("score", 0)))
+        elif log.log_type == "water":
+            water_ml += int(d.get("ml", d.get("amount_l", 0) * 1000))
+        elif log.log_type == "sleep" and sleep_hours is None:
+            sleep_hours = float(d.get("hours", 0))
+
+    # ── Streak (longest active habit streak) ───────────────────────────────
+    streaks_res = await session.execute(
+        select(KeyResult).where(
+            and_(
+                KeyResult.user_id == user.id,
+                KeyResult.kr_type == "habit",
+                KeyResult.current_value > 0,
+            )
+        ).order_by(KeyResult.current_value.desc()).limit(1)
+    )
+    top_kr = streaks_res.scalars().first()
+    streak = int(top_kr.current_value) if top_kr else 0
+    streak_label = top_kr.title[:20] if top_kr else ""
+
+    # ── Next action ─────────────────────────────────────────────────────────
+    from bot.core.completion_hooks import get_next_unblocked_action
+    next_task = await get_next_unblocked_action(session, user.id)
+    next_action = next_task.get("title", "")[:40] if next_task else "Alles erledigt ✓"
+
+    # ── Tasks completed today ───────────────────────────────────────────────
+    from bot.database.models import Task
+    tasks_done_res = await session.execute(
+        select(func.count(Task.id)).where(
+            and_(
+                Task.user_id == user.id,
+                Task.status == "done",
+                Task.updated_at >= today_dt,
+            )
+        )
+    )
+    tasks_done = int(tasks_done_res.scalar() or 0)
+
+    # ── Routines completion ─────────────────────────────────────────────────
+    completions = await get_todays_completions(session, user.id)
+    active_routines = await get_active_routines(session, user.id)
+    routines_done = len(completions)
+    routines_total = len(active_routines)
+
+    # ── Life mode ───────────────────────────────────────────────────────────
+    from bot.core.life_context import get_active_life_mode
+    life_mode = await get_active_life_mode(session, user.id)
+
+    # ── Simple daily score (0–100) ──────────────────────────────────────────
+    score_parts = []
+    if steps >= 8000:
+        score_parts.append(25)
+    elif steps >= 4000:
+        score_parts.append(12)
+    if sleep_hours and sleep_hours >= 7:
+        score_parts.append(25)
+    elif sleep_hours and sleep_hours >= 5:
+        score_parts.append(10)
+    if routines_total > 0:
+        score_parts.append(int(25 * routines_done / routines_total))
+    if mood >= 7:
+        score_parts.append(25)
+    elif mood >= 4:
+        score_parts.append(12)
+    daily_score = min(100, sum(score_parts))
+
+    return {
+        "next_action": next_action,
+        "streak": streak,
+        "streak_label": streak_label,
+        "steps": steps,
+        "calories": calories,
+        "hrv_ms": hrv,
+        "mood": mood,
+        "water_ml": water_ml,
+        "sleep_hours": sleep_hours,
+        "tasks_done_today": tasks_done,
+        "routines_done": routines_done,
+        "routines_total": routines_total,
+        "daily_score": daily_score,
+        "life_mode": life_mode,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.post("/voice/command")
+async def voice_command(
+    audio: Optional[UploadFile] = File(None),
+    text: Optional[str] = Form(None),
+    source: str = Form("watch"),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Voice command endpoint for watch/wearable integration.
+
+    Accepts either:
+    - Multipart audio file (WAV/M4A/MP3/WEBM) → Whisper transcription → GPT-4o COO
+    - Plain text (already transcribed on device) → GPT-4o COO
+
+    Returns transcribed text + AI response (speak this back via TTS on device).
+    """
+    from bot.ai.client import openai_client, process_message
+
+    transcribed = text or ""
+
+    # ── Whisper transcription ────────────────────────────────────────────────
+    if audio and not transcribed:
+        audio_bytes = await audio.read()
+        if len(audio_bytes) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Audio too large (max 25 MB)")
+
+        import io as _io
+        audio_buffer = _io.BytesIO(audio_bytes)
+        audio_buffer.name = audio.filename or "voice.m4a"
+
+        whisper_resp = await openai_client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_buffer,
+            language="de",
+        )
+        transcribed = whisper_resp.text.strip()
+
+    if not transcribed:
+        raise HTTPException(status_code=400, detail="Kein Text oder Audio übermittelt")
+
+    # ── Process through full GPT-4o COO pipeline ────────────────────────────
+    reply = await process_message(session, user, transcribed, source=f"voice_{source}")
+    await session.commit()
+
+    return {
+        "ok": True,
+        "transcribed": transcribed,
+        "response": reply,
+        "source": source,
     }

@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -8,10 +8,18 @@ import { OnboardingProvider, useOnboarding } from './src/context/OnboardingConte
 import TabNavigator from './src/navigation/TabNavigator';
 import AuthScreen from './src/screens/AuthScreen';
 import OnboardingWizard from './src/screens/OnboardingWizard';
+import { startBackgroundSync } from './src/services/HealthConnectSync';
 
 function AppContent() {
   const { state: authState } = useAuth();
   const { state: onboardingState } = useOnboarding();
+
+  // Start health data background sync once authenticated
+  useEffect(() => {
+    if (authState === 'authenticated') {
+      startBackgroundSync().catch(() => {/* silent — no native health SDK in Expo Go */});
+    }
+  }, [authState]);
 
   // Still resolving auth or (authenticated and still checking onboarding)
   if (authState === 'loading' || (authState === 'authenticated' && onboardingState === 'loading')) {

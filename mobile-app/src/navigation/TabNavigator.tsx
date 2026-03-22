@@ -10,9 +10,11 @@ import RoutinesScreen from '../screens/RoutinesScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
 import TasksScreen from '../screens/TasksScreen';
+import VoiceScreen from '../screens/VoiceScreen';
 
 export type TabParamList = {
   Home: undefined;
+  Voice: undefined;
   Tasks: { highlightTaskId?: number } | undefined;
   Calendar: undefined;
   Goals: undefined;
@@ -27,6 +29,7 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_ICONS: Record<keyof TabParamList, { focused: IoniconName; default: IoniconName }> = {
   Home: { focused: 'home', default: 'home-outline' },
+  Voice: { focused: 'mic', default: 'mic-outline' },
   Tasks: { focused: 'checkmark-circle', default: 'checkmark-circle-outline' },
   Calendar: { focused: 'calendar', default: 'calendar-outline' },
   Goals: { focused: 'flag', default: 'flag-outline' },
@@ -77,7 +80,15 @@ export default function TabNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+      />
+      <Tab.Screen
+        name="Voice"
+        component={VoiceScreen}
+        options={{ title: 'AI COO' }}
+      />
       <Tab.Screen name="Tasks" component={TasksScreen} />
       <Tab.Screen name="Calendar" component={CalendarScreen} />
       <Tab.Screen name="Goals" component={GoalsScreen} />
