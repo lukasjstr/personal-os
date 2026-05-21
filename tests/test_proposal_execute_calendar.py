@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import and_, delete, select
 
 from bot.core.proposal_execute import execute_accepted_proposal
-from bot.database.connection import get_session
+from bot.database.connection import engine, get_session
 from bot.database.models import (
     AutopilotNotification,
     CalendarEvent,
@@ -46,6 +46,12 @@ async def _get_test_user() -> User:
         if user is None:
             raise RuntimeError("No users in DB — cannot run integration tests")
         return user
+
+
+async def _dispose_engine() -> None:
+    """Drop pooled connections. Must be called before asyncio.run() closes the loop
+    so the next test starts with a fresh pool."""
+    await engine.dispose()
 
 
 async def _cleanup(user_id: int) -> None:
@@ -161,6 +167,7 @@ def test_execute_creates_calendar_events_for_tasks_with_due_date() -> None:
                     assert ev.linked_task_id in result.task_ids
         finally:
             await _cleanup(user.id)
+            await _dispose_engine()
 
     asyncio.run(run())
 
@@ -206,6 +213,7 @@ def test_execute_creates_calendar_events_for_routines() -> None:
                 assert all(ev.linked_routine_id == routine.id for ev in events)
         finally:
             await _cleanup(user.id)
+            await _dispose_engine()
 
     asyncio.run(run())
 
@@ -232,22 +240,37 @@ def test_e2e_payload_to_calendar_events_total() -> None:
             )
 
             async with get_session() as session:
-                obj = (await session.execute(
-                    select(Objective).where(Objective.id == result.objective_id)
-                )).scalar_one()
-                # Count total events linked to this objective's tasks + routines
-                total = (await session.execute(
-                    select(CalendarEvent).where(and_(
-                        CalendarEvent.user_id == user.id,
-                        CalendarEvent.description.ilike(f"%{TEST_MARKER}%"),
+                # Count: events linked to this draft's tasks OR to its routines.
+                # Routine events don't carry TEST_MARKER in description; they carry
+                # linked_routine_id pointing to the test routine.
+                test_routines = (await session.execute(
+                    select(Routine).where(and_(
+                        Routine.user_id == user.id,
+                        Routine.title.ilike(f"%{TEST_MARKER}%"),
                     ))
                 )).scalars().all()
-                # 3 task-deadlines + routine expansion (≥9) + possibly slot candidates
-                assert len(total) >= 12, (
-                    f"expected ≥12 calendar events total (3 deadlines + routine expansion), "
-                    f"got {len(total)}"
+                test_routine_ids = [r.id for r in test_routines]
+
+                task_evt_count = len((await session.execute(
+                    select(CalendarEvent.id).where(and_(
+                        CalendarEvent.user_id == user.id,
+                        CalendarEvent.linked_task_id.in_(result.task_ids or [0]),
+                    ))
+                )).scalars().all())
+                routine_evt_count = len((await session.execute(
+                    select(CalendarEvent.id).where(and_(
+                        CalendarEvent.user_id == user.id,
+                        CalendarEvent.linked_routine_id.in_(test_routine_ids or [0]),
+                    ))
+                )).scalars().all())
+                total = task_evt_count + routine_evt_count
+                # 3 task-deadlines + routine expansion (≥9 in 4 weeks of Mo/Mi/Fr)
+                assert total >= 12, (
+                    f"expected ≥12 events (3 task-deadlines + ≥9 routine), "
+                    f"got {total} (tasks={task_evt_count} routines={routine_evt_count})"
                 )
         finally:
             await _cleanup(user.id)
+            await _dispose_engine()
 
     asyncio.run(run())
