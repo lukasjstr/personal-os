@@ -135,7 +135,9 @@ async def _check_calendar_reminders(
             msg += "\n⚠️ Deadline heute!"
 
         await send_message(user.telegram_id, msg)
-        await _mark_reminder(session, user.id, reminder_type, msg)
+        await _mark_reminder(
+            session, user.id, reminder_type, msg, linked_event_id=event.id,
+        )
         logger.info("Calendar reminder sent to user %s for event %s (%d min lead)", user.id, event.id, lead)
 
 
@@ -346,7 +348,9 @@ async def _check_stale_nudges(
     )
 
     await send_message(user.telegram_id, msg)
-    await _mark_reminder(session, user.id, "stale_nudge", msg)
+    await _mark_reminder(
+        session, user.id, "stale_nudge", msg, linked_task_id=task.id,
+    )
     logger.info("Stale nudge sent to user %s for task %s", user.id, task.id)
 
 
@@ -366,10 +370,33 @@ async def _already_reminded(
 
 
 async def _mark_reminder(
-    session: AsyncSession, user_id: int, reminder_type: str, message: str
+    session: AsyncSession, user_id: int, reminder_type: str, message: str,
+    *,
+    linked_task_id: int | None = None,
+    linked_routine_id: int | None = None,
+    linked_kr_id: int | None = None,
+    linked_event_id: int | None = None,
 ) -> None:
-    """Record a sent reminder to prevent duplicates. Also sends web push."""
+    """Record a sent reminder to prevent duplicates. Also sends web push.
+
+    V3 P07: classifies severity from linked IDs so the escalation sweep can
+    advance ignored important/critical reminders later.
+    """
     now = datetime.utcnow()
+    # Auto-classify severity for escalation. Defaults to 'normal' on failure.
+    severity = "normal"
+    try:
+        from bot.core.reminder_escalation import determine_severity
+        severity = await determine_severity(
+            session, user_id,
+            linked_task_id=linked_task_id,
+            linked_kr_id=linked_kr_id,
+            linked_routine_id=linked_routine_id,
+            linked_event_id=linked_event_id,
+        )
+    except Exception:
+        logger.exception("severity classification failed; defaulting to normal")
+
     reminder = ScheduledReminder(
         user_id=user_id,
         reminder_type=reminder_type,
@@ -378,6 +405,10 @@ async def _mark_reminder(
         status="sent",
         sent_at=now,
         auto_generated=True,
+        linked_task_id=linked_task_id,
+        linked_routine_id=linked_routine_id,
+        linked_key_result_id=linked_kr_id,
+        severity=severity,
     )
     session.add(reminder)
     await session.flush()
