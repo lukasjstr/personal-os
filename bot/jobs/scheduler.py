@@ -352,6 +352,16 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # V3 P08 — Weekly expansion audit (Sunday 18:00 Berlin)
+    from bot.jobs.expansion_audit import run_weekly_expansion_audit
+    _scheduler.add_job(
+        run_weekly_expansion_audit,
+        CronTrigger(hour=18, minute=0, day_of_week="sun", timezone="Europe/Berlin"),
+        id="expansion_audit",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
         "Scheduler initialized with 25 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
@@ -360,6 +370,6 @@ def setup_scheduler() -> AsyncIOScheduler:
         "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
         "quarterly_review, learning_reminders, life_profile_update, "
         "action_engine_morning, action_engine_evening, action_engine_weekly, "
-        "weekly_kickoff"
+        "weekly_kickoff, expansion_audit"
     )
     return _scheduler

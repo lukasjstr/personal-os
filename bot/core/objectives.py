@@ -6,8 +6,155 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from bot.config import settings
 from bot.database.models import KeyResult, Log, Objective, Task
 from bot.core.tasks import create_task as _create_task
+
+
+# ─── V3 P08 — Expansion Guard ────────────────────────────────────────────────
+
+
+class ExpansionGuardException(Exception):
+    """Raised when the hard limit on active objectives is hit."""
+
+
+PRIORITY1_THRESHOLD: int = 8  # priority_weight >= 8 is "Priority 1"
+
+
+async def create_objective_with_guard(
+    session: AsyncSession,
+    user_id: int,
+    title: str,
+    category: str,
+    description: Optional[str] = None,
+    target_date: Optional[str] = None,
+    priority_weight: int = 5,
+) -> dict:
+    """Create an Objective, enforcing soft + hard expansion limits.
+
+    Returns:
+        {
+          "objective": Objective,
+          "warning": Optional[str],    # soft-limit-Warnung
+          "stats": {"active_total": int, "priority1_count": int},
+        }
+
+    Raises:
+        ExpansionGuardException — when total active >= hard limit.
+    """
+    active = (await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user_id,
+            Objective.status == "active",
+        ))
+    )).scalars().all()
+    total_active = len(active)
+    priority1_count = sum(
+        1 for o in active if (o.priority_weight or 0) >= PRIORITY1_THRESHOLD
+    )
+
+    if total_active >= settings.expansion_hard_limit_total:
+        raise ExpansionGuardException(
+            f"HARD LIMIT: {settings.expansion_hard_limit_total} aktive Ziele "
+            f"sind das Maximum. Eines muss erst pausieren (siehe /cut)."
+        )
+
+    warning: Optional[str] = None
+    if (settings.expansion_warning_enabled
+            and priority_weight >= PRIORITY1_THRESHOLD
+            and priority1_count >= settings.expansion_soft_limit_priority1):
+        warning = (
+            f"SOFT LIMIT: Du hast bereits {priority1_count} Priority-1-Ziele. "
+            f"Limit ist {settings.expansion_soft_limit_priority1}. "
+            f"Welches degradierst du auf Priority 2?"
+        )
+
+    obj = await create_objective(
+        session, user_id, title=title, category=category,
+        description=description, target_date=target_date,
+    )
+    if priority_weight != 5:
+        obj.priority_weight = priority_weight
+        await session.flush()
+
+    new_priority1 = priority1_count + (1 if priority_weight >= PRIORITY1_THRESHOLD else 0)
+    return {
+        "objective": obj,
+        "warning": warning,
+        "stats": {"active_total": total_active + 1, "priority1_count": new_priority1},
+    }
+
+
+async def suggest_objective_to_cut(
+    session: AsyncSession, user_id: int
+) -> Optional[dict]:
+    """Identify the weakest active objective. Returns a dict with metrics or None."""
+    objs = (await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user_id,
+            Objective.status == "active",
+        ))
+    )).scalars().all()
+    if not objs:
+        return None
+
+    today = date.today()
+    scored: list[tuple[int, dict]] = []
+    for obj in objs:
+        last_log = (await session.execute(
+            select(func.max(Log.logged_at))
+            .join(KeyResult, Log.key_result_id == KeyResult.id)
+            .where(KeyResult.objective_id == obj.id)
+        )).scalar()
+        if last_log:
+            days_stale = (today - last_log.date()).days
+        else:
+            ref = obj.updated_at or obj.created_at
+            days_stale = (today - ref.date()).days if ref else 30
+
+        # Completion rate: sum of (current/target) ratios across KRs
+        krs = (await session.execute(
+            select(KeyResult).where(KeyResult.objective_id == obj.id)
+        )).scalars().all()
+        ratios: list[float] = []
+        for kr in krs:
+            if kr.target_value and kr.target_value > 0:
+                ratios.append(min(1.0, kr.current_value / kr.target_value))
+        completion = sum(ratios) / max(1, len(ratios))
+
+        priority_weight = obj.priority_weight or 5
+        score = (days_stale * 2) - int(completion * 100) + (10 - priority_weight)
+        scored.append((score, {
+            "id": obj.id,
+            "title": obj.title,
+            "category": obj.category,
+            "priority_weight": priority_weight,
+            "days_stale": days_stale,
+            "completion": round(completion, 2),
+            "score": score,
+        }))
+
+    scored.sort(key=lambda x: -x[0])
+    return scored[0][1] if scored else None
+
+
+async def pause_objective_for_cut(
+    session: AsyncSession, user_id: int, objective_id: int, reason: str = "expansion_cut"
+) -> Optional[Objective]:
+    """Pause an objective owned by the user. Returns the row or None."""
+    obj = (await session.execute(
+        select(Objective).where(and_(
+            Objective.id == objective_id,
+            Objective.user_id == user_id,
+        ))
+    )).scalar_one_or_none()
+    if obj is None:
+        return None
+    obj.status = "paused"
+    obj.paused_at = datetime.utcnow()
+    obj.paused_reason = reason
+    await session.flush()
+    return obj
 
 
 async def create_objective(

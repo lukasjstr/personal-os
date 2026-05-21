@@ -6,6 +6,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.core.goal_onboarding import cancel_onboarding, start_onboarding
+from bot.core.objectives import (
+    list_active_objectives as _list_active_objectives,
+    pause_objective_for_cut,
+    suggest_objective_to_cut,
+)
 from bot.core.shopping import get_shopping_summary
 from bot.core.user_settings import (
     format_settings,
@@ -592,3 +597,52 @@ async def handle_woche(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         text += "\n" + "\n".join(conflict_lines)
 
     await send_message(chat_id, text)
+
+
+# ─── V3 P08 — /cut command ────────────────────────────────────────────────────
+
+
+async def handle_cut(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/cut <objective_id> — pause an active objective (expansion guard).
+
+    /cut without args → list active objectives + suggested cut candidate.
+    """
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+
+        if not context.args:
+            data = await _list_active_objectives(session, user.id)
+            if data["count"] == 0:
+                await send_message(chat_id, "Keine aktiven Objectives.")
+                return
+            cut = await suggest_objective_to_cut(session, user.id)
+            lines = [f"Aktive Objectives ({data['count']}):"]
+            for o in data["objectives"]:
+                stale = f" · {o['stale_days']}d stale" if o["stale_days"] is not None else ""
+                lines.append(f"  #{o['id']} {o['title']} [{o['category']}]{stale}")
+            if cut:
+                lines.append("")
+                lines.append(
+                    f"Schwächstes: #{cut['id']} '{cut['title']}' "
+                    f"({cut['days_stale']}d ohne Log, {int(cut['completion']*100)}% erfüllt)"
+                )
+                lines.append(f"Cut: /cut {cut['id']}")
+            await send_message(chat_id, "\n".join(lines))
+            return
+
+        try:
+            obj_id = int(context.args[0])
+        except ValueError:
+            await send_message(chat_id, "Format: /cut <objective_id>")
+            return
+
+        obj = await pause_objective_for_cut(session, user.id, obj_id)
+        if obj is None:
+            await send_message(chat_id, f"Objective #{obj_id} nicht gefunden.")
+            return
+        await send_message(chat_id, f"Pausiert: #{obj.id} {obj.title}")

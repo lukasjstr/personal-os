@@ -17,11 +17,14 @@ from bot.core.brain_dumps import create_brain_dump
 from bot.core.calendar import create_calendar_event
 from bot.core.logs import log_food, log_mood, log_progress, log_water, log_workout
 from bot.core.objectives import (
+    ExpansionGuardException,
     create_key_result,
     create_objective,
+    create_objective_with_guard,
     get_active_objectives,
     get_progress_report,
     list_active_objectives,
+    suggest_objective_to_cut,
     suggest_tasks_for_objective,
 )
 from bot.core.priorities import get_todays_priorities
@@ -127,12 +130,29 @@ async def _execute_tool(
 
         # ─── OKR ──────────────────────────────────────────────────────────────
         elif name == "create_objective":
-            obj = await create_objective(session, user.id, **args)
+            # V3 P08 — gate behind the expansion guard.
+            try:
+                result = await create_objective_with_guard(session, user.id, **args)
+            except ExpansionGuardException as e:
+                # Tell the user (via AI) exactly what's blocking + suggest a cut.
+                cut = await suggest_objective_to_cut(session, user.id)
+                cut_hint = ""
+                if cut:
+                    cut_hint = (
+                        f"\nSchwächstes aktives Ziel: '{cut['title']}' "
+                        f"({cut['days_stale']}d ohne Log, {int(cut['completion']*100)}% erfüllt). "
+                        f"`/cut {cut['id']}` um es zu pausieren."
+                    )
+                return f"⛔ {e}{cut_hint}"
+            obj = result["objective"]
             await _notify_achievements(session, user)
-            return (
+            response = (
                 f"✅ Objective #{obj.id} erstellt: *{obj.title}* [{obj.category}]\n"
                 f"→ Jetzt suggest_tasks_for_objective aufrufen um konkrete Tasks zu erstellen."
             )
+            if result.get("warning"):
+                response = f"⚠️ {result['warning']}\n\n{response}"
+            return response
 
         elif name == "create_key_result":
             kr = await create_key_result(session, user.id, **args)

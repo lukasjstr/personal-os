@@ -100,6 +100,9 @@ class Objective(Base):
     target_date: Mapped[Optional[date]] = mapped_column(Date)
     priority_weight: Mapped[int] = mapped_column(Integer, default=5)  # 1-10
     parent_objective_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="SET NULL"), index=True)
+    # V3 P08 — audit trail for cut/pause decisions
+    paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    paused_reason: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 

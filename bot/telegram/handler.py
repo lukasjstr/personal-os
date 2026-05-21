@@ -39,6 +39,7 @@ from bot.core.user_settings import get_or_create_user
 from bot.core.weekly_reflections import get_active_reflection, handle_reflection_answer
 from bot.database.connection import get_session
 from bot.telegram.commands import (
+    handle_cut,
     handle_goal,
     handle_help,
     handle_ical,
@@ -498,6 +499,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("goal", handle_goal))
     application.add_handler(CommandHandler("plan", handle_plan))
     application.add_handler(CommandHandler("woche", handle_woche))
+    application.add_handler(CommandHandler("cut", handle_cut))
 
     # Inline button callbacks (daily intelligence flows)
     application.add_handler(CallbackQueryHandler(handle_callback_query))

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_mailto: str = "mailto:lukasjstr@gmail.com"
 
+    # V3 P08 — Expansion Guard
+    expansion_soft_limit_priority1: int = 3   # max objectives with priority_weight >= 8
+    expansion_hard_limit_total: int = 5       # max active objectives total
+    expansion_warning_enabled: bool = True
+
     @property
     def database_url(self) -> str:
         return (
