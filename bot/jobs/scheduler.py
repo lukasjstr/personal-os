@@ -362,6 +362,16 @@ def setup_scheduler() -> AsyncIOScheduler:
         coalesce=True,
     )
 
+    # V3 P09 — Friday-Cut prompt (Friday 17:00 Berlin)
+    from bot.jobs.friday_cut import run_friday_cut
+    _scheduler.add_job(
+        run_friday_cut,
+        CronTrigger(hour=17, minute=0, day_of_week="fri", timezone="Europe/Berlin"),
+        id="friday_cut",
+        max_instances=1,
+        coalesce=True,
+    )
+
     logger.info(
         "Scheduler initialized with 25 active jobs: daily_suggestions, morning_brief, "
         "evening_review, reminders, weekly_reflection, ical_sync, gap_nudge, "
@@ -370,6 +380,6 @@ def setup_scheduler() -> AsyncIOScheduler:
         "journal_prompt, gratitude_prompt, post_event_followup, pattern_analysis, "
         "quarterly_review, learning_reminders, life_profile_update, "
         "action_engine_morning, action_engine_evening, action_engine_weekly, "
-        "weekly_kickoff, expansion_audit"
+        "weekly_kickoff, expansion_audit, friday_cut"
     )
     return _scheduler

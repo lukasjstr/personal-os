@@ -636,13 +636,21 @@ async def handle_cut(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             return
 
         try:
-            obj_id = int(context.args[0])
+            target_id = int(context.args[0])
         except ValueError:
-            await send_message(chat_id, "Format: /cut <objective_id>")
+            await send_message(chat_id, "Format: /cut <id>  (Objective- oder Task-ID)")
             return
 
-        obj = await pause_objective_for_cut(session, user.id, obj_id)
-        if obj is None:
-            await send_message(chat_id, f"Objective #{obj_id} nicht gefunden.")
+        # Try Objective first (P08 semantics). Fall through to Task (P09 semantics).
+        obj = await pause_objective_for_cut(session, user.id, target_id)
+        if obj is not None:
+            await send_message(chat_id, f"Objective pausiert: #{obj.id} {obj.title}")
             return
-        await send_message(chat_id, f"Pausiert: #{obj.id} {obj.title}")
+
+        from bot.core.friday_cut import cut_task
+        task = await cut_task(session, user.id, target_id)
+        if task is not None:
+            await send_message(chat_id, f"Task gestrichen: #{task.id} {task.title}")
+            return
+
+        await send_message(chat_id, f"#{target_id} nicht gefunden (weder Objective noch Task).")

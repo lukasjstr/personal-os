@@ -176,6 +176,9 @@ class Task(Base):
     category: Mapped[str] = mapped_column(String(30), default="general")  # general, shopping, errand, work, personal
     due_date: Mapped[Optional[date]] = mapped_column(Date)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    # V3 P09 — Friday-Cut audit trail
+    cancelled_reason: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 

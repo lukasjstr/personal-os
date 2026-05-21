@@ -2,6 +2,7 @@
 import logging
 import os
 import tempfile
+from typing import Optional
 
 from openai import AsyncOpenAI
 from telegram import Update
@@ -318,6 +319,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 )
             else:
                 await send_message(chat_id, reply_text)
+            return
+
+        # V3 P09 — Friday-Cut pending reply
+        from bot.core.smart_detector import get_pending_prompt, clear_pending_prompt
+        if get_pending_prompt(user.id) == "friday_cut":
+            from bot.core.friday_cut import cut_task, cut_free_text
+            reply: str
+            # Try to interpret as task id ("123", "/cut 123", "#123")
+            stripped = text.strip().lstrip("/cut").lstrip().lstrip("#").strip()
+            task_id: Optional[int] = None
+            if stripped.isdigit():
+                task_id = int(stripped)
+            if task_id is not None:
+                task = await cut_task(session, user.id, task_id)
+                if task is not None:
+                    reply = f"Gestrichen: #{task.id} {task.title}. Nächste Woche leichter."
+                else:
+                    reply = f"Task #{task_id} nicht gefunden. Schick den Text der weg soll."
+                    # Keep pending so user can retry
+                    clear_pending_prompt(user.id) if reply.startswith("Gestrichen") else None
+                    await session.commit()
+                    await send_message(chat_id, reply)
+                    return
+            else:
+                dump = await cut_free_text(session, user.id, text)
+                reply = f"Gestrichen (Freitext, BrainDump#{dump.id}). Nächste Woche leichter."
+            clear_pending_prompt(user.id)
+            await session.commit()
+            await send_message(chat_id, reply)
             return
 
         # Check for active reflection session
