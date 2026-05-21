@@ -57,7 +57,16 @@ async def send_evening_review() -> None:
 async def _generate_review_for_user(
     session: AsyncSession, user: User, today: date, brief: DailyBrief
 ) -> str:
-    """Generate personalized evening review using GPT-4o."""
+    """V3 P06 — Konfrontativer Tages-Review (deterministisches Template).
+
+    Sections (always shown when data present):
+        ━━ TAGES-SCORE ━━     (0-10, calculated from morning priorities)
+        ━━ GELIEFERT ━━       (delivered counts + best thing)
+        ━━ NICHT GELIEFERT ━━ (missed priorities, if any)
+        ━━ HARTER PUNKT ━━    (1 confrontational line, never empty)
+        ━━ MORGEN ━━          (top priority for tomorrow)
+        Reply prompt for mood + 1-word reflection.
+    """
     today_start = datetime.combine(today, datetime.min.time())
     yesterday_start = datetime.combine(today - timedelta(days=1), datetime.min.time())
 
@@ -214,48 +223,49 @@ async def _generate_review_for_user(
             f"\nPLANER-TREUE: {done_from_plan}/{planned_count} geplante Tasks erledigt"
         )
 
-    name = user.first_name or "Chef"
-    day_map = {
-        "Monday": "Montag", "Tuesday": "Dienstag", "Wednesday": "Mittwoch",
-        "Thursday": "Donnerstag", "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag",
-    }
-    day_name = day_map.get(today.strftime("%A"), today.strftime("%A"))
-    context = "\n".join(context_lines)
+    # ── V3 P06 Konfrontations-Template — deterministic, no GPT-4o ──────────────
+    from bot.core.evening_score import calculate_daily_score
 
-    prompt = f"""Du bist der persönliche COO von {name}. Heute ist {day_name}, {today.strftime('%d.%m.%Y')}.
+    score_data = await calculate_daily_score(session, user.id, today)
 
-TAGES-DATEN:
-{context}
+    lines: list[str] = []
+    lines.append("━━ TAGES-SCORE ━━")
+    lines.append(f"{score_data['score']}/10")
+    lines.append("")
 
-Erstelle einen persönlichen Tages-Review auf Deutsch. Format:
-- Kurze Einleitung (1 Satz)
-- ✅ Was heute gut lief (erledigte Tasks, Routinen, Workout)
-- ❌ Was nicht erledigt wurde (geplante Tasks die offen blieben — nur wenn vorhanden)
-- 🔥 Streak-Risiko (nur wenn vorhanden: Routinen die gestern gemacht wurden aber heute nicht)
-- 📉 Planer-Abweichung (nur wenn relevant: kurze Erklärung warum der Tag anders lief als geplant)
-- 💧 Wasser-Stand mit Kommentar (gut/zu wenig)
-- 📋 Top Prioritäten für morgen (aus offenen Tasks)
-- Abschluss: stelle genau diese Frage: "Wie war dein Tag? Sag mir eine Zahl von 1-10."
+    lines.append("━━ GELIEFERT ━━")
+    delivered = score_data["delivered"]
+    lines.append(f"✓ {delivered['tasks']} Tasks · {delivered['routines']} Routinen")
+    if score_data.get("best_thing"):
+        lines.append(f"✓ Top-Win heute: {score_data['best_thing']}")
+    lines.append("")
 
-Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei ehrlich, unterstützend und prägnant. Max 250 Wörter."""
+    missed = score_data.get("missed_must") or []
+    if missed:
+        lines.append("━━ NICHT GELIEFERT ━━")
+        lines.append(f"✗ {len(missed)} aus Morgen-Brief unerledigt:")
+        for title in missed[:5]:
+            lines.append(f"  - {title}")
+        lines.append("")
 
-    try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content or _fallback_review(
-            done_tasks, routines, done_routine_ids, water_total,
-            planned_not_done, streak_risk, name
-        )
-    except Exception:
-        logger.exception("GPT-4o failed for evening review, using fallback")
-        return _fallback_review(
-            done_tasks, routines, done_routine_ids, water_total,
-            planned_not_done, streak_risk, name
-        )
+    lines.append("━━ HARTER PUNKT ━━")
+    lines.append(score_data["harter_punkt"])
+    lines.append("")
+
+    if score_data.get("tomorrow_top"):
+        lines.append("━━ MORGEN ━━")
+        lines.append(f"1 Top-Priorität: {score_data['tomorrow_top']}")
+        lines.append("")
+
+    # Preserved signals from previous review (kept compact)
+    if streak_risk:
+        lines.append("🔥 Streak-Risiko (gestern ja, heute nicht):")
+        for r in streak_risk[:3]:
+            lines.append(f"  · {r.title}")
+        lines.append("")
+
+    lines.append("Reply: Mood 1-10 + 1 Wort, was war's heute?")
+    return "\n".join(lines).rstrip()
 
 
 def _fallback_review(
