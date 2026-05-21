@@ -1042,6 +1042,11 @@ class LifeProfile(Base):
     current_focus: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     last_updated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     update_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Hand-curated identity layer (V3 P02). Structure documented in bot/core/life_profile.py.
+    bedrock: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    bedrock_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Versioned snapshots, newest last. Each entry: {"snapshot": {...}, "ts": iso8601}
+    bedrock_history: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="life_profile")

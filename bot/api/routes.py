@@ -8762,6 +8762,46 @@ async def regenerate_life_profile(
     }
 
 
+@router.get("/life-profile/bedrock")
+async def get_life_profile_bedrock(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return the bedrock identity layer for the current user."""
+    result = await session.execute(
+        select(LifeProfile).where(LifeProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return {"bedrock": {}, "updated_at": None, "history_count": 0}
+    return {
+        "bedrock": profile.bedrock or {},
+        "updated_at": profile.bedrock_updated_at.isoformat() if profile.bedrock_updated_at else None,
+        "history_count": len(profile.bedrock_history or []),
+    }
+
+
+class BedrockUpdateBody(BaseModel):
+    bedrock: dict
+
+
+@router.patch("/life-profile/bedrock")
+async def patch_life_profile_bedrock(
+    body: BedrockUpdateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Replace the bedrock identity layer. Previous version is archived to history."""
+    from bot.core.life_profile import update_bedrock
+    profile = await update_bedrock(session, user.id, body.bedrock, source="dashboard")
+    await session.commit()
+    return {
+        "ok": True,
+        "updated_at": profile.bedrock_updated_at.isoformat() if profile.bedrock_updated_at else None,
+        "history_count": len(profile.bedrock_history or []),
+    }
+
+
 # ─── Feature 6: Knowledge Management API ─────────────────────────────────────
 
 class CreateLearningItemBody(BaseModel):

@@ -28,6 +28,16 @@ async def build_context(session: AsyncSession, user: User) -> str:
     )
     lines.append("")
 
+    # ─── Bedrock Identity (V3 P02 — always first, before emergent profile) ───
+    try:
+        from bot.core.life_profile import get_bedrock_context
+        bedrock_ctx = await get_bedrock_context(session, user.id)
+        if bedrock_ctx:
+            lines.append(bedrock_ctx)
+            lines.append("")
+    except Exception:
+        pass
+
     # ─── Life Profile (prepended for persistent memory) ───────────────────────
     try:
         from bot.core.life_profile import get_life_profile_context

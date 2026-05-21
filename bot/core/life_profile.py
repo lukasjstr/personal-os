@@ -197,3 +197,128 @@ async def get_life_profile_context(session: AsyncSession, user_id: int) -> str:
         lines.append(f"Fokus: {profile.current_focus}")
 
     return "\n".join(lines)
+
+
+# ─── V3 P02 — Bedrock layer ──────────────────────────────────────────────────
+
+
+def format_bedrock(bedrock: dict) -> str:
+    """Render the bedrock dict as the hard-coded WER-DU-FÜHRST block."""
+    if not bedrock:
+        return ""
+    identity = bedrock.get("identity") or {}
+    name = identity.get("name", "der Nutzer")
+    location = identity.get("current_location", "unbekannt")
+    company = identity.get("company")
+    co_founders = identity.get("co_founders") or []
+    launch = identity.get("launch_target")
+
+    lines: list[str] = ["━━━ WER DU FÜHRST ━━━"]
+
+    intro_parts = [f"{name}, basiert in {location}"]
+    if company:
+        co = f" mit {', '.join(co_founders)}" if co_founders else ""
+        intro_parts.append(f"Co-Founder von {company}{co}")
+    lines.append(", ".join(intro_parts) + ".")
+    if launch:
+        lines.append(f"Launch-Ziel: {launch}.")
+
+    leitspruch = bedrock.get("leitspruch")
+    if leitspruch:
+        lines.append("")
+        lines.append("LEITSPRUCH (zitiere bei Bedarf):")
+        lines.append(f'"{leitspruch}"')
+
+    bottleneck = bedrock.get("bottleneck")
+    weaknesses = bedrock.get("weaknesses") or []
+    if bottleneck or weaknesses:
+        lines.append("")
+        lines.append("BOTTLENECK (immer im Hinterkopf):")
+        bn_parts = []
+        if bottleneck:
+            bn_parts.append(bottleneck)
+        if weaknesses:
+            bn_parts.append(f"Schwächen: {', '.join(weaknesses)}")
+        lines.append(" — ".join(bn_parts))
+
+    life_areas = bedrock.get("life_areas") or []
+    if life_areas:
+        lines.append("")
+        lines.append("9 LEBENSBEREICHE (jeder Vorschlag muss darauf einzahlen oder eine Lücke aufzeigen):")
+        for i, area in enumerate(life_areas, start=1):
+            n = area.get("name", "?")
+            v = area.get("vision", "")
+            lines.append(f"{i}. {n}: {v}")
+
+    levers = bedrock.get("skill_levers") or []
+    if levers:
+        lines.append("")
+        lines.append("4 SKILL-HEBEL (Priority 1 = kritisch):")
+        for lever in sorted(levers, key=lambda x: x.get("priority", 99)):
+            n = lever.get("name", "?")
+            d = lever.get("description", "")
+            p = lever.get("priority", "?")
+            lines.append(f"P{p} {n}: {d}")
+
+    comp = bedrock.get("self_leadership_competencies") or []
+    if comp:
+        lines.append("")
+        lines.append("10 SELBSTFÜHRUNGS-KOMPETENZEN:")
+        for i, c in enumerate(comp, start=1):
+            lines.append(f"  {i}. {c}")
+
+    style = bedrock.get("communication_style")
+    if style:
+        lines.append("")
+        lines.append(f"KOMMUNIKATIONS-STIL: {style}")
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    return "\n".join(lines)
+
+
+async def get_bedrock_context(session: AsyncSession, user_id: int) -> str:
+    """Return the bedrock block for AI context, or '' if not seeded yet."""
+    res = await session.execute(
+        select(LifeProfile).where(LifeProfile.user_id == user_id)
+    )
+    profile = res.scalar_one_or_none()
+    if not profile or not profile.bedrock:
+        return ""
+    return format_bedrock(profile.bedrock)
+
+
+async def update_bedrock(session: AsyncSession, user_id: int, new_bedrock: dict, source: str = "api") -> "LifeProfile":
+    """Update bedrock for a user, archiving the previous version to history.
+
+    Creates a LifeProfile row if none exists.
+    """
+    res = await session.execute(
+        select(LifeProfile).where(LifeProfile.user_id == user_id)
+    )
+    profile = res.scalar_one_or_none()
+    now = datetime.utcnow()
+
+    if profile is None:
+        profile = LifeProfile(
+            user_id=user_id,
+            bedrock=new_bedrock,
+            bedrock_updated_at=now,
+            bedrock_history=[{"snapshot": new_bedrock, "ts": now.isoformat(), "source": source}],
+        )
+        session.add(profile)
+        await session.flush()
+        return profile
+
+    history = list(profile.bedrock_history or [])
+    if profile.bedrock:
+        history.append({
+            "snapshot": profile.bedrock,
+            "ts": (profile.bedrock_updated_at or now).isoformat(),
+            "source": "pre-update-archive",
+        })
+    history.append({"snapshot": new_bedrock, "ts": now.isoformat(), "source": source})
+    profile.bedrock = new_bedrock
+    profile.bedrock_updated_at = now
+    profile.bedrock_history = history
+    await session.flush()
+    return profile
