@@ -1,3 +1,4 @@
+# TODO: AUDIT-2026-05 — DEAD CODE (no importers, 252 LOC). Logic lives in reminder_engine.py. See docs/AUDIT-2026-05.md.
 """CORE-5b/5d: Due reminder processor loop — fetches, gates, sends, persists.
 
 Responsibilities:

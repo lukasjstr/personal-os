@@ -1,3 +1,4 @@
+# TODO: AUDIT-2026-05 — DEAD CODE (no importers, 369 LOC). Superseded by bot/jobs/morning_brief.py. See docs/AUDIT-2026-05.md.
 """CORE-6: Daily brief creation and management.
 
 Handles morning brief generation, evening review, and day scoring.

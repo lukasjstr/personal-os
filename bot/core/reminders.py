@@ -1,3 +1,4 @@
+# TODO: AUDIT-2026-05 — DEAD CODE (no importers, 348 LOC). Superseded by reminder_engine.py + reminder_factory.py. See docs/AUDIT-2026-05.md.
 """Smart Reminder Engine: auto-generates reminders for tasks, routines, and key results.
 
 When a goal is executed (via proposal_execute), this module creates contextual
