@@ -68,6 +68,19 @@ async def process_reminders() -> None:
             except Exception:
                 logger.exception("Error processing reminders for user %s", user.id)
 
+        # V3 P07 — sweep escalation across all users once per tick.
+        try:
+            from bot.core.reminder_escalation import run_escalation_sweep
+            counters = await run_escalation_sweep(session)
+            if counters["checked"] > 0:
+                logger.info(
+                    "Reminder escalation sweep: checked=%d step1=%d step2=%d step3=%d",
+                    counters["checked"], counters["step_1"],
+                    counters["step_2_flagged"], counters["step_3_stop"],
+                )
+        except Exception:
+            logger.exception("Reminder escalation sweep failed (non-fatal)")
+
 
 def _reminder_minutes_for(event: CalendarEvent) -> int:
     """Return how many minutes before an event the reminder should fire.

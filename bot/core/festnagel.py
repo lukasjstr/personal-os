@@ -171,12 +171,47 @@ def _fallback(today: date) -> str:
     return "Tag ist offen. Nimm einen Slot vor 11:00 für das Wichtigste."
 
 
+async def _candidate_escalated_reminders(
+    session: AsyncSession, user_id: int
+) -> Optional[str]:
+    """V3 P07 — when reminders escalated past step 2 in last 24h, callout."""
+    try:
+        from bot.core.reminder_escalation import get_flagged_escalations
+        flagged = await get_flagged_escalations(session, user_id, hours=24)
+    except Exception:
+        return None
+    if not flagged:
+        return None
+    n = len(flagged)
+    # Show up to 2 titles, abbreviated
+    sample = []
+    for r in flagged[:2]:
+        msg = (r.message or "").splitlines()[0]
+        sample.append(msg[:60].rstrip())
+    titles = "; ".join(sample)
+    return (
+        f"{n} Reminder gestern ignoriert: {titles}. "
+        f"Heute Erste-Aktion-des-Tages oder offiziell streichen."
+    )
+
+
 async def generate_festnagel(session: AsyncSession, user_id: int, today: Optional[date] = None) -> str:
-    """Return ONE confrontational line for today's brief. Never empty."""
+    """Return ONE confrontational line for today's brief. Never empty.
+
+    Priority order (first match wins):
+        1. Escalated reminders ignored (V3 P07)
+        2. Weekly KR <50%
+        3. Stale objective ≥7d
+        4. Repeatedly missed task
+        5. Weekday fallback
+    """
     if today is None:
         today = date.today()
 
     try:
+        line = await _candidate_escalated_reminders(session, user_id)
+        if line:
+            return line
         line = await _candidate_weekly_kr(session, user_id, today)
         if line:
             return line

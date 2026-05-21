@@ -396,6 +396,10 @@ class ScheduledReminder(Base):
     linked_key_result_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("key_results.id", ondelete="SET NULL"))
     linked_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"))
     linked_routine_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("routines.id", ondelete="SET NULL"))
+    # V3 P07 — Escalation
+    linked_objective_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("objectives.id", ondelete="SET NULL"))
+    severity: Mapped[str] = mapped_column(String(20), default="normal", server_default="normal", nullable=False)
+    escalation_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, sent, cancelled, snoozed, failed
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     auto_generated: Mapped[bool] = mapped_column(Boolean, default=True)
