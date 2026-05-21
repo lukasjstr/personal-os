@@ -261,6 +261,49 @@ def setup_scheduler() -> AsyncIOScheduler:
         except Exception:
             _log.exception("Quarterly review job failed")
 
+    # V3 P11 — fire on last day of each quarter at 18:00 Berlin and notify Lukas
+    async def _run_quarterly_review_v3() -> None:
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        from bot.database.connection import get_session
+        from bot.core.quarterly_review import (
+            _get_current_quarter, format_quarterly_review_for_telegram,
+            generate_quarterly_review,
+        )
+        from bot.database.models import User as _User
+        from bot.telegram.sender import send_message as _send
+        from sqlalchemy import select as _select
+        try:
+            async with get_session() as _session:
+                users = (await _session.execute(
+                    _select(_User).where(_User.is_active == True)  # noqa: E712
+                )).scalars().all()
+                for _user in users:
+                    try:
+                        year, quarter = _get_current_quarter()
+                        review = await generate_quarterly_review(
+                            _session, _user.id, year=year, quarter=quarter, auto_close=False,
+                        )
+                        await _session.commit()
+                        msg = await format_quarterly_review_for_telegram(review)
+                        await _send(_user.telegram_id, "Q-Review bereit. /review_q für Details.")
+                        # Also send the full text (best-effort)
+                        await _send(_user.telegram_id, msg)
+                    except Exception:
+                        _log.exception("Quarterly review v3 failed for user %s", _user.id)
+        except Exception:
+            _log.exception("Quarterly review v3 job failed")
+
+    _scheduler.add_job(
+        _run_quarterly_review_v3,
+        CronTrigger(month="3,6,9,12", day="last", hour=18, minute=0, timezone="Europe/Berlin"),
+        id="quarterly_review_v3",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Legacy entry: keep regenerating the *previous* quarter on the 1st of new
+    # quarter at 09:00 so backwards-compatible API + dashboard keep showing data.
     _scheduler.add_job(
         _run_quarterly_review,
         CronTrigger(month="1,4,7,10", day=1, hour=9, minute=0, timezone="Europe/Berlin"),

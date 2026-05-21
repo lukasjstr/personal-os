@@ -968,6 +968,12 @@ class QuarterlyReview(Base):
     challenges: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="completed")
     generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # V3 P11 — Life-area scoring + user sign-off
+    life_area_scores: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    suggested_next_quarter: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    user_reflection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    previous_life_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="quarterly_reviews")
 

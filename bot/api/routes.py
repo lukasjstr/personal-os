@@ -8295,6 +8295,28 @@ async def list_quarterly_reviews(
     ]
 
 
+def _qr_to_dict(review: QuarterlyReview) -> dict:
+    """Serialize a QuarterlyReview (incl. V3 P11 fields) to dict."""
+    return {
+        "id": review.id,
+        "year": review.year,
+        "quarter": review.quarter,
+        "quarter_label": review.quarter_label,
+        "life_score": review.life_score,
+        "previous_life_score": review.previous_life_score,
+        "life_area_scores": review.life_area_scores or {},
+        "objectives_data": review.objectives_data,
+        "ai_analysis": review.ai_analysis,
+        "highlights": review.highlights,
+        "challenges": review.challenges,
+        "suggested_next_quarter": review.suggested_next_quarter or {},
+        "user_reflection": review.user_reflection,
+        "completed_at": review.completed_at.isoformat() if review.completed_at else None,
+        "status": review.status,
+        "generated_at": review.generated_at.isoformat() if review.generated_at else None,
+    }
+
+
 @router.get("/quarterly-reviews/latest")
 async def get_latest_quarterly_review(
     user: User = Depends(get_current_user),
@@ -8309,19 +8331,45 @@ async def get_latest_quarterly_review(
     review = result.scalar_one_or_none()
     if not review:
         raise HTTPException(status_code=404, detail="No quarterly reviews found")
-    return {
-        "id": review.id,
-        "year": review.year,
-        "quarter": review.quarter,
-        "quarter_label": review.quarter_label,
-        "life_score": review.life_score,
-        "objectives_data": review.objectives_data,
-        "ai_analysis": review.ai_analysis,
-        "highlights": review.highlights,
-        "challenges": review.challenges,
-        "status": review.status,
-        "generated_at": review.generated_at.isoformat() if review.generated_at else None,
-    }
+    return _qr_to_dict(review)
+
+
+@router.get("/quarterly-reviews/{review_id}")
+async def get_quarterly_review_by_id(
+    review_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    review = (await session.execute(
+        select(QuarterlyReview).where(and_(
+            QuarterlyReview.id == review_id,
+            QuarterlyReview.user_id == user.id,
+        ))
+    )).scalar_one_or_none()
+    if review is None:
+        raise HTTPException(status_code=404, detail="Quarterly review not found")
+    return _qr_to_dict(review)
+
+
+class QuarterlyConfirmBody(BaseModel):
+    user_reflection: Optional[str] = None
+
+
+@router.post("/quarterly-reviews/{review_id}/confirm")
+async def confirm_quarterly_review_endpoint(
+    review_id: int,
+    body: QuarterlyConfirmBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    from bot.core.quarterly_review import confirm_quarterly_review
+    review = await confirm_quarterly_review(
+        session, user.id, review_id, body.user_reflection,
+    )
+    if review is None:
+        raise HTTPException(status_code=404, detail="Quarterly review not found")
+    await session.commit()
+    return _qr_to_dict(review)
 
 
 @router.post("/quarterly-reviews/generate")

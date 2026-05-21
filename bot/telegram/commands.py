@@ -599,6 +599,67 @@ async def handle_woche(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await send_message(chat_id, text)
 
 
+# ─── V3 P11 — /review_q + /confirm_q commands ────────────────────────────────
+
+
+async def handle_review_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/review_q — show the latest quarterly review."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    from bot.core.quarterly_review import format_quarterly_review_for_telegram
+    from bot.database.models import QuarterlyReview
+    from sqlalchemy import select as _select
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        review = (await session.execute(
+            _select(QuarterlyReview).where(QuarterlyReview.user_id == user.id)
+            .order_by(QuarterlyReview.generated_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if review is None:
+            await send_message(chat_id, "Noch kein Quarterly-Review generiert.")
+            return
+        text = await format_quarterly_review_for_telegram(review)
+        await send_message(chat_id, text)
+
+
+async def handle_confirm_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/confirm_q — sign off the latest pending quarterly review."""
+    if not update.message or not update.effective_user:
+        return
+    tg_user = update.effective_user
+    chat_id = update.message.chat_id
+
+    from bot.core.quarterly_review import confirm_quarterly_review
+    from bot.database.models import QuarterlyReview
+    from sqlalchemy import and_, select as _select
+
+    async with get_session() as session:
+        user = await get_or_create_user(session, tg_user.id, tg_user.username, tg_user.first_name)
+        latest = (await session.execute(
+            _select(QuarterlyReview).where(and_(
+                QuarterlyReview.user_id == user.id,
+                QuarterlyReview.completed_at == None,  # noqa: E711
+            )).order_by(QuarterlyReview.generated_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if latest is None:
+            await send_message(chat_id, "Kein offener Quarterly-Review zum Abschließen.")
+            return
+        reflection = " ".join(context.args) if context.args else None
+        result = await confirm_quarterly_review(session, user.id, latest.id, reflection)
+        if result is None:
+            await send_message(chat_id, "Konnte den Review nicht abschließen.")
+            return
+        await session.commit()
+        await send_message(
+            chat_id,
+            f"Q-Review {result.quarter_label} abgeschlossen.",
+        )
+
+
 # ─── V3 P08 — /cut command ────────────────────────────────────────────────────
 
 
