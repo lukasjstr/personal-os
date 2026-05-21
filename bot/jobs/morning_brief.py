@@ -78,10 +78,19 @@ async def send_morning_brief() -> None:
 async def _generate_brief_for_user(
     session: AsyncSession, user: User, today: date, now_berlin: datetime
 ) -> tuple[str, list]:
-    """Generate personalized morning brief using GPT-4o.
+    """Generate the V3 Festnagel-Modus morning brief — deterministic template.
 
-    Returns (message_text, priorities_snapshot) where priorities_snapshot is
-    stored in DailyBrief.priorities for evening drift detection.
+    Header sections (always shown when data present):
+        ━━ STATUS ━━
+        ━━ HEUTE — 3 MUSS ━━
+        ━━ FESTNAGEL ━━
+        ━━ KALENDER ━━
+        ━━ AUSBLICK ━━
+
+    Appended (preserved from pre-P05): Supplement + Fitness + AI-suggestions
+    blocks for the Telegram message, since Lukas relies on these daily.
+
+    Returns (message_text, priorities_snapshot).
     """
     today_start = datetime.combine(today, datetime.min.time())
     today_end = datetime.combine(today, datetime.max.time())
@@ -365,50 +374,75 @@ async def _generate_brief_for_user(
     level_title = get_level_title(level)
     context_lines.append(f"\nXP-STATUS: Level {level} ({level_title}) · {total_xp} XP gesamt")
 
-    name = user.first_name or "Chef"
+    # ── V3 P05 Festnagel template — deterministic, no GPT-4o for the core brief ─
+    from bot.core.festnagel import (
+        generate_brief_status,
+        generate_dropout_outlook,
+        generate_festnagel,
+        generate_three_musts,
+    )
+
+    status = await generate_brief_status(session, user.id, today)
+    musts = await generate_three_musts(session, user.id, today)
+    festnagel_line = await generate_festnagel(session, user.id, today)
+    outlook = await generate_dropout_outlook(session, user.id, today)
+
     day_map = {
         "Monday": "Montag", "Tuesday": "Dienstag", "Wednesday": "Mittwoch",
         "Thursday": "Donnerstag", "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag",
     }
     day_name = day_map.get(today.strftime("%A"), today.strftime("%A"))
     date_str = today.strftime("%d.%m.%Y")
-    context = "\n".join(context_lines) if context_lines else "Noch keine Daten vorhanden."
 
-    prompt = f"""Du bist der persönliche COO von {name}. Heute ist {day_name}, {date_str}.
+    brief_lines: list[str] = [f"{day_name}, {date_str}", ""]
 
-VERFÜGBARE DATEN:
-{context}
+    # ── STATUS ─────────────────────────────────────────────────────────────────
+    brief_lines.append("━━ STATUS ━━")
+    if status.get("energy") is not None:
+        brief_lines.append(f"Energie: {status['energy']}/10")
+    brief_lines.append(
+        f"Aktive Objectives: {status['active_objectives']} | "
+        f"KRs gefährdet: {status['krs_at_risk']}"
+    )
+    brief_lines.append("")
 
-Erstelle einen prägnanten Morning Brief auf Deutsch. Format:
-- Kurze Begrüßung (1 Satz)
-- ⚡ TOP 5 HEUTE (nutze die AUTOPILOT TOP-5 wenn vorhanden, sonst wähle selbst)
-- ⏱ TAGESPLAN (wenn AUTO-GEPLANTE BLÖCKE vorhanden: zeige die wichtigsten 4-5 Zeitblöcke als kompakten Stundenplan)
-- 🔒 BLOCKER (nur wenn blockierte Tasks vorhanden: kurz erwähnen, was wartet)
-- 📊 STAGNATION (nur wenn stagnierte Ziele vorhanden: kurze Aufforderung zur Reaktivierung)
-- 📋 ROUTINEN HEUTE (alle auflisten mit ☐)
-- 🧪 SUPPLEMENTE HEUTE (nur wenn Daten vorhanden: kurze Slot-Zeile Morgen/Mittag/Abend)
-- 🏋️ FITNESS HEUTE (nur wenn Daten vorhanden: heutiger Split + kurze Empfehlung)
-- 📅 KALENDER (nur wenn Events vorhanden)
-- 💡 REMINDER (nur wenn überfällige Tasks oder wichtige Hinweise vorhanden)
-- Kurzer motivierender Abschluss-Satz
+    # ── 3 MUSS ─────────────────────────────────────────────────────────────────
+    if musts:
+        brief_lines.append("━━ HEUTE — 3 MUSS ━━")
+        for i, m in enumerate(musts, start=1):
+            slot = f" — Slot: {m['slot']}" if m.get("slot") else ""
+            prefix = {"task": "Task", "routine": "Routine", "kr": "KR"}.get(m["kind"], "")
+            brief_lines.append(f"{i}. [{prefix}] {m['title']}{slot}")
+        brief_lines.append("")
 
-Lasse Abschnitte weg, wenn keine Daten dafür vorliegen. Sei direkt und prägnant. Max 300 Wörter."""
+    # ── FESTNAGEL ──────────────────────────────────────────────────────────────
+    brief_lines.append("━━ FESTNAGEL ━━")
+    brief_lines.append(festnagel_line)
+    brief_lines.append("")
 
-    try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=600,
-            temperature=0.7,
-        )
-        brief_text = response.choices[0].message.content or _fallback_brief(
-            tasks, routines, events, blocked_tasks, stale_objectives, suggested_blocks, name
-        )
-    except Exception:
-        logger.exception("GPT-4o failed for morning brief, using fallback")
-        brief_text = _fallback_brief(
-            tasks, routines, events, blocked_tasks, stale_objectives, suggested_blocks, name
-        )
+    # ── KALENDER ───────────────────────────────────────────────────────────────
+    if events:
+        brief_lines.append("━━ KALENDER ━━")
+        for e in events:
+            time_str = e.start_time.strftime("%H:%M") if not e.all_day else "ganztägig"
+            brief_lines.append(f"  {time_str} {e.title}")
+        brief_lines.append("")
+
+    # ── AUSBLICK (wahrscheinlich liegen bleibend) ──────────────────────────────
+    if outlook:
+        brief_lines.append("━━ AUSBLICK ━━")
+        for line in outlook:
+            brief_lines.append(f"  ⚠ {line}")
+        brief_lines.append("")
+
+    # Overdue tasks — keep this as a hard signal even outside the new template
+    if overdue:
+        brief_lines.append(f"⚠ {len(overdue)} überfällige Tasks:")
+        for t in overdue[:3]:
+            brief_lines.append(f"  · {t.title} (fällig {t.due_date})")
+        brief_lines.append("")
+
+    brief_text = "\n".join(brief_lines).rstrip()
 
     # Append daily AI suggestions if available
     suggestions = await get_or_generate_suggestions(session, user, today)
