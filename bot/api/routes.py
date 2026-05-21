@@ -8810,6 +8810,95 @@ async def regenerate_life_profile(
     }
 
 
+# ─── V3 P12 — Cockpit ───────────────────────────────────────────────────────
+
+
+@router.get("/cockpit")
+async def get_cockpit(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Single-snapshot API for the Mission cockpit view.
+
+    Combines mission-layer scores, festnagel, weekly priorities, streak risks
+    and cuts-this-week into one payload so the frontend can poll efficiently.
+    """
+    from datetime import date as _date, timedelta as _td
+    from bot.core.festnagel import (
+        generate_brief_status,
+        generate_dropout_outlook,
+        generate_festnagel,
+    )
+    from bot.core.friday_cut import count_cuts_this_week
+    from bot.core.life_areas import get_area_stats, list_life_areas
+
+    today = _date.today()
+    week_start = today - _td(days=today.weekday())
+
+    # Life areas + per-area scores (snapshot, not historical)
+    areas = await list_life_areas(session, user.id)
+    area_payload: list[dict] = []
+    for a in areas:
+        stats = await get_area_stats(session, user.id, a.id, today)
+        area_payload.append({
+            "id": a.id,
+            "name": a.name,
+            "short_code": a.short_code,
+            "color": a.color_hex,
+            "stale_days": stats["stale_days"],
+            "active_objectives": stats["active_objectives"],
+        })
+
+    # Use latest QuarterlyReview for life_score + previous (trend)
+    qr = (await session.execute(
+        select(QuarterlyReview).where(QuarterlyReview.user_id == user.id)
+        .order_by(QuarterlyReview.generated_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    life_score = qr.life_score if qr else None
+    life_score_trend = 0
+    if qr and qr.previous_life_score is not None and qr.life_score is not None:
+        life_score_trend = qr.life_score - qr.previous_life_score
+    # Merge per-area scores onto the area cards
+    area_scores = (qr.life_area_scores or {}) if qr else {}
+    for a in area_payload:
+        a["score"] = area_scores.get(a["short_code"])
+
+    # Weekly priorities
+    from bot.database.models import WeeklyPriority
+    weekly_priorities = (await session.execute(
+        select(WeeklyPriority).where(and_(
+            WeeklyPriority.user_id == user.id,
+            WeeklyPriority.week_start >= week_start,
+        )).order_by(WeeklyPriority.priority_rank.asc()).limit(5)
+    )).scalars().all()
+
+    # Status (active_objectives, KRs at risk) + festnagel + outlook
+    status = await generate_brief_status(session, user.id, today)
+    festnagel = await generate_festnagel(session, user.id, today)
+    outlook = await generate_dropout_outlook(session, user.id, today)
+
+    cuts_this_week = await count_cuts_this_week(session, user.id, today)
+
+    return {
+        "date": today.isoformat(),
+        "life_score": life_score,
+        "life_score_trend": life_score_trend,
+        "active_objectives": status["active_objectives"],
+        "krs_at_risk": status["krs_at_risk"],
+        "energy": status.get("energy"),
+        "areas": area_payload,
+        "weekly_priorities": [
+            {
+                "id": p.id, "rank": p.priority_rank, "title": p.title,
+                "status": p.status,
+            } for p in weekly_priorities
+        ],
+        "festnagel": festnagel,
+        "streaks_at_risk": outlook,
+        "cuts_this_week": cuts_this_week,
+    }
+
+
 # ─── V3 P10 — Mission Layer (Life Areas) ────────────────────────────────────
 
 

@@ -55,6 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
     id: "heute",
     title: "HEUTE",
     items: [
+      { href: "/cockpit", label: "Cockpit", icon: Target, emoji: "🎯" },
       { href: "/", label: "Dashboard", icon: LayoutDashboard, emoji: "🏠" },
       { href: "/calendar", label: "Kalender", icon: Calendar, emoji: "📅" },
       { href: "/kanban", label: "Tagesplan", icon: Kanban, emoji: "📋" },
@@ -64,6 +65,7 @@ const NAV_SECTIONS: NavSection[] = [
     id: "leben",
     title: "LEBEN",
     items: [
+      { href: "/mission", label: "Mission (9 Bereiche)", icon: Target, emoji: "🪨" },
       { href: "/objectives", label: "Ziele & KRs", icon: Target, emoji: "🎯" },
       { href: "/goals/coach", label: "Ziel-Coach", icon: Zap, emoji: "✨" },
       { href: "/routines", label: "Routinen", icon: RefreshCw, emoji: "🔄" },
@@ -107,6 +109,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "SYSTEM",
     items: [
       { href: "/automation", label: "Automatisierung", icon: Zap, emoji: "⚡" },
+      { href: "/review/quarterly", label: "Q-Review (V3)", icon: BarChart3, emoji: "📊" },
       { href: "/quarterly", label: "Quartals-Review", icon: BarChart3, emoji: "📈" },
       { href: "/achievements", label: "Achievements", icon: Trophy, emoji: "🎮" },
       { href: "/profile", label: "Lebens-Profil", icon: User, emoji: "🧬" },
