@@ -3,6 +3,10 @@
 ## Project: Personal OS
 Personal COO Telegram Bot + Web Dashboard
 
+## Build Plan
+- Active: PROMPTS-PERSONAL-OS-V3.md (12 Tickets, single source of truth)
+- Historical plans/specs: docs/archive/legacy/
+
 ## Server
 - Contabo VPS: 95.111.252.176 (SSH as root)
 - PostgreSQL: localhost:5432, DB=personal_os, User=pos_user, PW=personalos2026
