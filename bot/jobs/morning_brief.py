@@ -435,6 +435,18 @@ async def _generate_brief_for_user(
             brief_lines.append(f"  ⚠ {line}")
         brief_lines.append("")
 
+    # ── Monday-only: Lebensbereich-Fokus (V3 P10) ─────────────────────────────
+    if today.weekday() == 0:
+        try:
+            from bot.core.life_areas import get_weekly_focus_lines
+            focus_lines = await get_weekly_focus_lines(session, user.id, today)
+            if focus_lines:
+                brief_lines.append("━━ DIESE WOCHE — LEBENSBEREICH-FOKUS ━━")
+                brief_lines.extend(focus_lines)
+                brief_lines.append("")
+        except Exception:
+            logger.exception("Monday life-area focus block failed (non-fatal)")
+
     # Overdue tasks — keep this as a hard signal even outside the new template
     if overdue:
         brief_lines.append(f"⚠ {len(overdue)} überfällige Tasks:")

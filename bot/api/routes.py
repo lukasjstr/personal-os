@@ -8762,6 +8762,67 @@ async def regenerate_life_profile(
     }
 
 
+# ─── V3 P10 — Mission Layer (Life Areas) ────────────────────────────────────
+
+
+@router.get("/life-areas")
+async def list_life_areas_endpoint(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List all life areas for the current user with per-area stats."""
+    from bot.core.life_areas import get_area_stats, list_life_areas
+    areas = await list_life_areas(session, user.id)
+    out = []
+    for a in areas:
+        stats = await get_area_stats(session, user.id, a.id)
+        out.append({
+            "id": a.id,
+            "name": a.name,
+            "short_code": a.short_code,
+            "vision": a.vision,
+            "current_state": a.current_state,
+            "priority": a.priority,
+            "color_hex": a.color_hex,
+            "active_objectives": stats["active_objectives"],
+            "stale_days": stats["stale_days"],
+            "last_log_at": stats["last_log_at"],
+        })
+    return {"areas": out}
+
+
+class LifeAreaUpdateBody(BaseModel):
+    vision: Optional[str] = None
+    current_state: Optional[str] = None
+    priority: Optional[int] = None
+
+
+@router.patch("/life-areas/{area_id}")
+async def patch_life_area(
+    area_id: int,
+    body: LifeAreaUpdateBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update vision / current_state / priority of a life area."""
+    from bot.database.models import LifeArea
+    area = (await session.execute(
+        select(LifeArea).where(and_(
+            LifeArea.id == area_id, LifeArea.user_id == user.id,
+        ))
+    )).scalar_one_or_none()
+    if area is None:
+        raise HTTPException(status_code=404, detail="LifeArea not found")
+    if body.vision is not None:
+        area.vision = body.vision
+    if body.current_state is not None:
+        area.current_state = body.current_state
+    if body.priority is not None:
+        area.priority = body.priority
+    await session.commit()
+    return {"ok": True, "id": area.id}
+
+
 @router.get("/life-profile/bedrock")
 async def get_life_profile_bedrock(
     user: User = Depends(get_current_user),

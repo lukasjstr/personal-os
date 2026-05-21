@@ -125,6 +125,12 @@ FAUSTREGEL: Wenn der User einen konkreten Termin, Ort oder eine Uhrzeit nennt �
 In diesen Fällen: create_objective / create_task / update_calendar_event direkt nutzen.
 NIEMALS Rückfragen stellen wenn der Auftrag klar ist. Einfach ausführen und bestätigen.
 
+LEBENSBEREICH-PFLICHT (V3 P10):
+Bei create_objective IMMER life_area_id setzen.
+Wenn unklar: User fragen "Zu welchem Lebensbereich gehört das?
+  mental | physical | character | family | romance | money | lifestyle | charity | spirituality"
+NIEMALS create_objective ohne explizite Lebensbereich-Zuordnung.
+
 OKR-ZUORDNUNGSTABELLE — bei create_task IMMER objective_id setzen:
   Lernen/Vorlesung/Kurs/Buch/Dozent/Wissen/Reflexion  → OBJ#32 Geist & Wachstum
   Sport/Training/Cardio/Laufen/Gym/Kraft/Schritte      → OBJ#31 Körper & Fitness

@@ -47,7 +47,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_objective",
-            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze create_objective NUR wenn start_goal_onboarding nicht passt (z.B. wenn der User explizit kein Coaching will oder ein Objective manuell anlegen möchte).",
+            "description": "Erstellt ein neues Ziel (Objective) im OKR-System. Nutze create_objective NUR wenn start_goal_onboarding nicht passt (z.B. wenn der User explizit kein Coaching will oder ein Objective manuell anlegen möchte). PFLICHT: life_area_short_code IMMER setzen (V3 P10).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -58,9 +58,15 @@ TOOLS: list[dict[str, Any]] = [
                         "enum": ["health", "business", "personal", "fitness", "finance", "learning"],
                         "description": "Kategorie des Ziels",
                     },
+                    "life_area_short_code": {
+                        "type": "string",
+                        "enum": ["mental", "physical", "character", "family", "romance",
+                                 "money", "lifestyle", "charity", "spirituality"],
+                        "description": "Zuordnung zu einem der 9 Lebensbereiche (V3 P10). PFLICHT.",
+                    },
                     "target_date": {"type": "string", "description": "Zieldatum YYYY-MM-DD (optional)"},
                 },
-                "required": ["title", "category"],
+                "required": ["title", "category", "life_area_short_code"],
             },
         },
     },

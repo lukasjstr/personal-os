@@ -21,6 +21,22 @@ class ExpansionGuardException(Exception):
 PRIORITY1_THRESHOLD: int = 8  # priority_weight >= 8 is "Priority 1"
 
 
+async def _resolve_life_area_id(
+    session: AsyncSession, user_id: int, short_code: Optional[str]
+) -> Optional[int]:
+    """Look up LifeArea.id for (user_id, short_code). Returns None if absent."""
+    if not short_code:
+        return None
+    from bot.database.models import LifeArea
+    row = (await session.execute(
+        select(LifeArea).where(and_(
+            LifeArea.user_id == user_id,
+            LifeArea.short_code == short_code.lower().strip(),
+        ))
+    )).scalar_one_or_none()
+    return row.id if row else None
+
+
 async def create_objective_with_guard(
     session: AsyncSession,
     user_id: int,
@@ -29,6 +45,7 @@ async def create_objective_with_guard(
     description: Optional[str] = None,
     target_date: Optional[str] = None,
     priority_weight: int = 5,
+    life_area_short_code: Optional[str] = None,
 ) -> dict:
     """Create an Objective, enforcing soft + hard expansion limits.
 
@@ -75,7 +92,11 @@ async def create_objective_with_guard(
     )
     if priority_weight != 5:
         obj.priority_weight = priority_weight
-        await session.flush()
+    # V3 P10 — link to mission layer
+    life_area_id = await _resolve_life_area_id(session, user_id, life_area_short_code)
+    if life_area_id is not None:
+        obj.life_area_id = life_area_id
+    await session.flush()
 
     new_priority1 = priority1_count + (1 if priority_weight >= PRIORITY1_THRESHOLD else 0)
     return {

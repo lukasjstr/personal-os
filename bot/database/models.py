@@ -83,6 +83,7 @@ class User(Base):
     life_profile: Mapped[Optional["LifeProfile"]] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     learning_items: Mapped[list["LearningItem"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     learning_reviews: Mapped[list["LearningReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    life_areas: Mapped[list["LifeArea"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id}>"
@@ -103,10 +104,15 @@ class Objective(Base):
     # V3 P08 — audit trail for cut/pause decisions
     paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     paused_reason: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    # V3 P10 — mission layer link
+    life_area_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("life_areas.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="objectives")
+    life_area: Mapped[Optional["LifeArea"]] = relationship(back_populates="objectives")
     key_results: Mapped[list["KeyResult"]] = relationship(back_populates="objective", cascade="all, delete-orphan")
     brain_dumps: Mapped[list["BrainDump"]] = relationship(back_populates="linked_objective")
     weekly_priorities: Mapped[list["WeeklyPriority"]] = relationship(back_populates="linked_objective")
@@ -1033,6 +1039,39 @@ class Commitment(Base):
 
     def __repr__(self) -> str:
         return f"<Commitment id={self.id} status={self.status} desc={self.description[:40]!r}>"
+
+
+# ─── V3 P10 — Mission Layer: 9 Life Areas ────────────────────────────────────
+
+class LifeArea(Base):
+    """Top-level mission layer — Lukas's 9 life areas (Money, Physical, …).
+
+    Each Objective links to one LifeArea so the strategy hierarchy is:
+      LifeArea (5+ yr vision) → Objective (quarter) → KR (week) → Task/Log.
+    """
+    __tablename__ = "life_areas"
+    __table_args__ = (
+        UniqueConstraint("user_id", "short_code", name="uq_life_areas_user_short"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    short_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    vision: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    current_state: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=5)  # 1 (highest) - 10
+    color_hex: Mapped[str] = mapped_column(String(9), default="#888780")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="life_areas")
+    objectives: Mapped[list["Objective"]] = relationship(back_populates="life_area")
+
+    def __repr__(self) -> str:
+        return f"<LifeArea id={self.id} user={self.user_id} {self.short_code}>"
 
 
 # ─── Feature 11 — Life Profile (Langzeit-Gedächtnis) ─────────────────────────
