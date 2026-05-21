@@ -86,6 +86,13 @@ async def derive_life_artifacts(
         routine_ids.append(routine.id)
         logger.info("Life planner: created routine %d '%s' for user %d", routine.id, title, user_id)
 
+        # V3 P04 — expand routine into concrete calendar events (next 4 weeks).
+        try:
+            from bot.core.calendar import expand_routine_to_calendar
+            await expand_routine_to_calendar(session, routine, weeks_ahead=4)
+        except Exception:
+            logger.exception("Routine expansion failed for routine %d (non-fatal)", routine.id)
+
     # ── 2. Shopping items ─────────────────────────────────────────────────────
     for item in (draft_payload.get("shopping_items") or []):
         if not isinstance(item, str) or not item.strip():
@@ -121,20 +128,27 @@ async def derive_life_artifacts(
         if milestone_date <= today:
             continue
 
-        # Milestone: all-day event on due date
+        # Milestone: all-day event on due date.
+        # V3 P04 — keyed by ical_uid so re-execution is idempotent.
         milestone_dt = datetime.combine(milestone_date, datetime.min.time().replace(hour=9))
+        ical_uid = f"milestone-obj{objective_id}-{title[:40]}-{milestone_date.isoformat()}@personal-os"
         ev = CalendarEvent(
             user_id=user_id,
             title=f"📌 {title}",
-            description=f"Meilenstein aus OKR-Plan",
+            description=f"Meilenstein aus OKR-Plan (Objective#{objective_id})",
             start_time=milestone_dt,
             end_time=milestone_dt.replace(hour=10),
             all_day=False,
             event_type="deadline",
+            ical_uid=ical_uid,
         )
         session.add(ev)
-        await session.flush()
-        calendar_ids.append(ev.id)
+        try:
+            await session.flush()
+            calendar_ids.append(ev.id)
+        except Exception:
+            await session.rollback()
+            logger.info("Milestone calendar event already exists: %s", ical_uid)
 
     logger.info(
         "Life planner: user %d — %d routines, %d shopping items, %d milestones",

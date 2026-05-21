@@ -24,6 +24,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.database.models import (
+    AutopilotNotification,
     CalendarEvent,
     KeyResult,
     Objective,
@@ -212,10 +213,43 @@ async def execute_accepted_proposal(
         await session.flush()
         task_ids.append(task.id)
 
-    # Calendar blocks: materialize slot candidates as CalendarEvent.
-    # Skip slots that overlap existing calendar events for this user.
+    # V3 P04 — for every task with a due_date, create a deadline CalendarEvent.
+    # Idempotent: keyed by ical_uid = f"task-deadline-{task_id}@personal-os".
     calendar_event_ids: list[int] = []
     calendar_conflicts: list[int] = []
+    from datetime import datetime as _dt2
+    for task_id in task_ids:
+        task_row = await session.get(Task, task_id)
+        if task_row is None or task_row.due_date is None:
+            continue
+        ical_uid = f"task-deadline-{task_id}@personal-os"
+        existing = await session.execute(
+            select(CalendarEvent.id).where(CalendarEvent.ical_uid == ical_uid).limit(1)
+        )
+        if existing.scalar_one_or_none() is not None:
+            continue
+        deadline_start = _dt2.combine(task_row.due_date, _dt2.min.time().replace(hour=10))
+        ev = CalendarEvent(
+            user_id=draft_row.user_id,
+            title=f"⏰ {task_row.title}",
+            description=f"Deadline für Task#{task_id}\n\n{marker}",
+            start_time=deadline_start,
+            end_time=deadline_start.replace(hour=11),
+            all_day=False,
+            event_type="deadline",
+            linked_task_id=task_id,
+            ical_uid=ical_uid,
+        )
+        session.add(ev)
+        try:
+            await session.flush()
+            calendar_event_ids.append(ev.id)
+        except Exception:
+            await session.rollback()
+            logger.info("Task-deadline calendar event already exists for task %d", task_id)
+
+    # Calendar blocks: materialize slot candidates as CalendarEvent.
+    # Skip slots that overlap existing calendar events for this user.
     for c in derive_slot_candidates(draft_row.draft_payload):
         # Conflict detection: check for overlapping events
         conflict_res = await session.execute(
@@ -234,7 +268,23 @@ async def execute_accepted_proposal(
                 "overlaps event id=%d",
                 draft_row.id, c.title, c.starts_at, c.ends_at, conflict_id,
             )
-            # Record the slot index (use the calendar_conflicts list to hold slot positions)
+            # V3 P04 — surface conflict as actionable notification in the dashboard.
+            existing_event = (await session.execute(
+                select(CalendarEvent).where(CalendarEvent.id == conflict_id)
+            )).scalar_one_or_none()
+            existing_title = existing_event.title if existing_event else "anderer Termin"
+            session.add(AutopilotNotification(
+                user_id=draft_row.user_id,
+                notification_type="calendar_conflict",
+                title=f"Slot-Konflikt: {c.title}",
+                body=(
+                    f"'{c.title}' ({c.starts_at:%d.%m %H:%M}–{c.ends_at:%H:%M}) "
+                    f"überschneidet '{existing_title}'.\n\n{marker}"
+                ),
+                status="pending",
+                source="proposal_execute",
+            ))
+            await session.flush()
             calendar_conflicts.append(len(calendar_event_ids) + len(calendar_conflicts))
             continue
 
