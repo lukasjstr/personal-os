@@ -2,6 +2,20 @@
 from typing import Any
 
 TOOLS: list[dict[str, Any]] = [
+    # ─── V3 P03 — Expansion Protection ───────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_active_objectives",
+            "description": (
+                "Liste alle aktiven Objectives mit stale_days (Tage seit letztem Log). "
+                "PFLICHT vor jedem create_objective-Aufruf, um Expansionsschutz zu prüfen "
+                "(≥4 aktive Objectives → erst Cut anfordern, nicht direkt anlegen). "
+                "Auch nutzbar wenn User fragt 'was ist aktuell aktiv', 'meine Ziele', etc."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
     # ─── Goal Onboarding Tool ────────────────────────────────────────────────
     {
         "type": "function",

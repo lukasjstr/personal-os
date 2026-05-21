@@ -1,6 +1,7 @@
 """OpenAI client — GPT-4o with function calling and next-action principle."""
 import json
 import logging
+import re
 from datetime import date, datetime
 from typing import Any, Optional
 
@@ -20,6 +21,7 @@ from bot.core.objectives import (
     create_objective,
     get_active_objectives,
     get_progress_report,
+    list_active_objectives,
     suggest_tasks_for_objective,
 )
 from bot.core.priorities import get_todays_priorities
@@ -41,6 +43,38 @@ from bot.database.models import Conversation, ShoppingDefault, Task, User
 logger = logging.getLogger(__name__)
 
 openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+# ─── V3 P03 — Coach-Modus softener detection ─────────────────────────────────
+# Hits are logged only; the message is NOT rewritten. If hit count is high over
+# time, the System Prompt needs more pressure (or the model drifted).
+_SOFTENER_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\b(bitte|gerne|natürlich|nat[üu]rlich)\b", re.IGNORECASE),
+    re.compile(r"\b(super|klasse|top|wunderbar|prima|spitze)\s*[!.]", re.IGNORECASE),
+]
+
+
+def detect_softeners(text: str) -> list[str]:
+    """Return list of softener words found in `text`. Used by sanitizer + tests."""
+    if not text:
+        return []
+    hits: list[str] = []
+    for pat in _SOFTENER_PATTERNS:
+        for m in pat.finditer(text):
+            hits.append(m.group(0))
+    return hits
+
+
+def sanitize_reply(reply: str, *, user_id: Optional[int] = None) -> str:
+    """Log-only sanitizer — never rewrites the message (Coach-Modus is a system-prompt
+    contract, not a regex). Returns the original `reply` so callers can swap in-place."""
+    hits = detect_softeners(reply)
+    if hits:
+        logger.warning(
+            "AI used softeners (user=%s, count=%d): %s",
+            user_id, len(hits), ", ".join(hits[:5]),
+        )
+    return reply
 
 
 async def _notify_achievements(session: AsyncSession, user: User) -> None:
@@ -72,6 +106,11 @@ async def _execute_tool(
 ) -> str:
     """Execute a tool call and return a string result."""
     try:
+        # ─── V3 P03 — Expansion Protection: list active objectives ──────────
+        if name == "list_active_objectives":
+            data = await list_active_objectives(session, user.id)
+            return json.dumps(data, ensure_ascii=False)
+
         # ─── Goal Onboarding ─────────────────────────────────────────────────
         if name == "start_goal_onboarding":
             from bot.core.goal_onboarding import get_active_onboarding, start_onboarding
@@ -801,6 +840,9 @@ async def process_message(
             temperature=0.4,
         )
         reply = final.choices[0].message.content or "Verarbeitung abgeschlossen."
+
+    # V3 P03 — log softener usage (does not rewrite reply)
+    sanitize_reply(reply, user_id=user.id)
 
     # Save conversation
     session.add(Conversation(

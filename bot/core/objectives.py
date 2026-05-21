@@ -1,8 +1,8 @@
 """CRUD operations for Objectives and Key Results."""
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -134,6 +134,45 @@ async def get_active_objectives(session: AsyncSession, user_id: int) -> str:
                     progress = f" — {pct}% ({kr.current_value}/{kr.target_value} {kr.unit or ''})"
                 lines.append(f"  📊 KR#{kr.id}: {kr.title}{progress}")
     return "\n".join(lines)
+
+
+async def list_active_objectives(session: AsyncSession, user_id: int) -> dict:
+    """Return active objectives with stale_days for expansion-protection (V3 P03).
+
+    Returns:
+        {
+          "count": int,
+          "objectives": [
+            {"id": int, "title": str, "category": str, "stale_days": int|None}
+          ]
+        }
+    stale_days = days since last Log on any KR belonging to this objective.
+    None if no logs ever recorded.
+    """
+    result = await session.execute(
+        select(Objective)
+        .where(and_(Objective.user_id == user_id, Objective.status == "active"))
+        .order_by(Objective.created_at)
+    )
+    objectives = result.scalars().all()
+    today = date.today()
+    out: list[dict] = []
+    for obj in objectives:
+        last_log_dt = (await session.execute(
+            select(func.max(Log.logged_at))
+            .join(KeyResult, Log.key_result_id == KeyResult.id)
+            .where(KeyResult.objective_id == obj.id)
+        )).scalar()
+        stale_days: Optional[int] = None
+        if isinstance(last_log_dt, datetime):
+            stale_days = (today - last_log_dt.date()).days
+        out.append({
+            "id": obj.id,
+            "title": obj.title,
+            "category": obj.category,
+            "stale_days": stale_days,
+        })
+    return {"count": len(out), "objectives": out}
 
 
 async def get_progress_report(session: AsyncSession, user_id: int, objective_id: int) -> str:
