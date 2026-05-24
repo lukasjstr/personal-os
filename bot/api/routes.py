@@ -641,15 +641,27 @@ async def list_objectives(
 async def list_tasks(
     status: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    include_done: bool = Query(False),
+    include_cancelled: bool = Query(False),
+    limit: int = Query(200),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Get tasks with KR/objective info, optionally filtered by status and category."""
+    """Get tasks with KR/objective info, optionally filtered by status and category.
+
+    By default returns todo + in_progress only. Set include_done=true or
+    include_cancelled=true to broaden the result set (used by Kanban GTD view).
+    """
     conditions = [Task.user_id == user.id]
     if status:
         conditions.append(Task.status == status)
     else:
-        conditions.append(Task.status.in_(["todo", "in_progress"]))
+        allowed = ["todo", "in_progress"]
+        if include_done:
+            allowed.append("done")
+        if include_cancelled:
+            allowed.append("cancelled")
+        conditions.append(Task.status.in_(allowed))
     if category:
         conditions.append(Task.category == category)
 
@@ -664,6 +676,7 @@ async def list_tasks(
         )
         .where(and_(*conditions))
         .order_by(Task.priority.asc(), Task.due_date.asc().nulls_last())
+        .limit(limit)
     )
     tasks = result.scalars().all()
     today = date.today()
@@ -2656,6 +2669,7 @@ class CreateTaskBody(BaseModel):
     description: Optional[str] = None
     parent_task_id: Optional[int] = None
     blocked_by_task_id: Optional[int] = None
+    status: Optional[str] = None  # V3 — Kanban can create directly into doing/etc.
 
 
 class CreateRoutineBody(BaseModel):
@@ -2927,6 +2941,9 @@ async def create_task(
             due = date.fromisoformat(body.due_date)
         except ValueError:
             pass
+    initial_status = getattr(body, "status", None) or "todo"
+    if initial_status not in ("todo", "in_progress", "done", "cancelled"):
+        initial_status = "todo"
     task = Task(
         user_id=user.id,
         title=body.title.strip(),
@@ -2937,7 +2954,7 @@ async def create_task(
         objective_id=body.objective_id or None,
         parent_task_id=body.parent_task_id or None,
         blocked_by_task_id=body.blocked_by_task_id or None,
-        status="todo",
+        status=initial_status,
     )
     session.add(task)
     await session.flush()
