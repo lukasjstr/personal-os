@@ -50,6 +50,21 @@ function AreaCard({
 }) {
   const score = a.score ?? 0;
   const stale = a.stale_days !== null && a.stale_days > 7;
+  // Vakuum-State: kein Objective angelegt. Visuell tot (grau, kein Color-Border).
+  const isVacuum = a.active_objectives === 0;
+
+  if (isVacuum) {
+    return (
+      <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 flex flex-col gap-1 opacity-60">
+        <div className="flex items-center justify-between">
+          <div className="text-zinc-500 text-sm font-medium">{a.name}</div>
+          <div className="text-xs text-zinc-700">💤 kein Objective</div>
+        </div>
+        <div className="text-zinc-700 text-xs">— Bereich tot —</div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-2"

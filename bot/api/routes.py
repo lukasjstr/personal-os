@@ -8934,6 +8934,62 @@ class LifeAreaUpdateBody(BaseModel):
     priority: Optional[int] = None
 
 
+class ObjectiveAssignAreaBody(BaseModel):
+    life_area_id: Optional[int] = None  # None → unassign
+
+
+@router.patch("/objectives/{objective_id}/life-area")
+async def assign_objective_to_life_area(
+    objective_id: int,
+    body: ObjectiveAssignAreaBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """V3 P10 follow-up — reassign an Objective to a different LifeArea."""
+    from bot.database.models import LifeArea
+    obj = (await session.execute(
+        select(Objective).where(and_(
+            Objective.id == objective_id, Objective.user_id == user.id,
+        ))
+    )).scalar_one_or_none()
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Objective not found")
+    if body.life_area_id is not None:
+        area = (await session.execute(
+            select(LifeArea).where(and_(
+                LifeArea.id == body.life_area_id, LifeArea.user_id == user.id,
+            ))
+        )).scalar_one_or_none()
+        if area is None:
+            raise HTTPException(status_code=404, detail="LifeArea not found")
+    obj.life_area_id = body.life_area_id
+    await session.commit()
+    return {"ok": True, "objective_id": obj.id, "life_area_id": obj.life_area_id}
+
+
+@router.get("/life-areas/{area_id}/objectives")
+async def list_objectives_in_area(
+    area_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """List all active objectives linked to a life area (for the mission UI)."""
+    objs = (await session.execute(
+        select(Objective).where(and_(
+            Objective.user_id == user.id,
+            Objective.life_area_id == area_id,
+            Objective.status == "active",
+        )).order_by(Objective.priority_weight.desc(), Objective.id.asc())
+    )).scalars().all()
+    return {
+        "objectives": [
+            {"id": o.id, "title": o.title, "category": o.category,
+             "priority_weight": o.priority_weight, "status": o.status}
+            for o in objs
+        ]
+    }
+
+
 @router.patch("/life-areas/{area_id}")
 async def patch_life_area(
     area_id: int,

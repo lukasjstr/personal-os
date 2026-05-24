@@ -39,6 +39,15 @@ type Area = {
   last_log_at: string | null;
 };
 
+type ObjectiveLite = {
+  id: number;
+  title: string;
+  category: string;
+  priority_weight: number;
+  status: string;
+  life_area_id?: number | null;
+};
+
 export default function MissionPage() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,11 +59,28 @@ export default function MissionPage() {
   });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [objectivesByArea, setObjectivesByArea] = useState<Record<number, ObjectiveLite[]>>({});
 
   const load = useCallback(async () => {
     try {
       const data = await apiFetch<{ areas: Area[] }>("/api/life-areas");
-      setAreas(data.areas || []);
+      const newAreas = data.areas || [];
+      setAreas(newAreas);
+      // Load objectives per area in parallel
+      const map: Record<number, ObjectiveLite[]> = {};
+      await Promise.all(
+        newAreas.map(async (a) => {
+          try {
+            const r = await apiFetch<{ objectives: ObjectiveLite[] }>(
+              `/api/life-areas/${a.id}/objectives`,
+            );
+            map[a.id] = r.objectives;
+          } catch {
+            map[a.id] = [];
+          }
+        }),
+      );
+      setObjectivesByArea(map);
       setError(null);
     } catch (e) {
       setError("Lebensbereiche konnten nicht geladen werden.");
@@ -62,6 +88,20 @@ export default function MissionPage() {
       setLoading(false);
     }
   }, []);
+
+  const reassignObjective = async (objectiveId: number, newAreaId: number) => {
+    try {
+      await apiFetch(`/api/objectives/${objectiveId}/life-area`, {
+        method: "PATCH",
+        body: JSON.stringify({ life_area_id: newAreaId }),
+      });
+      await load();
+      setSuccessMsg("Objective verschoben");
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } catch (e) {
+      setError("Reassignment fehlgeschlagen");
+    }
+  };
 
   useEffect(() => {
     load();
@@ -185,6 +225,38 @@ export default function MissionPage() {
                     <div className="text-zinc-300 text-xs">
                       <div className="text-zinc-500 mb-0.5">Aktueller Stand</div>
                       <div className="whitespace-pre-line">{a.current_state}</div>
+                    </div>
+                  )}
+                  {/* Objectives in this area */}
+                  {(objectivesByArea[a.id] || []).length > 0 && (
+                    <div className="text-zinc-300 text-xs mt-1">
+                      <div className="text-zinc-500 mb-1">Objectives ({objectivesByArea[a.id].length})</div>
+                      <ul className="space-y-1">
+                        {(objectivesByArea[a.id] || []).map((obj) => (
+                          <li key={obj.id} className="flex items-center gap-2">
+                            <span className="flex-1 truncate">
+                              <span className="text-zinc-500">#{obj.id}</span> {obj.title}
+                              {obj.priority_weight >= 8 && (
+                                <span className="ml-1 text-amber-400">P1</span>
+                              )}
+                            </span>
+                            <select
+                              value={a.id}
+                              onChange={(e) =>
+                                reassignObjective(obj.id, parseInt(e.target.value, 10))
+                              }
+                              className="bg-zinc-800 text-zinc-300 text-[10px] rounded px-1 py-0.5 outline-none border border-zinc-700"
+                              title="Lebensbereich ändern"
+                            >
+                              {areas.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  → {opt.name}
+                                </option>
+                              ))}
+                            </select>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                   <button
