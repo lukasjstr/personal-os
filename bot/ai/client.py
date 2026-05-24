@@ -33,6 +33,7 @@ from bot.core.shopping import complete_shopping, get_shopping_summary
 from bot.core.tasks import (
     complete_task,
     create_task,
+    find_and_complete_task,
     get_next_task_in_kr,
     get_open_tasks,
     search_logs,
@@ -179,6 +180,25 @@ async def _execute_tool(
                     result += f"\n\n➡️ *NÄCHSTE AKTION:* {next_task.title} (Task #{next_task.id})"
             await _notify_achievements(session, user)
             return result
+
+        elif name == "find_and_complete_task":
+            r = await find_and_complete_task(session, user.id, args["query"])
+            if r.get("completed"):
+                task = r["task"]
+                msg = f"✅ *{task.title}* erledigt (Task #{task.id})."
+                if task.key_result_id:
+                    nxt = await get_next_task_in_kr(session, task.key_result_id)
+                    if nxt:
+                        msg += f"\n➡️ NÄCHSTE: {nxt.title} (#{nxt.id})"
+                await _notify_achievements(session, user)
+                return msg
+            if r.get("ambiguous"):
+                lines = [f"Mehrere Tasks matchen '{args['query']}':"]
+                for m in r["matches"]:
+                    lines.append(f"  · #{m['id']} {m['title']} [{m['category']}]")
+                lines.append("Welche meinst du? Antworte mit ID oder genauerem Titel.")
+                return "\n".join(lines)
+            return f"Keine offene Task gefunden, die zu '{args['query']}' passt."
 
         elif name == "update_task_status":
             task = await update_task_status(session, user.id, args["task_id"], args["status"])

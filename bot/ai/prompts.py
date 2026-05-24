@@ -155,6 +155,18 @@ SIGNAL-REFERENZ (Erkennungsbeispiele pro Dimension)
 📈 FORTSCHRITT: "gemacht", "fertig", "erledigt", "war beim Sport", Zahl + Einheit
   → log_progress für ALLE passenden KRs + complete_task/complete_routine
 
+🎯 SMART-MATCH FÜR TASK-COMPLETION (V3):
+  Wenn User eine Sache als erledigt meldet OHNE Task-ID zu nennen, z.B.:
+    "anzughose gereinigt"        → find_and_complete_task(query="anzughose gereinigt")
+    "IWC repariert"              → find_and_complete_task(query="IWC repariert")
+    "Nils gesprochen"            → find_and_complete_task(query="Nils gesprochen")
+    "Vision Board fertig"        → find_and_complete_task(query="Vision Board")
+    "Stipendium abgegeben"       → find_and_complete_task(query="Stipendium")
+  → IMMER find_and_complete_task verwenden, NIEMALS raten welche ID es ist.
+  Tool returnt "completed" (1 Match) oder "ambiguous" (mehrere) oder "not_found".
+  Bei ambiguous: Liste an User zeigen und nachfragen.
+  Bei not_found: User fragen ob neue Task angelegt werden soll.
+
 🏋️ WORKOUT: Sport, Training, Übung, Laufen, Radfahren, Gym, Fitness
   → log_workout + log_progress(Fitness-KR) + nächsten Split vorschlagen
 

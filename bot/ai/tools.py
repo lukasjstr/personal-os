@@ -134,13 +134,36 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "complete_task",
-            "description": "Markiert eine Aufgabe als erledigt. Nutze wenn User 'fertig', 'done', 'erledigt' sagt.",
+            "description": "Markiert eine Aufgabe als erledigt anhand der ID. Nutze NUR wenn du die exakte Task-ID kennst. Sonst find_and_complete_task verwenden.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task_id": {"type": "integer", "description": "ID der Aufgabe"},
                 },
                 "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_and_complete_task",
+            "description": (
+                "V3 SMART-MATCH: Findet eine offene Task per Title-Fuzzy-Match und schließt sie ab. "
+                "PFLICHT-Tool wenn User sagt 'X erledigt/gemacht/abgehakt/fertig/done' OHNE Task-ID. "
+                "Beispiele: 'anzughose gereinigt' → matched Task 'Anzughose zur Reinigung bringen' → completed. "
+                "'IWC repariert' → matched 'IWC-Uhr reparieren lassen'. "
+                "Wenn mehrere Tasks matchen: Tool returnt eine Liste — dann frage User welche."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Freitext aus der User-Nachricht. Möglichst der konkrete Begriff (z.B. 'anzughose gereinigt' oder 'IWC repariert').",
+                    },
+                },
+                "required": ["query"],
             },
         },
     },

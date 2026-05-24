@@ -56,20 +56,19 @@ const NAV_SECTIONS: NavSection[] = [
     title: "HEUTE",
     items: [
       { href: "/cockpit", label: "Cockpit", icon: Target, emoji: "🎯" },
-      { href: "/", label: "Dashboard", icon: LayoutDashboard, emoji: "🏠" },
+      { href: "/kanban", label: "Kanban", icon: Kanban, emoji: "📋" },
       { href: "/calendar", label: "Kalender", icon: Calendar, emoji: "📅" },
-      { href: "/kanban", label: "Tagesplan", icon: Kanban, emoji: "📋" },
     ],
   },
   {
     id: "leben",
     title: "LEBEN",
     items: [
-      { href: "/mission", label: "Mission (9 Bereiche)", icon: Target, emoji: "🪨" },
+      { href: "/mission", label: "Mission", icon: Target, emoji: "🪨" },
       { href: "/objectives", label: "Ziele & KRs", icon: Target, emoji: "🎯" },
-      { href: "/goals/coach", label: "Ziel-Coach", icon: Zap, emoji: "✨" },
       { href: "/routines", label: "Routinen", icon: RefreshCw, emoji: "🔄" },
       { href: "/weekly", label: "Wochenziele", icon: CalendarDays, emoji: "📖" },
+      { href: "/goals/coach", label: "Ziel-Coach", icon: Zap, emoji: "✨" },
     ],
   },
   {
@@ -121,10 +120,10 @@ const NAV_SECTIONS: NavSection[] = [
 
 // Bottom nav items for mobile (5 most important)
 const MOBILE_BOTTOM_NAV: NavItem[] = [
-  { href: "/", label: "Home", icon: LayoutDashboard, emoji: "🏠" },
+  { href: "/cockpit", label: "Cockpit", icon: Target, emoji: "🎯" },
+  { href: "/kanban", label: "Kanban", icon: Kanban, emoji: "📋" },
+  { href: "/mission", label: "Mission", icon: Target, emoji: "🪨" },
   { href: "/objectives", label: "Ziele", icon: Target, emoji: "🎯" },
-  { href: "/routines", label: "Routinen", icon: RefreshCw, emoji: "🔄" },
-  { href: "/fitness", label: "Fitness", icon: Dumbbell, emoji: "🏋️" },
   { href: "/settings", label: "Settings", icon: Settings, emoji: "⚙️" },
 ];
 

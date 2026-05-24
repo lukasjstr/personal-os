@@ -8879,6 +8879,40 @@ async def get_cockpit(
 
     cuts_this_week = await count_cuts_this_week(session, user.id, today)
 
+    # V3 P12+ — Next Action ("JETZT") + Mini-Kanban for cockpit
+    from bot.core.next_action import get_next_action
+    next_action_data = await get_next_action(session, user)
+
+    # Mini-Kanban: top 3 todo, doing count, done today count
+    today_start = datetime.combine(today, datetime.min.time())
+    top_todo = (await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status == "todo",
+            Task.category != "shopping",
+        )).order_by(Task.priority.asc(), Task.due_date.asc().nulls_last()).limit(3)
+    )).scalars().all()
+    doing_count = (await session.execute(
+        select(func.count()).select_from(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status == "in_progress",
+        ))
+    )).scalar() or 0
+    done_today_count = (await session.execute(
+        select(func.count()).select_from(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status == "done",
+            Task.completed_at >= today_start,
+        ))
+    )).scalar() or 0
+    open_total = (await session.execute(
+        select(func.count()).select_from(Task).where(and_(
+            Task.user_id == user.id,
+            Task.status.in_(["todo", "in_progress"]),
+            Task.category != "shopping",
+        ))
+    )).scalar() or 0
+
     return {
         "date": today.isoformat(),
         "life_score": life_score,
@@ -8896,6 +8930,17 @@ async def get_cockpit(
         "festnagel": festnagel,
         "streaks_at_risk": outlook,
         "cuts_this_week": cuts_this_week,
+        "next_action": next_action_data,
+        "kanban_summary": {
+            "top_todo": [
+                {"id": t.id, "title": t.title, "priority": t.priority,
+                 "category": t.category, "objective_id": t.objective_id}
+                for t in top_todo
+            ],
+            "doing_count": int(doing_count),
+            "done_today_count": int(done_today_count),
+            "open_total": int(open_total),
+        },
     }
 
 
@@ -8973,21 +9018,37 @@ async def list_objectives_in_area(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """List all active objectives linked to a life area (for the mission UI)."""
+    """List all active objectives + their KRs for the mission UI."""
     objs = (await session.execute(
-        select(Objective).where(and_(
+        select(Objective).options(selectinload(Objective.key_results))
+        .where(and_(
             Objective.user_id == user.id,
             Objective.life_area_id == area_id,
             Objective.status == "active",
         )).order_by(Objective.priority_weight.desc(), Objective.id.asc())
     )).scalars().all()
-    return {
-        "objectives": [
-            {"id": o.id, "title": o.title, "category": o.category,
-             "priority_weight": o.priority_weight, "status": o.status}
-            for o in objs
-        ]
-    }
+    out: list[dict] = []
+    for o in objs:
+        krs = [kr for kr in o.key_results if kr.status == "active"]
+        kr_payload = []
+        total_pct = 0.0
+        for kr in krs:
+            pct = 0
+            if kr.target_value and kr.target_value > 0:
+                pct = min(100, int((kr.current_value or 0) / kr.target_value * 100))
+            total_pct += pct
+            kr_payload.append({
+                "id": kr.id, "title": kr.title,
+                "current_value": kr.current_value, "target_value": kr.target_value,
+                "unit": kr.unit, "frequency": kr.frequency, "pct": pct,
+            })
+        avg_pct = int(total_pct / len(krs)) if krs else 0
+        out.append({
+            "id": o.id, "title": o.title, "category": o.category,
+            "priority_weight": o.priority_weight, "status": o.status,
+            "kr_count": len(krs), "avg_pct": avg_pct, "key_results": kr_payload,
+        })
+    return {"objectives": out}
 
 
 @router.patch("/life-areas/{area_id}")

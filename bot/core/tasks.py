@@ -64,6 +64,57 @@ async def complete_task(
     return task
 
 
+async def find_open_tasks_by_query(
+    session: AsyncSession, user_id: int, query: str, limit: int = 5,
+) -> list[Task]:
+    """V3 — fuzzy title match for natural-language completion.
+
+    'anzughose gereinigt' → matches Task 'Anzughose zur Reinigung bringen'.
+    Tokenizes the query, requires ≥1 token (≥3 chars) to match the title.
+    """
+    tokens = [t.strip().lower() for t in query.split() if len(t.strip()) >= 3]
+    if not tokens:
+        return []
+    candidates = (await session.execute(
+        select(Task).where(and_(
+            Task.user_id == user_id,
+            Task.status.in_(["todo", "in_progress"]),
+        )).order_by(Task.priority.asc()).limit(200)
+    )).scalars().all()
+
+    scored: list[tuple[int, Task]] = []
+    for t in candidates:
+        title_lower = (t.title or "").lower()
+        score = sum(1 for tok in tokens if tok in title_lower)
+        if score > 0:
+            scored.append((score, t))
+    scored.sort(key=lambda x: (-x[0], x.id if False else 0))
+    return [t for _, t in scored[:limit]]
+
+
+async def find_and_complete_task(
+    session: AsyncSession, user_id: int, query: str,
+) -> dict:
+    """V3 — smart-match completion. Returns:
+        {"matched": Task, "task": Task} on success (1 strong hit)
+        {"ambiguous": [Task, ...]}        on multiple hits
+        {"not_found": True}               on no match
+    """
+    hits = await find_open_tasks_by_query(session, user_id, query)
+    if not hits:
+        return {"not_found": True, "query": query}
+    if len(hits) == 1:
+        task = await complete_task(session, user_id, hits[0].id)
+        return {"completed": True, "task": task}
+    # Multiple — return the list so AI can ask user which
+    return {
+        "ambiguous": True,
+        "matches": [
+            {"id": t.id, "title": t.title, "category": t.category} for t in hits
+        ],
+    }
+
+
 async def update_task_status(
     session: AsyncSession,
     user_id: int,
